@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>GeoVive Docs</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg: #020617;
+      --panel: #020617;
+      --accent: #22c55e;
+      --accent-soft: rgba(34, 197, 94, 0.15);
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --border: #1f2937;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #0f172a 0, #020617 45%, #000 100%);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 2rem 1.5rem 3rem;
+      display: flex;
+      justify-content: center;
+    }
+    .page {
+      max-width: 900px;
+      width: 100%;
+      border-radius: 1rem;
+      border: 1px solid var(--border);
+      padding: 1.75rem 1.75rem 2rem;
+      background: radial-gradient(circle at top left, #020617 0, #020617 60%, #000 100%);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 1.5rem;
+    }
+    header h1 {
+      font-size: 1.4rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+    }
+    header h1 span {
+      color: var(--accent);
+      font-weight: 600;
+    }
+    header .tagline {
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    h2 {
+      font-size: 1.1rem;
+      margin-top: 1.4rem;
+      margin-bottom: 0.4rem;
+    }
+    h3 {
+      font-size: 0.95rem;
+      margin-top: 1rem;
+      margin-bottom: 0.3rem;
+    }
+    p {
+      font-size: 0.9rem;
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 0.5rem;
+    }
+    ul {
+      margin-left: 1.2rem;
+      margin-bottom: 0.5rem;
+    }
+    li {
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin-bottom: 0.2rem;
+    }
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-bottom: 0.6rem;
+    }
+    .pill {
+      font-size: 0.75rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.9);
+      color: var(--muted);
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.85rem;
+      background: rgba(15, 23, 42, 0.9);
+      padding: 0.05rem 0.35rem;
+      border-radius: 0.25rem;
+      border: 1px solid rgba(15, 23, 42, 0.9);
+    }
+    pre {
+      margin: 0.4rem 0 0.6rem;
+      padding: 0.6rem 0.75rem;
+      background: rgba(15, 23, 42, 0.9);
+      border-radius: 0.5rem;
+      border: 1px solid var(--border);
+      overflow-x: auto;
+      font-size: 0.8rem;
+    }
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    a:hover { text-decoration: underline; }
+    .section-card {
+      margin-top: 1rem;
+      padding: 0.75rem 0.9rem;
+      border-radius: 0.6rem;
+      border: 1px solid rgba(15, 23, 42, 0.9);
+      background: radial-gradient(circle at top left, rgba(34,197,94,0.06), #020617 45%, #020617 100%);
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <h1><span>GeoVive</span> Docs</h1>
+      <div class="tagline">Mapbox + OpenStreetMap starter for geospatial projects.</div>
+    </header>
+
+    <div class="section-card">
+      <h2>Overview</h2>
+      <p>
+        GeoVive is a small but opinionated starter for building interactive map dashboards with
+        <strong>Mapbox GL JS</strong> and <strong>OpenStreetMap</strong> data. It shows how to:
+      </p>
+      <ul>
+        <li>Render a Mapbox basemap and swap styles at runtime.</li>
+        <li>Overlay custom point data (events, locations, alerts) as GeoJSON.</li>
+        <li>Drive the map from a sidebar with filters and feature lists.</li>
+        <li>Load datasets from static files, CSV, or live APIs (DynamoDB, etc.).</li>
+      </ul>
+    </div>
+
+    <h2>Getting Started</h2>
+    <h3>Local dev</h3>
+    <p>From the project root:</p>
+    <pre><code>python -m http.server 8000</code></pre>
+    <p>Then open <code>http://localhost:8000/index.html</code> in your browser.</p>
+
+    <h3>Mapbox setup</h3>
+    <ul>
+      <li>Create a public token in your Mapbox account.</li>
+      <li>Allow localhost during development (no URL restrictions, or include <code>http://localhost:8000/*</code>).</li>
+      <li>Paste the token into <code>mapboxgl.accessToken</code> in <code>index.html</code>.</li>
+    </ul>
+
+    <h2>Datasets</h2>
+    <p>The dataset selector in the sidebar can switch between multiple sources:</p>
+    <ul>
+      <li><strong>Demo points</strong> – in-memory GeoJSON defined in <code>geoviveData</code>.</li>
+      <li><strong>CSV</strong> – a simple CSV file parsed client-side into GeoJSON.</li>
+      <li><strong>OSM GeoJSON</strong> – data exported from Overpass Turbo and stored as a static file.</li>
+      <li><strong>DynamoDB</strong> (planned) – a FeatureCollection served by an AWS API.</li>
+    </ul>
+
+    <h3>CSV format</h3>
+    <p>Expected headers:</p>
+    <pre><code>name,category,lat,lng,description</code></pre>
+
+    <h2>AWS &amp; Backend Integration</h2>
+    <p>
+      GeoVive is designed to plug into lightweight backends such as AWS Lambda + DynamoDB. A typical
+      pattern is:
+    </p>
+    <ol>
+      <li>DynamoDB table storing points with <code>id</code>, <code>name</code>, <code>category</code>, <code>lat</code>, <code>lng</code>, <code>description</code>.</li>
+      <li>Lambda function that reads the table and returns a GeoJSON <code>FeatureCollection</code>.</li>
+      <li>API Gateway route (e.g. <code>GET /geovive</code>) that the front-end calls from the "Dynamo" dataset option.</li>
+    </ol>
+
+    <p>
+      See the main repository README for up-to-date backend examples and deployment notes.
+    </p>
+  </div>
+</body>
+</html>

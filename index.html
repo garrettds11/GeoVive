@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>GeoBoard – Maps Made Easy</title>
+  <title>GeoVive – Maps Made Easy</title>
   <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
   <!--link rel="icon" type="image/x-icon" href="./favicon.ico">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png">
@@ -90,6 +90,24 @@
         grid-template-columns: 1fr;
         grid-template-rows: auto minmax(0, 1fr);
       }
+    }
+
+    /* Docs button */
+    .docs-btn {
+      background: var(--accent2);
+      color: black;
+      padding: 4px 10px;
+      border: 1px solid #334155;
+      border-radius: 5px;
+      font-size: 0.8rem;
+      text-decoration: none;
+      transition: all 0.15s ease;
+    }
+
+    .docs-btn:hover {
+      background: var(--accent1);
+      color: #e5e7eb;
+      border-color: #475569;
     }
 
     /* Sidebar */
@@ -294,19 +312,33 @@
 </head>
 <body>
   <header>
-    <h1><span>🌎 GeoBoard</span> · Mapbox + OSM</h1>
+    <h1><span>🌎 GeoVive</span> · Mapbox + OSM</h1>
     <div style="display:flex; align-items:center; gap:0.75rem;">
+        <!-- documenation button -->
+        <a 
+          href="https://garrettds11.github.io/GeoVive/docs" 
+          target="_blank"
+          class="docs-btn"
+        >
+          Documentation
+        </a>
+        <!-- style selector menu-->
         <label style="font-size:0.8rem; color:#9ca3af;">
         Style:
-        <select id="style-select" style="background:#020617; color:#e5e7eb; border:1px solid #1f2937; border-radius:999px; padding:0.15rem 0.5rem; font-size:0.8rem;">
-            <option value="streets">Streets</option>
-            <option value="outdoors">Outdoors</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-            <option value="satellite">Satellite</option>
-        </select>
+          <select id="style-select" style="background:#020617; color:#e5e7eb; border:1px solid #1f2937; border-radius:999px; padding:0.15rem 0.5rem; font-size:0.8rem;">
+              <option value="streets">Streets</option>
+              <option value="outdoors">Outdoors</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+              <option value="satellite">Satellite</option>
+          </select>
         </label>
-        <div class="badge">v0.1 · local demo</div>
+        <!-- map connection status indicator-->
+        <div class="status-pill">
+          <span class="status-dot"></span>
+          <span>Mapbox connected</span>
+        </div>
+        <div class="badge">v0.1 · beta</div>
     </div>
   </header>
 
@@ -357,7 +389,7 @@
             <!-- later: <option value="dynamo">Live from DynamoDB</option> -->
         </select>
         <p class="hint" style="margin-top:0.4rem;">
-            Choose which dataset GeoBoard displays.
+            Choose which dataset GeoVive displays.
         </p>
         <br>
         <h3>Features</h3>
@@ -371,10 +403,7 @@
     <section class="map-wrapper">
       <div id="map"></div>
       <div class="map-status">
-        <div class="status-pill">
-          <span class="status-dot"></span>
-          <span>Mapbox connected</span>
-        </div>
+        <!-- zoom level indicator -->
         <div class="status-pill" id="status-zoom">
           Zoom: <span id="zoom-value">–</span>
         </div>
@@ -396,7 +425,7 @@
   };
 
   // 3. Base dataset (demo points) – define BEFORE we reference it
-  const geoboardData = {
+  const geoviveData = {
     type: "FeatureCollection",
     features: [
       {
@@ -463,7 +492,7 @@
 
   // Global cache of current dataset
   let currentDataset = "demo";
-  let demoDataset = geoboardData;
+  let demoDataset = geoviveData;
 
   // Optional: OSM dataset file path (exported via Overpass Turbo)
   const OSM_DATA_URL = "data/osm-places.geojson";
@@ -523,7 +552,7 @@
     }
 
     if (key === "dynamo") {
-      const res = await fetch("/api/geoboard"); // your API
+      const res = await fetch("/api/geovive"); // your API
       return await res.json();                  // should already be GeoJSON
     }
 
@@ -549,11 +578,11 @@
 
   // Helper to ensure our layer exists (used both on first load + style changes)
   function ensurePointLayer() {
-    if (!map.getLayer("geoboard-layer")) {
+    if (!map.getLayer("geovive-layer")) {
       map.addLayer({
-        id: "geoboard-layer",
+        id: "geovive-layer",
         type: "circle",
-        source: "geoboard-points",
+        source: "geovive-points",
         paint: {
           "circle-radius": 7,
           "circle-color": [
@@ -575,13 +604,13 @@
   async function applyDataset(key) {
     const geojson = await loadDataset(key);
 
-    if (!map.getSource("geoboard-points")) {
-      map.addSource("geoboard-points", {
+    if (!map.getSource("geovive-points")) {
+      map.addSource("geovive-points", {
         type: "geojson",
         data: geojson
       });
     } else {
-      map.getSource("geoboard-points").setData(geojson);
+      map.getSource("geovive-points").setData(geojson);
     }
 
     buildFeatureList(geojson.features);
@@ -596,10 +625,125 @@
     }
   }
 
+  // Build sidebar feature list
+  function buildFeatureList(features) {
+    const listEl = document.getElementById("feature-list");
+    if (!listEl) return;
+
+    listEl.innerHTML = "";
+
+    features.forEach((feature) => {
+      const props = feature.properties || {};
+      const id = props.id || crypto.randomUUID?.() || String(Math.random());
+      const name = props.name || "Untitled";
+      const category = props.category || "location";
+      const description = props.description || "";
+
+      const item = document.createElement("div");
+      item.className = "feature-list-item";
+      item.dataset.featureId = id;
+      item.dataset.category = category;
+
+      item.innerHTML = `
+        <div class="feature-name">${name}</div>
+        <div class="feature-meta">
+          ${category.toUpperCase()}
+          ${description ? " · " + description : ""}
+        </div>
+      `;
+
+      item.addEventListener("click", () => {
+        const [lng, lat] = feature.geometry.coordinates;
+        map.flyTo({ center: [lng, lat], zoom: 8, essential: true });
+
+        new mapboxgl.Popup({ closeOnMove: true })
+          .setLngLat([lng, lat])
+          .setHTML(`
+            <div class="popup-title">${name}</div>
+            <div class="popup-category">${category.toUpperCase()}</div>
+            <div class="popup-desc">${description}</div>
+          `)
+          .addTo(map);
+      });
+
+      listEl.appendChild(item);
+    });
+  }
+
+  // Category checkbox wiring
+  function setupCategoryFilters() {
+    const eventsCheckbox = document.getElementById("filter-events");
+    const locationsCheckbox = document.getElementById("filter-locations");
+    const alertsCheckbox = document.getElementById("filter-alerts");
+
+    const entries = [
+      { el: eventsCheckbox, value: "event" },
+      { el: locationsCheckbox, value: "location" },
+      { el: alertsCheckbox, value: "alert" }
+    ];
+
+    function applyFilters() {
+      const activeCategories = entries
+        .filter(e => e.el && e.el.checked)
+        .map(e => e.value);
+
+      // Map layer filter
+      if (map.getLayer("geoboard-layer")) {
+        if (activeCategories.length === 0) {
+          map.setFilter("geoboard-layer", ["==", ["get", "category"], "__none__"]);
+        } else {
+          map.setFilter(
+            "geoboard-layer",
+            ["in", ["get", "category"], ["literal", activeCategories]]
+          );
+        }
+      }
+
+      // Sidebar filter
+      document.querySelectorAll(".feature-list-item").forEach((item) => {
+        const cat = item.dataset.category;
+        item.style.display = activeCategories.includes(cat) ? "flex" : "none";
+      });
+    }
+
+    entries.forEach(e => {
+      if (e.el) e.el.addEventListener("change", applyFilters);
+    });
+
+    applyFilters();
+  }
+
   // Initial load
   map.on("load", async () => {
     await applyDataset("demo");
     ensurePointLayer();
+      map.on("mouseenter", "geoboard-layer", () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+
+      map.on("mouseleave", "geoboard-layer", () => {
+        map.getCanvas().style.cursor = "";
+      });
+
+      map.on("click", "geoboard-layer", (e) => {
+        const feature = e.features && e.features[0];
+        if (!feature) return;
+
+        const [lng, lat] = feature.geometry.coordinates;
+        const props = feature.properties || {};
+        const name = props.name || "Untitled";
+        const category = props.category || "location";
+        const description = props.description || "";
+
+        new mapboxgl.Popup({ closeOnMove: true })
+          .setLngLat([lng, lat])
+          .setHTML(`
+            <div class="popup-title">${name}</div>
+            <div class="popup-category">${category.toUpperCase()}</div>
+            <div class="popup-desc">${description}</div>
+          `)
+          .addTo(map);
+      });
     buildFeatureList(demoDataset.features);
     setupCategoryFilters();
   });
