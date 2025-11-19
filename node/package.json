@@ -1,0 +1,8 @@
+// package.json
+{
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.934.0",
+    "@aws-sdk/util-dynamodb": "^3.934.0"
+  }
+}

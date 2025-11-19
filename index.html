@@ -431,6 +431,19 @@
       {
         type: "Feature",
         properties: {
+          id: "loc-1",
+          name: "Home",
+          category: "location",
+          description: "No place like home."
+        },
+        geometry: {
+          type: "Point",
+          coordinates: [-93.7321, 32.5159]
+        }
+      },
+      {
+        type: "Feature",
+        properties: {
           id: "evt-1",
           name: "Security Summit",
           category: "event",
@@ -444,7 +457,20 @@
       {
         type: "Feature",
         properties: {
-          id: "loc-1",
+          id: "loc-2",
+          name: "Revelation Escapes",
+          category: "location",
+          description: "Mobile escape room ministry."
+        },
+        geometry: {
+          type: "Point",
+          coordinates: [-103.06583718650495, 44.14067709235039]
+        }
+      },
+      {
+        type: "Feature",
+        properties: {
+          id: "loc-3",
           name: "Escape Go Workshop",
           category: "location",
           description: "Small-batch puzzle kit assembly shop."
@@ -470,7 +496,7 @@
       {
         type: "Feature",
         properties: {
-          id: "loc-2",
+          id: "loc-4",
           name: "VulnServer Lab Node",
           category: "location",
           description: "Experimental lab node for training environments."
@@ -535,36 +561,88 @@
     return { type: "FeatureCollection", features };
   }
 
+  // Map front-end hostnames to API Gateway base URLs
+  const GEO_VIVE_ENV_MAP = {
+    // Dev frontend → Dev API
+    "dev.d24kp6zzj6jjwt.amplifyapp.com":
+      "https://moviip1p0g.execute-api.us-east-1.amazonaws.com/d",
+
+    // Prod frontend → Prod API (example domain)
+    "geovive.yourdomain.com":
+      "https://moviip1p0g.execute-api.us-east-1.amazonaws.com/p",
+  };
+
+  // Resolve API base from current hostname, defaulting to dev if unknown
+  const GEO_VIVE_API_BASE =
+    GEO_VIVE_ENV_MAP[window.location.hostname] ||
+    "https://moviip1p0g.execute-api.us-east-1.amazonaws.com/d";
+
+
   async function loadDataset(key) {
     currentDataset = key;
 
-    if (key === "demo") return demoDataset;
+    if (key === "demo") {
+      return demoDataset;
+    }
 
     if (key === "osm") {
-      const res = await fetch(OSM_DATA_URL);
+      const res = await fetch(OSM_DATA_URL, {
+        method: "GET",
+        headers: { "Accept": "application/json" },
+      });
+
+      if (!res.ok) {
+        throw new Error(`OSM dataset load failed: ${res.status} ${res.statusText}`);
+      }
+
       return await res.json();
     }
 
     if (key === "csv") {
-      const res = await fetch(CSV_DATA_URL);
+      const res = await fetch(CSV_DATA_URL, {
+        method: "GET",
+      });
+
+      if (!res.ok) {
+        throw new Error(`CSV dataset load failed: ${res.status} ${res.statusText}`);
+      }
+
       const text = await res.text();
       return csvToGeoJSON(text);
     }
 
     if (key === "dynamo") {
-      const res = await fetch("/api/geovive"); // your API
-      return await res.json();                  // should already be GeoJSON
+      const url = `${GEO_VIVE_API_BASE}/v1/features`;
+
+      const res = await fetch(url, {
+        method: "GET",
+        headers: { "Accept": "application/json" },
+      });
+
+      if (!res.ok) {
+        throw new Error(`GeoVive API load failed: ${res.status} ${res.statusText}`);
+      }
+
+      const data = await res.json();
+
+      // Optional sanity check: expect GeoJSON FeatureCollection
+      if (!data || data.type !== "FeatureCollection" || !Array.isArray(data.features)) {
+        console.warn("GeoVive API returned unexpected shape:", data);
+      }
+
+      return data;
     }
 
-    return demoDataset;
+    // Fallback for unknown keys
+    throw new Error(`Unknown dataset key: ${key}`);
   }
 
   // 5. Map init
   const map = new mapboxgl.Map({
     container: "map",
     style: MAP_STYLES.streets,
-    center: [-96.9, 32.8],
-    zoom: 3.5
+    center: [-96.5730, 39.1794],
+    zoom: 3.0
   });
 
   // Zoom overlay

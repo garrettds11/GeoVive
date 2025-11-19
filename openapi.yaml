@@ -1,0 +1,377 @@
+openapi: 3.1.0
+info:
+  title: GeoVive API
+  version: 1.0.0
+  description: |
+    GeoVive is a reusable geospatial backend for applications that need
+    map data, pins, layers, and geospatial features with fine-grained control.
+
+    This API exposes geospatial features as GeoJSON FeatureCollections.
+    Features are stored in a DynamoDB table and served via AWS Lambda.
+
+servers:
+  - url: https://YOUR_API_ID.execute-api.us-east-1.amazonaws.com/prod
+    description: Production (API Gateway HTTP API)
+  - url: http://localhost:3000
+    description: Local dev / mock
+
+paths:
+  /v1/features:
+    get:
+      summary: List features
+      description: |
+        Returns a GeoJSON FeatureCollection of features.
+
+        Supports filtering by map, category, and bounding box, and pagination
+        via `limit` and `nextToken`.
+
+        Geometry may be:
+        - Point
+        - Polygon
+        - MultiPolygon
+      operationId: listFeatures
+      parameters:
+        - name: mapId
+          in: query
+          required: false
+          description: >
+            Logical map identifier. Use this to scope results to a specific
+            map/board (e.g. `watchfield-global`, `client-foo-stores`).
+          schema:
+            type: string
+        - name: category
+          in: query
+          required: false
+          description: >
+            Filter by feature category (e.g. `event`, `location`, `alert`,
+            `store`, `incident`).
+          schema:
+            type: string
+        - name: bbox
+          in: query
+          required: false
+          description: >
+            Optional bounding box filter:
+            `minLon,minLat,maxLon,maxLat` (WGS84 degrees).
+          schema:
+            type: string
+            pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?$'
+            example: "-94.0,32.0,-92.0,33.0"
+        - name: limit
+          in: query
+          required: false
+          description: >
+            Maximum number of features to return in this page (1–1000).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 200
+        - name: nextToken
+          in: query
+          required: false
+          description: >
+            Pagination token returned from a previous response. If present,
+            the API continues from this token.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A GeoJSON FeatureCollection of features.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeatureCollection"
+        "400":
+          description: Invalid request parameters (e.g. malformed bbox or nextToken).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server error while fetching features.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: Create a new feature
+      description: |
+        Creates a new GeoVive feature.
+
+        The request body is a GeoJSON Feature with GeoVive `properties`.
+        The server may generate the `id` if it is not provided, and will
+        typically set `createdAt`/`updatedAt` automatically.
+
+        This endpoint is intended for trusted callers (e.g. internal tools,
+        ingestion pipelines, admin UI) and SHOULD be protected by
+        authentication/authorization in production.
+      operationId: createFeature
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Feature"
+      responses:
+        "201":
+          description: Feature created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Feature"
+        "400":
+          description: Invalid feature payload (missing required fields or malformed geometry).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: A feature with the same id already exists (if the client supplies the id).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server error while creating the feature.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/features/{id}:
+    get:
+      summary: Get a single feature by id
+      description: |
+        Returns a single GeoJSON Feature by its identifier.
+
+        The `id` corresponds to the feature's primary key in the underlying
+        data store.
+      operationId: getFeatureById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Feature identifier.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The feature, as GeoJSON.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Feature"
+        "404":
+          description: No feature exists with the given id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server error while fetching the feature.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+components:
+  schemas:
+    # ===== GeoJSON base types =====
+
+    FeatureCollection:
+      type: object
+      required:
+        - type
+        - features
+      properties:
+        type:
+          type: string
+          enum: [FeatureCollection]
+        features:
+          type: array
+          items:
+            $ref: "#/components/schemas/Feature"
+        nextToken:
+          type: string
+          nullable: true
+          description: >
+            Optional pagination token. If present, pass this as `nextToken`
+            on the next request to continue listing features.
+
+    Feature:
+      type: object
+      required:
+        - type
+        - geometry
+        - properties
+      properties:
+        type:
+          type: string
+          enum: [Feature]
+        geometry:
+          $ref: "#/components/schemas/Geometry"
+        properties:
+          $ref: "#/components/schemas/FeatureProperties"
+
+    Geometry:
+      description: GeoJSON geometry (Point, Polygon, or MultiPolygon).
+      oneOf:
+        - $ref: "#/components/schemas/PointGeometry"
+        - $ref: "#/components/schemas/PolygonGeometry"
+        - $ref: "#/components/schemas/MultiPolygonGeometry"
+
+    PointGeometry:
+      type: object
+      required:
+        - type
+        - coordinates
+      properties:
+        type:
+          type: string
+          enum: [Point]
+        coordinates:
+          type: array
+          items:
+            type: number
+          minItems: 2
+          maxItems: 3
+          description: >
+            [longitude, latitude] or [longitude, latitude, elevation] in WGS84.
+
+    PolygonGeometry:
+      type: object
+      required:
+        - type
+        - coordinates
+      properties:
+        type:
+          type: string
+          enum: [Polygon]
+        coordinates:
+          type: array
+          description: |
+            Array of linear rings. The first ring is the outer boundary;
+            subsequent rings (if present) are holes.
+
+            Each ring is an array of [longitude, latitude] coordinate pairs.
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: number
+
+    MultiPolygonGeometry:
+      type: object
+      required:
+        - type
+        - coordinates
+      properties:
+        type:
+          type: string
+          enum: [MultiPolygon]
+        coordinates:
+          type: array
+          description: >
+            Array of Polygons. Each polygon is an array of linear rings,
+            represented as arrays of [longitude, latitude] pairs.
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: array
+                items:
+                  type: number
+
+    # ===== GeoVive feature properties =====
+
+    FeatureProperties:
+      type: object
+      description: >
+        Non-geometric properties for a GeoVive feature. These fields are
+        shared across multiple applications (Watchfield, client sites,
+        internal tools) and may not all be populated for every feature.
+      required:
+        - id
+        - mapId
+        - name
+        - category
+      properties:
+        id:
+          type: string
+          description: Unique feature identifier.
+        mapId:
+          type: string
+          description: Logical map/board this feature belongs to.
+          example: watchfield-global
+        name:
+          type: string
+          description: Human-readable name or title.
+        description:
+          type: string
+          description: Longer explanation shown in popups/tooltips.
+        category:
+          type: string
+          description: >
+            High-level classification used for styling and filtering
+            (e.g. event, location, alert, protest, store, incident).
+          example: location
+        tags:
+          type: array
+          description: Arbitrary labels for flexible grouping and search.
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp when the feature record was created.
+        updatedAt:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp when the feature was last updated.
+        eventTime:
+          type: string
+          format: date-time
+          description: >
+            Timestamp of the event or phenomenon represented by this feature,
+            which may differ from `createdAt`.
+        status:
+          type: string
+          description: >
+            Lifecycle state of the feature (e.g. active, inactive, archived, draft).
+          example: active
+        source:
+          type: string
+          description: >
+            Origin of the data (e.g. watchfield-pipeline, manual-entry,
+            client-upload, overpass-import).
+        externalId:
+          type: string
+          description: Identifier in the upstream source system, if any.
+        severity:
+          type: string
+          description: >
+            Optional severity/importance indicator (e.g. info, warning, critical).
+        icon:
+          type: string
+          description: >
+            Optional icon identifier used by clients to render a specific marker icon.
+        color:
+          type: string
+          description: Optional color override for this feature (hex, e.g. #22c55e).
+
+    # ===== Error envelope =====
+
+    Error:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+        error:
+          type: string
+          nullable: true
+          description: Optional error detail (not intended for end-users).
