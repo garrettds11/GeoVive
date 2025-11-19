@@ -75,3 +75,6 @@ pids
 amplify
 amplify_outputs*
 amplifyconfiguration*
+
+#secrets and things that shouldn't be public
+*secret*
