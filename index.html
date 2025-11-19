@@ -72,7 +72,7 @@
     }
 
     header h1 {
-      font-size: 1rem;
+      font-size: 1.5rem;
       letter-spacing: 0.15em;
       text-transform: uppercase;
       color: var(--muted);
@@ -87,6 +87,10 @@
       display: flex;
       align-items: center;
       gap: 0.75rem;
+    }
+
+    #title {
+      padding: 0.25em 0.25em 1em 0.25em;
     }
 
     .badge {
@@ -195,14 +199,13 @@
       }
 
       .tray-handle {
-        height: 3em;
+        height: 2.5em;
         display: flex;
         justify-content: center;
         align-items: center;
         cursor: pointer;
         background-color: rgba(15,76,129,0.95);
         border-bottom: 1px solid rgba(255,255,255,0.15);
-        padding: 3%;
       }
 
       .hamburger-icon {
@@ -509,7 +512,9 @@
         <!-- Header -->
         <header>
           <!-- GEOVIVE title, docs button, style select, etc. -->
-          <h1><span>🌎 GeoVive</span> · Mapbox + OSM</h1>
+          <h1 id="title">
+            <span>Geo<strong>Vive</strong> 🌎</span>
+          </h1>
           <div class="header-items">
               <!-- documenation button -->
               <a 
