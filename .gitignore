@@ -69,3 +69,9 @@ pids
 
 #archives
 .zip
+
+# amplify
+.amplify
+amplify
+amplify_outputs*
+amplifyconfiguration*
