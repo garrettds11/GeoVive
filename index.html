@@ -617,7 +617,7 @@
             <p>Please log in to access this feature.</p>
             <div class="login-modal-actions">
               <button id="cancelSignIn" class="btn ghost">Nevermind</button>
-              <button id="signIn" class="btn primary">Sign In</button>
+              <button id="modalSignIn" class="btn primary">Sign In</button>
             </div>
           </div>
         </div>
@@ -966,9 +966,24 @@
       if (key === "dynamo") {
         const url = `${GEO_VIVE_API_BASE}/v1/features`;
 
+        // Build headers
+        const headers = { "Accept": "application/json" };
+
+        // If we have a logged-in user, attach the JWT
+        if (window.userManager && window.userManager.getUser) {
+          try {
+            const user = await window.userManager.getUser();
+            if (user && user.access_token) {
+              headers["Authorization"] = `Bearer ${user.access_token}`;
+            }
+          } catch (e) {
+            console.warn("Could not get current user for auth header", e);
+          }
+        }
+
         const res = await fetch(url, {
           method: "GET",
-          headers: { "Accept": "application/json" },
+          headers,
         });
 
         if (!res.ok) {
@@ -1217,35 +1232,9 @@
     
   </script>
 
-  <!--Sign In -->
-  <script type="module">
-    import { userManager } from "./scripts/main.js";
+<!-- Auth and login modal script -->  
+<script type="module" src="./main.js"></script>
 
-    userManager.signinCallback().then(function (user) {
-        document.getElementById("email").textContent = user.profile?.email;
-        document.getElementById("access-token").textContent = user.access_token;
-        document.getElementById("id-token").textContent = user.id_token;
-        document.getElementById("refresh-token").textContent = user.refresh_token;
-    });
-  </script>
-
-  <!--Sign In Redirect -->
-  <script type="module">
-    import { userManager } from "./scripts/main.js";
-
-    document.getElementById("signIn").addEventListener("click", async () => {
-        await userManager.signinRedirect();
-    });
-  </script>
-
-  <!--Sign Out -->
-  <script type="module">
-    import { signOutRedirect } from "./scripts/main.js";
-
-    document.getElementById("signOut").addEventListener("click", async () => {
-        await signOutRedirect();
-    });
-  </script>
 
 </body>
 </html>
