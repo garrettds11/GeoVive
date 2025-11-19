@@ -39,6 +39,19 @@
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
         sans-serif;
     }
+    
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow: auto;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr); /* tray | map */
+      min-height: 100vh;
+    }
 
     body {
       background: radial-gradient(circle at top left, #1e293b 0, #020617 40%, #000 100%);
@@ -55,6 +68,7 @@
       align-items: center;
       justify-content: space-between;
       background: linear-gradient(90deg, #020617, #030712);
+      flex: 0 0 auto;
     }
 
     header h1 {
@@ -69,6 +83,12 @@
       color: var(--accent);
     }
 
+    .header-items {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
     .badge {
       padding: 0.2rem 0.75rem;
       border-radius: 999px;
@@ -79,9 +99,9 @@
     }
 
     main {
-      flex: 1;
+      flex: 1 1 auto;
       display: grid;
-      grid-template-columns: 280px minmax(0, 1fr);
+      grid-template-columns: 320px minmax(0, 1fr); /* sidebar | map */
       min-height: 0;
     }
 
@@ -89,6 +109,128 @@
       main {
         grid-template-columns: 1fr;
         grid-template-rows: auto minmax(0, 1fr);
+      }
+
+      header {
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+
+      .header-items {
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+
+      .mapboxgl-canvas {
+        position: relative !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+      }
+    }
+    
+    /* Desktop / default: header behaves normally */
+    #top-tray {
+      width: 100%;
+    }
+
+    /* Tray container on Desktop */
+    @media (min-width: 851px) {
+      .top-tray-container {
+        position: relative;
+        top: auto;
+        left: auto;
+        width: 100%;
+        transform: none !important;
+        box-shadow: none;
+        border-bottom: none;
+        border-right: 1px solid rgba(255,255,255,0.1);
+        background-color: #050814; /* your dark sidebar color */
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .tray-handle {
+        display: none; /* no handle on desktop */
+      }
+
+      .tray-content {
+        padding: 0.75rem 1rem 1rem;
+        overflow-y: auto;
+        height: 100%;
+      }
+    }
+
+    /* Mobile: turn header into a slide-down tray */
+    @media (max-width: 850px) {
+      .layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(0, 1fr); /* map spans */
+      }
+
+      .top-tray-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+
+        background-color: #050814;
+        border-bottom: 1px solid rgba(255,255,255,0.12);
+        box-shadow: 0 2px 5px rgba(0,0,0,0.6);
+
+        transform: translateY(0); /* open by default */
+        transition: transform 0.3s ease-in-out;
+        z-index: 1000;
+
+        max-height: 80vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* collapsed state: only handle visible */
+      .top-tray-container:not(.is-active) {
+        transform: translateY(calc(-100% + 40px)); /* 40px handle height */
+      }
+
+      .tray-handle {
+        height: 3em;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        cursor: pointer;
+        background-color: rgba(15,76,129,0.95);
+        border-bottom: 1px solid rgba(255,255,255,0.15);
+        padding: 3%;
+      }
+
+      .hamburger-icon {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        height: 18px;
+        width: 24px;
+      }
+
+      .hamburger-icon span {
+        display: block;
+        height: 3px;
+        background-color: #fff;
+        border-radius: 2px;
+        transition: transform 0.3s ease, opacity 0.3s ease;
+      }
+
+      .tray-content {
+        padding: 0.75rem 1rem 1rem;
+        overflow-y: auto;
+      }
+
+      /* Map fills behind the tray */
+      .map-wrapper {
+        grid-column: 1 / -1;
+        grid-row: 1;
+        min-height: 100vh;
       }
     }
 
@@ -195,11 +337,39 @@
     .legend-swatch.locations { background: #3b82f6; }
     .legend-swatch.alerts { background: #f97316; }
 
-    .feature-list {
+    /*.feature-list {
       flex: 1;
       overflow-y: auto;
-      padding-right: 0.25rem;
       margin-top: 0.25rem;
+      max-height: 320px;
+      position: relative;
+    }
+
+    .feature-list::after {
+      content: "";
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 2em;
+      pointer-events: none;
+      background: linear-gradient(to bottom, var(--bg-alt), var(--bg), var(--accent3));
+      border-bottom-left-radius: 8px;
+      border-bottom-right-radius: 8px;
+    }*/
+
+    .feature-items-scroll {
+      max-height: 250px;        /* leaves room for the <summary> area */
+      overflow-y: auto;         /* scroll instead of growing forever */
+  
+      /* Hide scrollbar (Chrome, Edge, Safari) */
+      scrollbar-width: none;   /* Firefox */
+      -ms-overflow-style: none; /* IE/Edge Legacy */
+      margin-bottom: 2em;    /* space for the fade effect */
+    }
+
+    .feature-items-scroll::-webkit-scrollbar {
+      display: none; /* Chrome/Safari/Edge */
     }
 
     .feature-list-item {
@@ -232,11 +402,17 @@
       color: var(--muted);
     }
 
+    summary {
+      padding-bottom: 1em;
+    }
+
     /* Map container */
+    /* Map fills its wrapper */
     #map {
-      position: relative;
       width: 100%;
       height: 100%;
+      position: relative;
+      min-height: 320px;   /* floor height (esp. on mobile) */
     }
 
     .map-wrapper {
@@ -254,6 +430,18 @@
       flex-direction: column;
       gap: 0.4rem;
       align-items: flex-end;
+    }
+
+    .mapboxgl-canvas {
+      position: relative !important;
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    @media (max-width: 850px) {
+      .map-wrapper {
+        min-height: 70vh;  /* keep at least half the screen for the map */
+      }
     }
 
     .status-pill {
@@ -308,96 +496,123 @@
       font-size: 0.8rem;
       color: var(--muted);
     }
+  
   </style>
 </head>
 <body>
-  <header>
-    <h1><span>🌎 GeoVive</span> · Mapbox + OSM</h1>
-    <div style="display:flex; align-items:center; gap:0.75rem;">
-        <!-- documenation button -->
-        <a 
-          href="https://garrettds11.github.io/GeoVive/docs" 
-          target="_blank"
-          class="docs-btn"
-        >
-          Documentation
-        </a>
-        <!-- style selector menu-->
-        <label style="font-size:0.8rem; color:#9ca3af;">
-        Style:
-          <select id="style-select" style="background:#020617; color:#e5e7eb; border:1px solid #1f2937; border-radius:999px; padding:0.15rem 0.5rem; font-size:0.8rem;">
-              <option value="streets">Streets</option>
-              <option value="outdoors">Outdoors</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-              <option value="satellite">Satellite</option>
-          </select>
-        </label>
-        <!-- map connection status indicator-->
-        <div class="status-pill">
-          <span class="status-dot"></span>
-          <span>Mapbox connected</span>
-        </div>
-        <div class="badge">v0.1 · beta</div>
-    </div>
-  </header>
 
-  <main>
-    <!-- Sidebar -->
-    <aside class="sidebar">
-      <div>
-        <h2>Layers & Filters</h2>
-        <p class="hint">
-          Pan around the map, click points to inspect them, or select an item in this list to fly to it.
-        </p>
-      </div>
+  <main class="layout">
+    <!-- CONTROL TRAY: header + sidebar live in here -->
+    <section class="top-tray-container is-active" id="topTrayContainer">
 
-      <div class="filter-group">
-        <h3>Show categories</h3>
-        <div class="filter-option">
-          <input type="checkbox" id="filter-events" value="event" checked />
-          <label for="filter-events">Events</label>
-        </div>
-        <div class="filter-option">
-          <input type="checkbox" id="filter-locations" value="location" checked />
-          <label for="filter-locations">Locations</label>
-        </div>
-        <div class="filter-option">
-          <input type="checkbox" id="filter-alerts" value="alert" checked />
-          <label for="filter-alerts">Alerts</label>
-        </div>
+      <div class="tray-content">
+        <!-- Header -->
+        <header>
+          <!-- GEOVIVE title, docs button, style select, etc. -->
+          <h1><span>🌎 GeoVive</span> · Mapbox + OSM</h1>
+          <div class="header-items">
+              <!-- documenation button -->
+              <a 
+                href="https://garrettds11.github.io/GeoVive/docs" 
+                target="_blank"
+                class="docs-btn"
+              >
+                Documentation
+              </a>
+              <!-- style selector menu-->
+              <label style="font-size:0.8rem; color:#9ca3af;">
+              Style:
+                <select id="style-select" style="background:#020617; color:#e5e7eb; border:1px solid #1f2937; border-radius:999px; padding:0.15rem 0.5rem; font-size:0.8rem;">
+                    <option value="streets">Streets</option>
+                    <option value="outdoors">Outdoors</option>
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                    <option value="satellite">Satellite</option>
+                </select>
+              </label>
+              <!-- map connection status indicator-->
+              <div class="status-pill">
+                <span class="status-dot"></span>
+                <span>Mapbox connected</span>
+              </div>
+              <div class="badge">v0.1 · beta</div>
+            </div>
+        </header>
 
-        <div class="legend">
-          <div class="legend-item">
-            <span class="legend-swatch events"></span> Events
+        <!-- Sidebar -->
+        <aside class="sidebar">
+          <!-- dataset selector, feature list, filters, etc. -->
+          <div>
+            <h2>Layers & Filters</h2>
+            <p class="hint">
+              Pan around the map, click points to inspect them, or select an item in this list to fly to it.
+            </p>
           </div>
-          <div class="legend-item">
-            <span class="legend-swatch locations"></span> Locations
+          
+          <!-- Category filters -->
+          <div class="filter-group">
+            <h3>Show categories</h3>
+            <div class="filter-option">
+              <input type="checkbox" id="filter-events" value="event" checked />
+              <label for="filter-events">Events</label>
+            </div>
+            <div class="filter-option">
+              <input type="checkbox" id="filter-locations" value="location" checked />
+              <label for="filter-locations">Locations</label>
+            </div>
+            <div class="filter-option">
+              <input type="checkbox" id="filter-alerts" value="alert" checked />
+              <label for="filter-alerts">Alerts</label>
+            </div>
+            
+            <!-- Legend -->
+            <div class="legend">
+              <div class="legend-item">
+                <span class="legend-swatch events"></span> Events
+              </div>
+              <div class="legend-item">
+                <span class="legend-swatch locations"></span> Locations
+              </div>
+              <div class="legend-item">
+                <span class="legend-swatch alerts"></span> Alerts
+              </div>
+            </div>
           </div>
-          <div class="legend-item">
-            <span class="legend-swatch alerts"></span> Alerts
-          </div>
-        </div>
-      </div>
+          
+          <!-- Dataset selector -->
+          <div class="filter-group" style="margin-top: 0.5rem;">
+            <h3>Dataset</h3>
+            <select id="dataset-select" style="width:100%; background:#020617; color:#e5e7eb; border:1px solid #1f2937; border-radius:0.5rem; padding:0.35rem 0.5rem; font-size:0.85rem;">
+                <option value="demo">Demo (built-in)</option>
+                <option value="csv">Custom CSV file</option>
+                <option value="osm">OpenStreetMap file</option>
+                <option value="dynamo">GeoVive Dataset</option>
+            </select>
+            <p class="hint" style="margin-top:0.4rem;">
+                Choose which dataset GeoVive displays.
+            </p>
+            <br>
 
-      <div class="filter-group" style="margin-top: 0.5rem;">
-        <h3>Dataset</h3>
-        <select id="dataset-select" style="width:100%; background:#020617; color:#e5e7eb; border:1px solid #1f2937; border-radius:0.5rem; padding:0.35rem 0.5rem; font-size:0.85rem;">
-            <option value="demo">Demo points (built-in)</option>
-            <option value="csv">Custom CSV (local file)</option>
-            <option value="osm">OSM GeoJSON file</option>
-            <!-- later: <option value="dynamo">Live from DynamoDB</option> -->
-        </select>
-        <p class="hint" style="margin-top:0.4rem;">
-            Choose which dataset GeoVive displays.
-        </p>
-        <br>
-        <h3>Features</h3>
-        <div id="feature-list" class="feature-list">
-          <!-- Populated by JS -->
+            <!-- Feature list -->
+            <div id="feature-list" class="feature-list">
+              <details id="feature-details">
+                <summary>Features</summary>
+                <div id="feature-items" class="feature-items-scroll">
+                  <!-- Populated by JS -->
+                </div>
+              </details>
+            </div>
+          </div>
+        </aside>
+      </div>
+      <div class="tray-handle" id="trayHandle">
+        <div class="hamburger-icon">
+          <span></span>
+          <span></span>
+          <span></span>
         </div>
       </div>
-    </aside>
+    </section>
 
     <!-- Map -->
     <section class="map-wrapper">
@@ -411,442 +626,497 @@
     </section>
   </main>
 
-<script>
-  // 1. Mapbox token
-  mapboxgl.accessToken = "pk.eyJ1IjoiZ3doaXoiLCJhIjoiY21pNHc4cXFuMjI2MzJqbXowZDFybGdvYiJ9.syxHOGayNBn3ZEnKr-8KVg";
+  
+  <script>
+    // 0. Tray toggle for mobile and filter initialization
+    document.addEventListener("DOMContentLoaded", () => {
+      const trayHandle = document.getElementById("trayHandle");
+      const topTrayContainer = document.getElementById("topTrayContainer");
 
-  // 2. Map styles
-  const MAP_STYLES = {
-    streets: "mapbox://styles/mapbox/streets-v12",
-    outdoors: "mapbox://styles/mapbox/outdoors-v12",
-    light: "mapbox://styles/mapbox/light-v11",
-    dark: "mapbox://styles/mapbox/dark-v11",
-    satellite: "mapbox://styles/mapbox/satellite-streets-v12"
-  };
+      if (!trayHandle || !topTrayContainer) return;
 
-  // 3. Base dataset (demo points) – define BEFORE we reference it
-  const geoviveData = {
-    type: "FeatureCollection",
-    features: [
-      {
-        type: "Feature",
-        properties: {
-          id: "loc-1",
-          name: "Home",
-          category: "location",
-          description: "No place like home."
-        },
-        geometry: {
-          type: "Point",
-          coordinates: [-93.7321, 32.5159]
-        }
-      },
-      {
-        type: "Feature",
-        properties: {
-          id: "evt-1",
-          name: "Security Summit",
-          category: "event",
-          description: "Regional cybersecurity meetup and roundtable."
-        },
-        geometry: {
-          type: "Point",
-          coordinates: [-96.7969, 32.7763]
-        }
-      },
-      {
-        type: "Feature",
-        properties: {
-          id: "loc-2",
-          name: "Revelation Escapes",
-          category: "location",
-          description: "Mobile escape room ministry."
-        },
-        geometry: {
-          type: "Point",
-          coordinates: [-103.06583718650495, 44.14067709235039]
-        }
-      },
-      {
-        type: "Feature",
-        properties: {
-          id: "loc-3",
-          name: "Escape Go Workshop",
-          category: "location",
-          description: "Small-batch puzzle kit assembly shop."
-        },
-        geometry: {
-          type: "Point",
-          coordinates: [-93.7321, 32.5159]
-        }
-      },
-      {
-        type: "Feature",
-        properties: {
-          id: "alrt-1",
-          name: "Weather Watch",
-          category: "alert",
-          description: "Heads-up: strong storms possible this weekend."
-        },
-        geometry: {
-          type: "Point",
-          coordinates: [-90.0715, 29.9511]
-        }
-      },
-      {
-        type: "Feature",
-        properties: {
-          id: "loc-4",
-          name: "VulnServer Lab Node",
-          category: "location",
-          description: "Experimental lab node for training environments."
-        },
-        geometry: {
-          type: "Point",
-          coordinates: [-122.3321, 47.6062]
-        }
+      // START FIX: Set default state to 'is-active' (extended) on mobile too.
+      // This ensures it is extended by default on ALL screen sizes.
+      topTrayContainer.classList.add("is-active"); 
+
+      // Function to check and possibly collapse on resize for mobile
+      function setInitialTrayState() {
+        if (window.innerWidth > 850) {
+          topTrayContainer.classList.add("is-active"); // Always open on desktop
+        } 
+        // NOTE: On mobile (<850px), we leave it as 'is-active' by default
+        // until the user clicks the handle.
       }
-    ]
-  };
 
-  // Category → color
-  const categoryColor = {
-    event: "#22c55e",
-    location: "#3b82f6",
-    alert: "#f97316"
-  };
+      setInitialTrayState();
 
-  // Global cache of current dataset
-  let currentDataset = "demo";
-  let demoDataset = geoviveData;
+      trayHandle.addEventListener("click", () => {
+        topTrayContainer.classList.toggle("is-active");
+      });
 
-  // Optional: OSM dataset file path (exported via Overpass Turbo)
-  const OSM_DATA_URL = "data/osm-places.geojson";
+      // Optional: adjust on resize (e.g., rotate phone)
+      window.addEventListener("resize", () => {
+        setInitialTrayState();
+      });
 
-  // Optional: CSV path
-  const CSV_DATA_URL = "data/custom-places.csv";
-  
-  
-  // 4. Data loading + parsing
-  function csvToGeoJSON(csvText) {
-    const lines = csvText.trim().split("\n");
-    const headers = lines[0].split(",").map(h => h.trim());
+      // END FIX: Manually run setupCategoryFilters() to apply initial visibility
+      // to the feature list items, preventing them from being hidden due to 
+      // the map load delay/issue.
+      setupCategoryFilters(); 
+    });
 
-    const features = lines
-      .slice(1)
-      .filter(line => line.trim())
-      .map(line => {
-        const cells = line.split(",").map(v => v.trim());
-        const row = {};
-        headers.forEach((h, i) => (row[h] = cells[i]));
+    // 1. Mapbox token
+    mapboxgl.accessToken = "pk.eyJ1IjoiZ3doaXoiLCJhIjoiY21pNHc4cXFuMjI2MzJqbXowZDFybGdvYiJ9.syxHOGayNBn3ZEnKr-8KVg";
 
-        const lat = parseFloat(row.lat);
-        const lng = parseFloat(row.lng);
+    // 2. Map styles
+    const MAP_STYLES = {
+      streets: "mapbox://styles/mapbox/streets-v12",
+      outdoors: "mapbox://styles/mapbox/outdoors-v12",
+      light: "mapbox://styles/mapbox/light-v11",
+      dark: "mapbox://styles/mapbox/dark-v11",
+      satellite: "mapbox://styles/mapbox/satellite-streets-v12"
+    };
 
-        return {
+    // 3. Base dataset (demo points) – define BEFORE we reference it
+    const geoviveData = {
+      type: "FeatureCollection",
+      features: [
+        {
           type: "Feature",
           properties: {
-            id: row.id || `${row.name}-${lat}-${lng}`,
-            name: row.name,
-            category: row.category || "location",
-            description: row.description || ""
+            id: "loc-1",
+            name: "Home",
+            category: "location",
+            description: "No place like home."
           },
           geometry: {
             type: "Point",
-            coordinates: [lng, lat]
+            coordinates: [-93.7321, 32.5159]
           }
-        };
-      });
-
-    return { type: "FeatureCollection", features };
-  }
-
-  // Map front-end hostnames to API Gateway base URLs
-  const GEO_VIVE_ENV_MAP = {
-    // Dev frontend → Dev API
-    "dev.d24kp6zzj6jjwt.amplifyapp.com":
-      "https://moviip1p0g.execute-api.us-east-1.amazonaws.com/d",
-
-    // Prod frontend → Prod API (example domain)
-    "geovive.yourdomain.com":
-      "https://moviip1p0g.execute-api.us-east-1.amazonaws.com/p",
-  };
-
-  // Resolve API base from current hostname, defaulting to dev if unknown
-  const GEO_VIVE_API_BASE =
-    GEO_VIVE_ENV_MAP[window.location.hostname] ||
-    "https://moviip1p0g.execute-api.us-east-1.amazonaws.com/d";
-
-
-  async function loadDataset(key) {
-    currentDataset = key;
-
-    if (key === "demo") {
-      return demoDataset;
-    }
-
-    if (key === "osm") {
-      const res = await fetch(OSM_DATA_URL, {
-        method: "GET",
-        headers: { "Accept": "application/json" },
-      });
-
-      if (!res.ok) {
-        throw new Error(`OSM dataset load failed: ${res.status} ${res.statusText}`);
-      }
-
-      return await res.json();
-    }
-
-    if (key === "csv") {
-      const res = await fetch(CSV_DATA_URL, {
-        method: "GET",
-      });
-
-      if (!res.ok) {
-        throw new Error(`CSV dataset load failed: ${res.status} ${res.statusText}`);
-      }
-
-      const text = await res.text();
-      return csvToGeoJSON(text);
-    }
-
-    if (key === "dynamo") {
-      const url = `${GEO_VIVE_API_BASE}/v1/features`;
-
-      const res = await fetch(url, {
-        method: "GET",
-        headers: { "Accept": "application/json" },
-      });
-
-      if (!res.ok) {
-        throw new Error(`GeoVive API load failed: ${res.status} ${res.statusText}`);
-      }
-
-      const data = await res.json();
-
-      // Optional sanity check: expect GeoJSON FeatureCollection
-      if (!data || data.type !== "FeatureCollection" || !Array.isArray(data.features)) {
-        console.warn("GeoVive API returned unexpected shape:", data);
-      }
-
-      return data;
-    }
-
-    // Fallback for unknown keys
-    throw new Error(`Unknown dataset key: ${key}`);
-  }
-
-  // 5. Map init
-  const map = new mapboxgl.Map({
-    container: "map",
-    style: MAP_STYLES.streets,
-    center: [-96.5730, 39.1794],
-    zoom: 3.0
-  });
-
-  // Zoom overlay
-  const zoomValueEl = document.getElementById("zoom-value");
-  map.on("zoom", () => {
-    zoomValueEl.textContent = map.getZoom().toFixed(2);
-  });
-  map.on("load", () => {
-    zoomValueEl.textContent = map.getZoom().toFixed(2);
-  });
-
-  // Helper to ensure our layer exists (used both on first load + style changes)
-  function ensurePointLayer() {
-    if (!map.getLayer("geovive-layer")) {
-      map.addLayer({
-        id: "geovive-layer",
-        type: "circle",
-        source: "geovive-points",
-        paint: {
-          "circle-radius": 7,
-          "circle-color": [
-            "match",
-            ["get", "category"],
-            "event", categoryColor.event,
-            "location", categoryColor.location,
-            "alert", categoryColor.alert,
-            "#e5e7eb"
-          ],
-          "circle-stroke-width": 1.5,
-          "circle-stroke-color": "#020617",
-          "circle-opacity": 0.9
+        },
+        {
+          type: "Feature",
+          properties: {
+            id: "evt-1",
+            name: "Security Summit",
+            category: "event",
+            description: "Regional cybersecurity meetup and roundtable."
+          },
+          geometry: {
+            type: "Point",
+            coordinates: [-96.7969, 32.7763]
+          }
+        },
+        {
+          type: "Feature",
+          properties: {
+            id: "loc-2",
+            name: "Revelation Escapes",
+            category: "location",
+            description: "Mobile escape room ministry."
+          },
+          geometry: {
+            type: "Point",
+            coordinates: [-103.06583718650495, 44.14067709235039]
+          }
+        },
+        {
+          type: "Feature",
+          properties: {
+            id: "loc-3",
+            name: "Escape Go Workshop",
+            category: "location",
+            description: "Small-batch puzzle kit assembly shop."
+          },
+          geometry: {
+            type: "Point",
+            coordinates: [-93.7321, 32.5159]
+          }
+        },
+        {
+          type: "Feature",
+          properties: {
+            id: "alrt-1",
+            name: "Weather Watch",
+            category: "alert",
+            description: "Heads-up: strong storms possible this weekend."
+          },
+          geometry: {
+            type: "Point",
+            coordinates: [-90.0715, 29.9511]
+          }
+        },
+        {
+          type: "Feature",
+          properties: {
+            id: "loc-4",
+            name: "VulnServer Lab Node",
+            category: "location",
+            description: "Experimental lab node for training environments."
+          },
+          geometry: {
+            type: "Point",
+            coordinates: [-122.3321, 47.6062]
+          }
         }
-      });
+      ]
+    };
+
+    // Category → color
+    const categoryColor = {
+      event: "#22c55e",
+      location: "#3b82f6",
+      alert: "#f97316"
+    };
+
+    // Global cache of current dataset
+    let currentDataset = "demo";
+    let demoDataset = geoviveData;
+
+    // Optional: OSM dataset file path (exported via Overpass Turbo)
+    const OSM_DATA_URL = "data/osm-places.geojson";
+
+    // Optional: CSV path
+    const CSV_DATA_URL = "data/custom-places.csv";
+    
+    
+    // 4. Data loading + parsing
+    function csvToGeoJSON(csvText) {
+      const lines = csvText.trim().split("\n");
+      const headers = lines[0].split(",").map(h => h.trim());
+
+      const features = lines
+        .slice(1)
+        .filter(line => line.trim())
+        .map(line => {
+          const cells = line.split(",").map(v => v.trim());
+          const row = {};
+          headers.forEach((h, i) => (row[h] = cells[i]));
+
+          const lat = parseFloat(row.lat);
+          const lng = parseFloat(row.lng);
+
+          return {
+            type: "Feature",
+            properties: {
+              id: row.id || `${row.name}-${lat}-${lng}`,
+              name: row.name,
+              category: row.category || "location",
+              description: row.description || ""
+            },
+            geometry: {
+              type: "Point",
+              coordinates: [lng, lat]
+            }
+          };
+        });
+
+      return { type: "FeatureCollection", features };
     }
-  }
 
-  async function applyDataset(key) {
-    const geojson = await loadDataset(key);
+    // Map front-end hostnames to API Gateway base URLs
+    const GEO_VIVE_ENV_MAP = {
+      // Dev frontend → Dev API
+      "dev.d24kp6zzj6jjwt.amplifyapp.com":
+        "https://moviip1p0g.execute-api.us-east-1.amazonaws.com/d",
 
-    if (!map.getSource("geovive-points")) {
-      map.addSource("geovive-points", {
-        type: "geojson",
-        data: geojson
-      });
-    } else {
-      map.getSource("geovive-points").setData(geojson);
-    }
+      // Prod frontend → Prod API (example domain)
+      "geovive.yourdomain.com":
+        "https://moviip1p0g.execute-api.us-east-1.amazonaws.com/p",
+    };
 
-    buildFeatureList(geojson.features);
+    // Resolve API base from current hostname, defaulting to dev if unknown
+    const GEO_VIVE_API_BASE =
+      GEO_VIVE_ENV_MAP[window.location.hostname] ||
+      "https://moviip1p0g.execute-api.us-east-1.amazonaws.com/d";
 
-    if (geojson.features.length > 0) {
-      const bounds = new mapboxgl.LngLatBounds();
-      geojson.features.forEach(f => {
-        const [lng, lat] = f.geometry.coordinates;
-        bounds.extend([lng, lat]);
-      });
-      map.fitBounds(bounds, { padding: 60, maxZoom: 10 });
-    }
-  }
 
-  // Build sidebar feature list
-  function buildFeatureList(features) {
-    const listEl = document.getElementById("feature-list");
-    if (!listEl) return;
+    async function loadDataset(key) {
+      currentDataset = key;
 
-    listEl.innerHTML = "";
-
-    features.forEach((feature) => {
-      const props = feature.properties || {};
-      const id = props.id || crypto.randomUUID?.() || String(Math.random());
-      const name = props.name || "Untitled";
-      const category = props.category || "location";
-      const description = props.description || "";
-
-      const item = document.createElement("div");
-      item.className = "feature-list-item";
-      item.dataset.featureId = id;
-      item.dataset.category = category;
-
-      item.innerHTML = `
-        <div class="feature-name">${name}</div>
-        <div class="feature-meta">
-          ${category.toUpperCase()}
-          ${description ? " · " + description : ""}
-        </div>
-      `;
-
-      item.addEventListener("click", () => {
-        const [lng, lat] = feature.geometry.coordinates;
-        map.flyTo({ center: [lng, lat], zoom: 8, essential: true });
-
-        new mapboxgl.Popup({ closeOnMove: true })
-          .setLngLat([lng, lat])
-          .setHTML(`
-            <div class="popup-title">${name}</div>
-            <div class="popup-category">${category.toUpperCase()}</div>
-            <div class="popup-desc">${description}</div>
-          `)
-          .addTo(map);
-      });
-
-      listEl.appendChild(item);
-    });
-  }
-
-  // Category checkbox wiring
-  function setupCategoryFilters() {
-    const eventsCheckbox = document.getElementById("filter-events");
-    const locationsCheckbox = document.getElementById("filter-locations");
-    const alertsCheckbox = document.getElementById("filter-alerts");
-
-    const entries = [
-      { el: eventsCheckbox, value: "event" },
-      { el: locationsCheckbox, value: "location" },
-      { el: alertsCheckbox, value: "alert" }
-    ];
-
-    function applyFilters() {
-      const activeCategories = entries
-        .filter(e => e.el && e.el.checked)
-        .map(e => e.value);
-
-      // Map layer filter
-      if (map.getLayer("geoboard-layer")) {
-        if (activeCategories.length === 0) {
-          map.setFilter("geoboard-layer", ["==", ["get", "category"], "__none__"]);
-        } else {
-          map.setFilter(
-            "geoboard-layer",
-            ["in", ["get", "category"], ["literal", activeCategories]]
-          );
-        }
+      if (key === "demo") {
+        return demoDataset;
       }
 
-      // Sidebar filter
-      document.querySelectorAll(".feature-list-item").forEach((item) => {
-        const cat = item.dataset.category;
-        item.style.display = activeCategories.includes(cat) ? "flex" : "none";
-      });
+      if (key === "osm") {
+        const res = await fetch(OSM_DATA_URL, {
+          method: "GET",
+          headers: { "Accept": "application/json" },
+        });
+
+        if (!res.ok) {
+          throw new Error(`OSM dataset load failed: ${res.status} ${res.statusText}`);
+        }
+
+        return await res.json();
+      }
+
+      if (key === "csv") {
+        const res = await fetch(CSV_DATA_URL, {
+          method: "GET",
+        });
+
+        if (!res.ok) {
+          throw new Error(`CSV dataset load failed: ${res.status} ${res.statusText}`);
+        }
+
+        const text = await res.text();
+        return csvToGeoJSON(text);
+      }
+
+      if (key === "dynamo") {
+        const url = `${GEO_VIVE_API_BASE}/v1/features`;
+
+        const res = await fetch(url, {
+          method: "GET",
+          headers: { "Accept": "application/json" },
+        });
+
+        if (!res.ok) {
+          throw new Error(`GeoVive API load failed: ${res.status} ${res.statusText}`);
+        }
+
+        const data = await res.json();
+
+        // Optional sanity check: expect GeoJSON FeatureCollection
+        if (!data || data.type !== "FeatureCollection" || !Array.isArray(data.features)) {
+          console.warn("GeoVive API returned unexpected shape:", data);
+        }
+
+        return data;
+      }
+
+      // Fallback for unknown keys
+      throw new Error(`Unknown dataset key: ${key}`);
     }
 
-    entries.forEach(e => {
-      if (e.el) e.el.addEventListener("change", applyFilters);
+    // 5. Map init
+    const geoViveMap = new mapboxgl.Map({
+      container: "map",
+      style: MAP_STYLES.streets,
+      center: [-96.5730, 39.1794],
+      zoom: 3.0
     });
 
-    applyFilters();
-  }
+    // Zoom overlay
+    const zoomValueEl = document.getElementById("zoom-value");
+    geoViveMap.on("zoom", () => {
+      zoomValueEl.textContent = geoViveMap.getZoom().toFixed(2);
+    });
+    geoViveMap.on("load", () => {
+      zoomValueEl.textContent = geoViveMap.getZoom().toFixed(2);
+    });
 
-  // Initial load
-  map.on("load", async () => {
-    await applyDataset("demo");
-    ensurePointLayer();
-      map.on("mouseenter", "geoboard-layer", () => {
-        map.getCanvas().style.cursor = "pointer";
-      });
+    // Helper to ensure our layer exists (used both on first load + style changes)
+    function ensurePointLayer() {
+      if (!geoViveMap.getLayer("geovive-layer")) {
+        geoViveMap.addLayer({
+          id: "geovive-layer",
+          type: "circle",
+          source: "geovive-points",
+          paint: {
+            "circle-radius": 7,
+            "circle-color": [
+              "match",
+              ["get", "category"],
+              "event", categoryColor.event,
+              "location", categoryColor.location,
+              "alert", categoryColor.alert,
+              "#e5e7eb"
+            ],
+            "circle-stroke-width": 1.5,
+            "circle-stroke-color": "#020617",
+            "circle-opacity": 0.9
+          }
+        });
+      }
+    }
 
-      map.on("mouseleave", "geoboard-layer", () => {
-        map.getCanvas().style.cursor = "";
-      });
+    async function applyDataset(key) {
+      const geojson = await loadDataset(key);
 
-      map.on("click", "geoboard-layer", (e) => {
-        const feature = e.features && e.features[0];
-        if (!feature) return;
+      if (!geoViveMap.getSource("geovive-points")) {
+        geoViveMap.addSource("geovive-points", {
+          type: "geojson",
+          data: geojson
+        });
+      } else {
+        geoViveMap.getSource("geovive-points").setData(geojson);
+      }
 
-        const [lng, lat] = feature.geometry.coordinates;
+      buildFeatureList(geojson.features);
+
+      if (geojson.features.length > 0) {
+        const bounds = new mapboxgl.LngLatBounds();
+        geojson.features.forEach(f => {
+          const [lng, lat] = f.geometry.coordinates;
+          bounds.extend([lng, lat]);
+        });
+        geoViveMap.fitBounds(bounds, { padding: 60, maxZoom: 10 });
+      }
+    }
+
+    // Build sidebar feature list
+    function buildFeatureList(features) {
+      const itemsContainer = document.getElementById("feature-items");
+      const detailsEl = document.getElementById("feature-details");
+
+      if (!itemsContainer || !detailsEl) return;
+
+      // Clear existing items but KEEP <details>/<summary>
+      itemsContainer.innerHTML = "";
+
+      if (!features || !features.length) {
+        // No features: optionally collapse the section
+        detailsEl.open = false;
+        return;
+      }
+
+      // Ensure it's expanded when we actually have data
+      detailsEl.open = true;
+
+      features.forEach((feature) => {
         const props = feature.properties || {};
+        const id = props.id || (crypto.randomUUID?.() ?? String(Math.random()));
         const name = props.name || "Untitled";
         const category = props.category || "location";
         const description = props.description || "";
 
-        new mapboxgl.Popup({ closeOnMove: true })
-          .setLngLat([lng, lat])
-          .setHTML(`
-            <div class="popup-title">${name}</div>
-            <div class="popup-category">${category.toUpperCase()}</div>
-            <div class="popup-desc">${description}</div>
-          `)
-          .addTo(map);
+        const item = document.createElement("div");
+        item.className = "feature-list-item";
+        item.dataset.featureId = id;
+        item.dataset.category = category;
+
+        item.innerHTML = `
+          <div class="feature-name">${name}</div>
+          <div class="feature-meta">
+            ${category.toUpperCase()}
+            ${description ? " · " + description : ""}
+          </div>
+        `;
+
+        item.addEventListener("click", () => {
+          const coords = feature.geometry?.coordinates;
+          if (!coords || coords.length < 2) return;
+
+          const [lng, lat] = coords;
+
+          geoViveMap.flyTo({ center: [lng, lat], zoom: 8, essential: true });
+
+          new mapboxgl.Popup({ closeOnMove: true })
+            .setLngLat([lng, lat])
+            .setHTML(`
+              <div class="popup-title">${name}</div>
+              <div class="popup-category">${category.toUpperCase()}</div>
+              <div class="popup-desc">${description}</div>
+            `)
+            .addTo(map);
+        });
+
+        itemsContainer.appendChild(item);
       });
-    buildFeatureList(demoDataset.features);
-    setupCategoryFilters();
-  });
+    }
 
-  // 6. Style selector
-  const styleSelect = document.getElementById("style-select");
-  styleSelect.addEventListener("change", () => {
-    const styleKey = styleSelect.value;
-    const styleUrl = MAP_STYLES[styleKey] || MAP_STYLES.streets;
+    // Category checkbox wiring
+    function setupCategoryFilters() {
+      const eventsCheckbox = document.getElementById("filter-events");
+      const locationsCheckbox = document.getElementById("filter-locations");
+      const alertsCheckbox = document.getElementById("filter-alerts");
 
-    map.setStyle(styleUrl);
+      const entries = [
+        { el: eventsCheckbox, value: "event" },
+        { el: locationsCheckbox, value: "location" },
+        { el: alertsCheckbox, value: "alert" }
+      ];
 
-    map.once("style.load", async () => {
-      await applyDataset(currentDataset); // reload whatever dataset is active
-      ensurePointLayer();                 // re-add the layer on the new style
+      function applyFilters() {
+        const activeCategories = entries
+          .filter(e => e.el && e.el.checked)
+          .map(e => e.value);
+
+        // Map layer filter
+        if (geoViveMap.getLayer("geoboard-layer")) {
+          if (activeCategories.length === 0) {
+            geoViveMap.setFilter("geoboard-layer", ["==", ["get", "category"], "__none__"]);
+          } else {
+            geoViveMap.setFilter(
+              "geoboard-layer",
+              ["in", ["get", "category"], ["literal", activeCategories]]
+            );
+          }
+        }
+
+        // Sidebar filter
+        document.querySelectorAll(".feature-list-item").forEach((item) => {
+          const cat = item.dataset.category;
+          item.style.display = activeCategories.includes(cat) ? "flex" : "none";
+        });
+      }
+
+      entries.forEach(e => {
+        if (e.el) e.el.addEventListener("change", applyFilters);
+      });
+
+      applyFilters();
+    }
+
+    // Initial load
+    geoViveMap.on("load", async () => {
+      await applyDataset("demo");
+      ensurePointLayer();
+        geoViveMap.on("mouseenter", "geoboard-layer", () => {
+          geoViveMap.getCanvas().style.cursor = "pointer";
+        });
+
+        geoViveMap.on("mouseleave", "geoboard-layer", () => {
+          geoViveMap.getCanvas().style.cursor = "";
+        });
+
+        geoViveMap.on("click", "geoboard-layer", (e) => {
+          const feature = e.features && e.features[0];
+          if (!feature) return;
+
+          const [lng, lat] = feature.geometry.coordinates;
+          const props = feature.properties || {};
+          const name = props.name || "Untitled";
+          const category = props.category || "location";
+          const description = props.description || "";
+
+          new mapboxgl.Popup({ closeOnMove: true })
+            .setLngLat([lng, lat])
+            .setHTML(`
+              <div class="popup-title">${name}</div>
+              <div class="popup-category">${category.toUpperCase()}</div>
+              <div class="popup-desc">${description}</div>
+            `)
+            .addTo(map);
+        });
+      buildFeatureList(demoDataset.features);
+      setupCategoryFilters();
     });
-  });
 
-  // 7. Dataset selector
-  const datasetSelect = document.getElementById("dataset-select");
-  datasetSelect.addEventListener("change", async () => {
-    const key = datasetSelect.value;
-    await applyDataset(key);
-  });
-</script>
+    // 6. Style selector
+    const styleSelect = document.getElementById("style-select");
+    styleSelect.addEventListener("change", () => {
+      const styleKey = styleSelect.value;
+      const styleUrl = MAP_STYLES[styleKey] || MAP_STYLES.streets;
+
+      geoViveMap.setStyle(styleUrl);
+
+      geoViveMap.once("style.load", async () => {
+        await applyDataset(currentDataset); // reload whatever dataset is active
+        ensurePointLayer();                 // re-add the layer on the new style
+      });
+    });
+
+    // 7. Dataset selector
+    const datasetSelect = document.getElementById("dataset-select");
+    datasetSelect.addEventListener("change", async () => {
+      const key = datasetSelect.value;
+      await applyDataset(key);
+    });
+    
+  </script>
 
 </body>
 </html>
