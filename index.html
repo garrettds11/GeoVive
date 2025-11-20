@@ -544,11 +544,28 @@
     }
 
     .status-dot {
-      width: 7px;
-      height: 7px;
+      width: 0px;
+      height: 0px;
       border-radius: 999px;
       background: var(--accent);
-      box-shadow: 0 0 10px rgba(34, 197, 94, 0.65);
+      box-shadow: 0 0 4px 4px rgba(34, 197, 94, 0.80);
+      padding-right: 1px;
+      margin-right: 5px;
+    }
+
+    .status-pill.ok {
+      color: inherit; /* #bbf7d0; light green text */
+      border-color: rgba(34, 197, 94, 0.4);
+    }
+
+    .status-pill.error {
+      color: #f8ce73; /* light red text */
+      border-color: rgba(248, 172, 73, 0.8);
+    }
+
+    .status-pill.error .status-dot {
+      background: #ef4444;
+      box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
     }
 
     .mapboxgl-popup {
@@ -1018,6 +1035,32 @@
       style: MAP_STYLES.outdoors,
       center: [-96.5730, 39.1794],
       zoom: 3.0
+    });
+
+    // Map status indicator
+    const statusPill = document.querySelector(".status-pill");
+    const statusText = statusPill?.querySelector("span:last-child");
+
+    // default: pending
+    if (statusPill) {
+      statusText.textContent = "Connecting…";
+    }
+
+    // on successful style load
+    geoViveMap.on("load", () => {
+      if (!statusPill) return;
+      statusPill.classList.remove("error");
+      statusPill.classList.add("ok");
+      statusText.textContent = "Mapbox connected";
+    });
+
+    // on any map error
+    geoViveMap.on("error", (e) => {
+      console.error("Mapbox error", e);
+      if (!statusPill) return;
+      statusPill.classList.remove("ok");
+      statusPill.classList.add("error");
+      statusText.textContent = "Mapbox error";
     });
 
     // Zoom overlay
