@@ -9,7 +9,7 @@ const cognitoAuthConfig = {
   client_id: "hfchi8fm98nberrcj43ge2ipu",
 
   // Must exactly match a Callback URL in your app client settings
-  redirect_uri: "https://dev.d24kp6zzj6jjwt.amplifyapp.com",
+  redirect_uri: "https://dev.d24kp6zzj6jjwt.amplifyapp.com/",
 
   response_type: "code",
 
@@ -50,14 +50,19 @@ export async function getCurrentUser() {
 }
 
 export async function logout() {
-  // Easiest: redirect through Cognito logout
   const clientId = "hfchi8fm98nberrcj43ge2ipu";
-  const logoutUri = "https://dev.d24kp6zzj6jjwt.amplifyapp.com"; // same as your SPA root
+  const logoutUri = "https://dev.d24kp6zzj6jjwt.amplifyapp.com/"; // same as your redirect_uri
   const cognitoDomain = "https://us-east-1clqbezjhi.auth.us-east-1.amazoncognito.com";
 
-  window.location.href =
-    `${cognitoDomain}/logout?client_id=${clientId}` +
+  // 1) Clear the local user from oidc-client-ts (localStorage)
+  await userManager.removeUser();
+
+  // 2) Redirect to Cognito to clear server session
+  const url =
+    `${cognitoDomain}/logout?client_id=${encodeURIComponent(clientId)}` +
     `&logout_uri=${encodeURIComponent(logoutUri)}`;
+
+  window.location.href = url;
 }
 
 // Convenience getter for the access token
