@@ -9,7 +9,7 @@ const cognitoAuthConfig = {
   client_id: "hfchi8fm98nberrcj43ge2ipu",
 
   // Must exactly match a Callback URL in your app client settings
-  redirect_uri: "https://d84l1y8p4kdic.cloudfront.net/",
+  redirect_uri: "https://dev.d24kp6zzj6jjwt.amplifyapp.com",
 
   response_type: "code",
 
