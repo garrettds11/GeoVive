@@ -52,7 +52,7 @@ export async function getCurrentUser() {
 export async function logout() {
   // Easiest: redirect through Cognito logout
   const clientId = "hfchi8fm98nberrcj43ge2ipu";
-  const logoutUri = "https://d84l1y8p4kdic.cloudfront.net/"; // same as your SPA root
+  const logoutUri = "https://dev.d24kp6zzj6jjwt.amplifyapp.com"; // same as your SPA root
   const cognitoDomain = "https://us-east-1clqbezjhi.auth.us-east-1.amazoncognito.com";
 
   window.location.href =
