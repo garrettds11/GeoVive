@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>GeoVive – Maps Made For You</title>
+  <title>GeoVivé – Maps Made For You</title>
   <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
   <link rel="apple-touch-icon" sizes="57x57" href="./assets/apple-icon-57x57.png">
   <link rel="apple-touch-icon" sizes="60x60" href="./assets/apple-icon-60x60.png">
@@ -612,9 +612,9 @@
         <!-- Header -->
         <header>
           <img style="height: 8rem;" type="image/png" src="./assets/android-chrome-192x192.png">
-          <!-- GEOVIVE title, docs button, style select, etc. -->
+          <!-- GeoVivé title, docs button, style select, etc. -->
           <h1 id="title">
-            <span>Geo<strong>Vive</strong></span>
+            <span>GEO<strong>VIVÉ</strong></span>
           </h1>
           <div class="header-items">
             <!-- Auth controls -->
@@ -625,7 +625,7 @@
             </div>
             <!-- documenation button -->
             <a 
-              href="https://garrettds11.github.io/GeoVive/docs" 
+              href="https://garrettds11.github.io/GeoVivé/docs" 
               target="_blank"
               class="btn"
             >
@@ -704,10 +704,10 @@
                 <option value="demo">Demo (built-in)</option>
                 <option value="csv">Custom CSV file</option>
                 <option value="osm">OpenStreetMap file</option>
-                <option value="dynamo">GeoVive Dataset</option>
+                <option value="dynamo">GeoVivé Dataset</option>
             </select>
             <p class="hint" style="margin-top:0.4rem;">
-                Choose which dataset GeoVive displays.
+                Choose which dataset GeoVivé displays.
             </p>
             <br>
 
@@ -802,7 +802,7 @@
     };
 
     // 3. Base dataset (demo points) – define BEFORE we reference it
-    const geoviveData = {
+    const GeoVivéData = {
       type: "FeatureCollection",
       features: [
         {
@@ -895,7 +895,7 @@
 
     // Global cache of current dataset
     let currentDataset = "demo";
-    let demoDataset = geoviveData;
+    let demoDataset = GeoVivéData;
 
     // Optional: OSM dataset file path (exported via Overpass Turbo)
     const OSM_DATA_URL = "data/osm-places.geojson";
@@ -945,7 +945,7 @@
         "https://moviip1p0g.execute-api.us-east-1.amazonaws.com/d",
 
       // Prod frontend → Prod API (example domain)
-      "geovive.yourdomain.com":
+      "GeoVivé.yourdomain.com":
         "https://moviip1p0g.execute-api.us-east-1.amazonaws.com/p",
     };
 
@@ -1012,14 +1012,14 @@
         });
 
         if (!res.ok) {
-          throw new Error(`GeoVive API load failed: ${res.status} ${res.statusText}`);
+          throw new Error(`GeoVivé API load failed: ${res.status} ${res.statusText}`);
         }
 
         const data = await res.json();
 
         // Optional sanity check: expect GeoJSON FeatureCollection
         if (!data || data.type !== "FeatureCollection" || !Array.isArray(data.features)) {
-          console.warn("GeoVive API returned unexpected shape:", data);
+          console.warn("GeoVivé API returned unexpected shape:", data);
         }
 
         return data;
@@ -1030,7 +1030,7 @@
     }
 
     // 5. Map init
-    const geoViveMap = new mapboxgl.Map({
+    const GeoVivéMap = new mapboxgl.Map({
       container: "map",
       style: MAP_STYLES.outdoors,
       center: [-96.5730, 39.1794],
@@ -1047,7 +1047,7 @@
     }
 
     // on successful style load
-    geoViveMap.on("load", () => {
+    GeoVivéMap.on("load", () => {
       if (!statusPill) return;
       statusPill.classList.remove("error");
       statusPill.classList.add("ok");
@@ -1055,7 +1055,7 @@
     });
 
     // on any map error
-    geoViveMap.on("error", (e) => {
+    GeoVivéMap.on("error", (e) => {
       console.error("Mapbox error", e);
       if (!statusPill) return;
       statusPill.classList.remove("ok");
@@ -1065,20 +1065,20 @@
 
     // Zoom overlay
     const zoomValueEl = document.getElementById("zoom-value");
-    geoViveMap.on("zoom", () => {
-      zoomValueEl.textContent = geoViveMap.getZoom().toFixed(2);
+    GeoVivéMap.on("zoom", () => {
+      zoomValueEl.textContent = GeoVivéMap.getZoom().toFixed(2);
     });
-    geoViveMap.on("load", () => {
-      zoomValueEl.textContent = geoViveMap.getZoom().toFixed(2);
+    GeoVivéMap.on("load", () => {
+      zoomValueEl.textContent = GeoVivéMap.getZoom().toFixed(2);
     });
 
     // Helper to ensure our layer exists (used both on first load + style changes)
     function ensurePointLayer() {
-      if (!geoViveMap.getLayer("geovive-layer")) {
-        geoViveMap.addLayer({
-          id: "geovive-layer",
+      if (!GeoVivéMap.getLayer("GeoVivé-layer")) {
+        GeoVivéMap.addLayer({
+          id: "GeoVivé-layer",
           type: "circle",
-          source: "geovive-points",
+          source: "GeoVivé-points",
           paint: {
             "circle-radius": 7,
             "circle-color": [
@@ -1100,13 +1100,13 @@
     async function applyDataset(key) {
       const geojson = await loadDataset(key);
 
-      if (!geoViveMap.getSource("geovive-points")) {
-        geoViveMap.addSource("geovive-points", {
+      if (!GeoVivéMap.getSource("GeoVivé-points")) {
+        GeoVivéMap.addSource("GeoVivé-points", {
           type: "geojson",
           data: geojson
         });
       } else {
-        geoViveMap.getSource("geovive-points").setData(geojson);
+        GeoVivéMap.getSource("GeoVivé-points").setData(geojson);
       }
 
       buildFeatureList(geojson.features);
@@ -1117,7 +1117,7 @@
           const [lng, lat] = f.geometry.coordinates;
           bounds.extend([lng, lat]);
         });
-        geoViveMap.fitBounds(bounds, { padding: 60, maxZoom: 10 });
+        GeoVivéMap.fitBounds(bounds, { padding: 60, maxZoom: 10 });
       }
     }
 
@@ -1166,7 +1166,7 @@
 
           const [lng, lat] = coords;
 
-          geoViveMap.flyTo({ center: [lng, lat], zoom: 8, essential: true });
+          GeoVivéMap.flyTo({ center: [lng, lat], zoom: 8, essential: true });
 
           new mapboxgl.Popup({ closeOnMove: true })
             .setLngLat([lng, lat])
@@ -1200,11 +1200,11 @@
           .map(e => e.value);
 
         // Map layer filter
-        if (geoViveMap.getLayer("geoboard-layer")) {
+        if (GeoVivéMap.getLayer("geoboard-layer")) {
           if (activeCategories.length === 0) {
-            geoViveMap.setFilter("geoboard-layer", ["==", ["get", "category"], "__none__"]);
+            GeoVivéMap.setFilter("geoboard-layer", ["==", ["get", "category"], "__none__"]);
           } else {
-            geoViveMap.setFilter(
+            GeoVivéMap.setFilter(
               "geoboard-layer",
               ["in", ["get", "category"], ["literal", activeCategories]]
             );
@@ -1226,18 +1226,18 @@
     }
 
     // Initial load
-    geoViveMap.on("load", async () => {
+    GeoVivéMap.on("load", async () => {
       await applyDataset("demo");
       ensurePointLayer();
-        geoViveMap.on("mouseenter", "geoboard-layer", () => {
-          geoViveMap.getCanvas().style.cursor = "pointer";
+        GeoVivéMap.on("mouseenter", "geoboard-layer", () => {
+          GeoVivéMap.getCanvas().style.cursor = "pointer";
         });
 
-        geoViveMap.on("mouseleave", "geoboard-layer", () => {
-          geoViveMap.getCanvas().style.cursor = "";
+        GeoVivéMap.on("mouseleave", "geoboard-layer", () => {
+          GeoVivéMap.getCanvas().style.cursor = "";
         });
 
-        geoViveMap.on("click", "geoboard-layer", (e) => {
+        GeoVivéMap.on("click", "geoboard-layer", (e) => {
           const feature = e.features && e.features[0];
           if (!feature) return;
 
@@ -1266,9 +1266,9 @@
       const styleKey = styleSelect.value;
       const styleUrl = MAP_STYLES[styleKey] || MAP_STYLES.streets;
 
-      geoViveMap.setStyle(styleUrl);
+      GeoVivéMap.setStyle(styleUrl);
 
-      geoViveMap.once("style.load", async () => {
+      GeoVivéMap.once("style.load", async () => {
         await applyDataset(currentDataset); // reload whatever dataset is active
         ensurePointLayer();                 // re-add the layer on the new style
       });
