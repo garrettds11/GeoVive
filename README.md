@@ -1,79 +1,92 @@
 # GeoVivé
 
-A map for exploring places and keeping your own collections of pinned locations: https://geovive.link
+**A neutral map-data platform.** GeoVivé stores real-world places and shapes, along with their time, source and stable IDs, and shows them on an interactive map. People can browse public maps and keep their own. Other apps can build on the same data.
 
-GeoVivé is meant to be a neutral map-data platform. It stores places, shapes, time, source information and stable IDs, and other apps can build on it. Everyone signs in to GeoVivé, and GeoVivé holds the master copy of each map.
+Live at https://geovive.link · [User guide](https://geovive.link/docs/) · [Developer docs](https://geovive.link/docs/developers/)
 
-- User guide: https://geovive.link/docs/
-- API reference and "Open in GeoVivé" links: https://geovive.link/docs/developers/
-- API spec: `openapi.yaml`
+## Purpose
 
-## Features
+GeoVivé is the "reality spine": the neutral store of geospatial truth. It keeps each feature's geometry, time, metadata, provenance and stable ID. It deliberately doesn't interpret the data. Analysis, context and alerts belong in products built on top of it, such as Watchfield (intelligence overlays) and connected apps like Bow & Arrow Hunt.
 
-- **Browse** public maps without signing in. World Capitals (from Natural Earth) is the default.
-- **Sign in** with email and password or with Google. Accounts with the same email are linked.
-- **My maps:** create public or private maps and add, edit or delete pins.
-- **Layers:**
-  - Show several datasets at once. Each has its own categories and legend.
-  - Turn on live government overlays: USGS topo, relief, imagery and water; BLM land ownership; National Forest boundaries; states and counties.
-- **Map controls:** scale bars, compass, north lock and a 3D view (terrain and buildings). The map keeps its view when you switch datasets or styles.
-- **Open in GeoVivé links:** a connected app sends a user to `/open?app=&ref=&title=&area=&return=`. GeoVivé finds or creates that user's map for the item, shows the app's area, and sends the user back with `?geovive_map=<id>`. Apps are registered in `backend/src/apps.mjs`.
+Principles:
+
+- GeoVivé holds the master copy of map data.
+- Everyone signs in to GeoVivé, and apps connect to it.
+- Datasets define their own categories; GeoVivé imposes no fixed vocabulary.
+- External sources are shown with their attribution and license.
+
+## What it does
+
+- **Explore:**
+  - Browse public datasets on a Mapbox map, then filter by category and inspect features.
+  - Switch between map styles, with a 3D terrain view.
+  - Show several datasets together, plus live government overlays (topography, land ownership, boundaries, water).
+- **Own your maps:** sign in with email and password or with Google, then create public or private maps and add, edit and delete pins.
+- **Connect apps:** a registered app can send a user to GeoVivé with an "Open in GeoVivé" link. The user works on their map there and returns to the app with a reference to it. A public REST API (`openapi.yaml`) serves datasets and features.
+
+## Architecture
+
+```
+Browser (static site, Mapbox GL JS)
+   │  sign-in (OIDC)            │  REST (JWT)
+   ▼                            ▼
+Cognito ── Google          API Gateway ─► Lambda ─► DynamoDB
+auth.geovive.link          api.geovive.link          (datasets, features)
+```
+
+- **Frontend:**
+  - A static site on AWS Amplify: plain HTML with ES modules and no framework or bundler.
+  - `config.js` is generated at build time from environment variables.
+- **Backend:** AWS SAM on Node.js (one API Lambda and a Cognito pre sign-up Lambda that links accounts by email), with DynamoDB tables for datasets and features.
+- **Identity:** a Cognito user pool with a branded hosted sign-in page (email + password and Google). SES sends the emails.
+- **Region:** everything runs in AWS us-east-1. Resources are tagged `project=geovive`.
 
 ## Repository layout
 
-| Path | What it is |
+| Path | Contents |
 |---|---|
-| `index.html` | The map app (static HTML + Mapbox GL JS) |
-| `scripts/auth.js`, `scripts/main.js` | Sign-in via Cognito (oidc-client-ts, loaded from a CDN) |
-| `scripts/editor.js` | My maps and pin editing |
-| `scripts/layers.js` | Layers panel: extra datasets and overlays |
-| `scripts/catalog.js` | Catalog of approved external overlays (source, license, attribution) |
-| `scripts/open.js` | "Open in GeoVivé" links from connected apps |
-| `scripts/build-config.mjs` | Writes `config.js` from environment variables at build time |
-| `docs/` | Public user guide and developer docs, served at `/docs/` |
-| `backend/` | API, Lambdas and DynamoDB tables as AWS SAM (see `backend/README.md`) |
-| `infra/` | CloudFormation for Cognito (`identity.yaml`) and Amplify (`web.yaml`); see `infra/README.md` |
+| `index.html` | The map app |
+| `scripts/` | Front-end modules:<br>• `auth.js` / `main.js`: sign-in<br>• `editor.js`: my maps, pins<br>• `layers.js` / `catalog.js`: layers and overlays<br>• `open.js`: app links<br>• `build-config.mjs`: config generator |
+| `docs/` | Public user guide and developer docs (served at `/docs/`) |
+| `backend/` | SAM template, Lambda source, tests, data scripts (see `backend/README.md`) |
+| `infra/` | CloudFormation for Cognito and Amplify (see `infra/README.md`) |
 | `openapi.yaml` | API specification |
 | `amplify.yml` | Amplify build settings |
 
-## Running locally
+## Development
 
-1. Create a Mapbox public token restricted to `http://localhost:8080`. The production token only works on geovive.link.
-2. Generate the config and serve the folder:
+**Run locally:**
 
-   ```bash
-   MAPBOX_ACCESS_TOKEN=pk.xxx node scripts/build-config.mjs
-   python -m http.server 8080
-   ```
+```bash
+MAPBOX_ACCESS_TOKEN=pk.xxx node scripts/build-config.mjs   # token restricted to localhost
+python -m http.server 8080
+```
 
-3. Open http://localhost:8080.
-   - The local site uses the shared API.
-   - Signing in locally requires adding `http://localhost:8080/` to the Cognito app client's callback and sign-out URLs in `infra/identity.yaml`.
-   - The `/open` path needs a server that falls back to `index.html`. Amplify does this; `python -m http.server` doesn't.
+- The local site uses the shared API.
+- Signing in locally requires adding `http://localhost:8080/` to the Cognito client's callback and sign-out URLs.
 
-`config.js` is generated and ignored by git. Never commit tokens or secrets.
+**Branches and releases:**
 
-## Branches and releases
+- `dev` deploys to https://dev.geovive.link.
+- `main` deploys to https://geovive.link.
+- The release flow: work on `dev`, test on the dev site, then open a pull request from `dev` to `main`.
 
-| Branch | Site | Amplify stage |
-|---|---|---|
-| `main` | https://geovive.link (and www) | Production |
-| `dev` | https://dev.geovive.link | Development |
+**Backend:** `cd backend && npm ci && npm test && sam deploy --config-env dev`
 
-To release: work on `dev`, push, test on dev.geovive.link, then open a pull request from `dev` to `main`. Amplify builds each branch on push, running `npm run build` to generate `config.js` from the `MAPBOX_ACCESS_TOKEN` environment variable. Changing that variable requires a redeploy.
+**Secrets:** never commit tokens or secrets.
 
-Both sites currently share one API and user pool. A separate dev backend is planned before real users arrive.
+- `config.js` is generated and git-ignored.
+- The Google client secret is kept in AWS Secrets Manager.
 
-## Backend and infrastructure (us-east-1)
+## Status
 
-| Piece | Where |
-|---|---|
-| Site | Amplify app `d24kp6zzj6jjwt`, custom domains `geovive.link` and `dev.geovive.link` |
-| API | `api.geovive.link`, SAM stack `geovive-dev-backend` (`backend/template.yaml`) |
-| Sign-in | Cognito pool `us-east-1_cLqbEZJhi`, domain `auth.geovive.link`, email/password and Google; stack `geovive-dev-identity` (`infra/identity.yaml`) |
-| Email | SES, sent from `no-reply@geovive.link` |
-| DNS / certificate | Route 53 zone for `geovive.link`; ACM certificate for `geovive.link` and `*.geovive.link` |
+This is an early beta. Browsing, sign-in, personal maps, layers and app links work in production.
 
-- **Deploy the backend:** `cd backend && npm ci && npm test && sam deploy --config-env dev`.
-- **Secrets:** the Google client secret lives in AWS Secrets Manager (`geovive/google-oauth`), never in the repo.
-- **Not yet managed as code:** Amplify (the template in `infra/web.yaml` is ready but needs a GitHub token to import), managed-login branding, SES, and DNS records.
+Next up:
+
+- storing large shapes
+- importing data from external sources, with provenance
+- upload and export
+- a separate dev backend
+- full connected-app authorization (consent screen and per-app access)
+- shared maps
