@@ -45,15 +45,18 @@
   <main class="page">
     <header>
       <div class="top">
-        <h1>Geo<span>Vivé</span> AppConnect</h1>
-        <span class="tagline">Connect your app's layers</span>
+        <a class="brand" href="/docs/"><h1>Geo<span>Vivé</span> AppConnect</h1></a>
+        <span class="tagline">Your connected apps</span>
       </div>
-      <nav class="tabs">
-        <a href="/docs/developers/appconnect/">Requirements</a>
-        <a href="/docs/terms/appconnect/">Terms</a>
-        <a href="/docs/security/">Security</a>
-        <a href="/appconnect/" class="active">Your apps</a>
-        <a href="/">Open the map →</a>
+      <nav class="tabs" aria-label="Documentation">
+        <div class="tabs-main">
+          <a href="/docs/">User guide</a>
+          <a href="/docs/developers/">Developers</a>
+          <a href="/docs/developers/appconnect/" class="active" aria-current="page">AppConnect</a>
+          <a href="/docs/terms/appconnect/">Terms</a>
+          <a href="/docs/security/">Security</a>
+        </div>
+        <a class="tabs-map" href="/">Open the map →</a>
       </nav>
     </header>
     <div id="ac-root"><p>Loading…</p></div>
