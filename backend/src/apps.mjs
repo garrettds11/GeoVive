@@ -7,11 +7,15 @@
 // areaOrigins:   where reference-area GeoJSON may be loaded from.
 // featureTypes:  the app's pin vocabulary (GeoVivé stores it, the app defines it).
 
+const SITE_ORIGINS = (process.env.ALLOWED_ORIGINS || "https://geovive.link")
+  .split(",").map(s => s.trim()).filter(Boolean);
+
 export const APPS = {
   "geovive-demo": {
     name: "GeoVivé demo",
-    returnOrigins: ["https://geovive.link", "https://stage.geovive.link", "https://dev.d24kp6zzj6jjwt.amplifyapp.com", "https://stage.d24kp6zzj6jjwt.amplifyapp.com", "http://localhost:8080"],
-    areaOrigins: ["https://geovive.link", "https://stage.geovive.link", "https://dev.d24kp6zzj6jjwt.amplifyapp.com", "https://stage.d24kp6zzj6jjwt.amplifyapp.com", "http://localhost:8080"],
+    // GeoVivé's own sites: the API's allowed origins (set at deploy time)
+    returnOrigins: SITE_ORIGINS,
+    areaOrigins: SITE_ORIGINS,
     featureTypes: [
       { key: "location", label: "Location", color: "#3b82f6" },
       { key: "event", label: "Event", color: "#22c55e" },

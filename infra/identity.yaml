@@ -1,6 +1,13 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'GeoVivé identity: Cognito user pool, web app client, sign-in domains, Google provider (imported from existing
   resources)'
+Parameters:
+  PrivateAppUrls:
+    Type: CommaDelimitedList
+    Default: ""
+    Description: Extra sign-in/sign-out URLs not kept in the repo (e.g. Amplify branch addresses), with and without trailing slash
+Conditions:
+  HasPrivateAppUrls: !Not [!Equals [!Join ["", !Ref PrivateAppUrls], ""]]
 Resources:
   UserPool:
     UpdateReplacePolicy: Retain
@@ -228,16 +235,10 @@ Resources:
     DeletionPolicy: Retain
     Properties:
       GenerateSecret: false
-      CallbackURLs:
-      - https://dev.d24kp6zzj6jjwt.amplifyapp.com
-      - https://dev.d24kp6zzj6jjwt.amplifyapp.com/
-      - https://geovive.link
-      - https://geovive.link/
-      - https://www.geovive.link/
-      - https://stage.geovive.link
-      - https://stage.geovive.link/
-      - https://stage.d24kp6zzj6jjwt.amplifyapp.com
-      - https://stage.d24kp6zzj6jjwt.amplifyapp.com/
+      CallbackURLs: !If
+        - HasPrivateAppUrls
+        - !Split [",", !Join [",", [https://geovive.link, https://geovive.link/, https://www.geovive.link/, https://stage.geovive.link, https://stage.geovive.link/, !Join [",", !Ref PrivateAppUrls]]]]
+        - [https://geovive.link, https://geovive.link/, https://www.geovive.link/, https://stage.geovive.link, https://stage.geovive.link/]
       EnablePropagateAdditionalUserContextData: false
       IdTokenValidity: 1
       AuthSessionValidity: 3
@@ -262,17 +263,10 @@ Resources:
       ExplicitAuthFlows:
       - ALLOW_REFRESH_TOKEN_AUTH
       - ALLOW_USER_AUTH
-      LogoutURLs:
-      - https://dev.d24kp6zzj6jjwt.amplifyapp.com
-      - https://dev.d24kp6zzj6jjwt.amplifyapp.com/
-      - https://geovive.link
-      - https://geovive.link/
-      - https://us-east-1clqbezjhi.auth.us-east-1.amazoncognito.com/logout
-      - https://www.geovive.link/
-      - https://stage.geovive.link
-      - https://stage.geovive.link/
-      - https://stage.d24kp6zzj6jjwt.amplifyapp.com
-      - https://stage.d24kp6zzj6jjwt.amplifyapp.com/
+      LogoutURLs: !If
+        - HasPrivateAppUrls
+        - !Split [",", !Join [",", [https://geovive.link, https://geovive.link/, https://us-east-1clqbezjhi.auth.us-east-1.amazoncognito.com/logout, https://www.geovive.link/, https://stage.geovive.link, https://stage.geovive.link/, !Join [",", !Ref PrivateAppUrls]]]]
+        - [https://geovive.link, https://geovive.link/, https://us-east-1clqbezjhi.auth.us-east-1.amazoncognito.com/logout, https://www.geovive.link/, https://stage.geovive.link, https://stage.geovive.link/]
       AccessTokenValidity: 1
       RefreshTokenValidity: 1
       WriteAttributes: []
