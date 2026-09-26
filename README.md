@@ -67,7 +67,7 @@ python -m http.server 8080
 
 **Branches and releases:**
 
-- `dev` deploys to https://dev.geovive.link.
+- `dev` deploys to https://dev.geovive.link, which is password-protected (Amplify basic auth; ask the owner for access).
 - `main` deploys to https://geovive.link.
 - The release flow: work on `dev`, test on the dev site, then open a pull request from `dev` to `main`.
 
