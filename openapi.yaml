@@ -16,6 +16,7 @@ security: []
 tags:
   - name: Datasets
   - name: Features
+  - name: Imports
 
 paths:
   /v1/datasets:
@@ -199,6 +200,77 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /v1/datasets/{datasetId}/imports/upload-url:
+    parameters:
+      - $ref: "#/components/parameters/datasetId"
+    post:
+      tags: [Imports]
+      summary: Get a presigned URL to upload a GeoJSON file for import (owner only)
+      description: PUT the file to uploadUrl with the given Content-Type within 15 minutes, then start an import with source.type "upload".
+      security: [{ cognito: [] }]
+      responses:
+        "200":
+          description: Upload target
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key: { type: string }
+                  uploadUrl: { type: string, format: uri }
+                  contentType: { type: string }
+                  maxBytes: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/datasets/{datasetId}/imports:
+    parameters:
+      - $ref: "#/components/parameters/datasetId"
+    post:
+      tags: [Imports]
+      summary: Start an import into a dataset (owner only)
+      description: |
+        Runs in the background; poll the returned import until status is succeeded or failed.
+        Up to 20,000 features and 50 MB per import. GeoJSON must be WGS 84; ArcGIS layers are
+        requested in WGS 84. Features are validated like POST …/features; invalid ones are skipped.
+      security: [{ cognito: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ImportRequest" }
+      responses:
+        "202":
+          description: Import queued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Import" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/datasets/{datasetId}/imports/{importId}:
+    parameters:
+      - $ref: "#/components/parameters/datasetId"
+      - name: importId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Imports]
+      summary: Import status (the owner who started it)
+      security: [{ cognito: [] }]
+      responses:
+        "200":
+          description: The import
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Import" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
 components:
   securitySchemes:
     cognito:
@@ -351,6 +423,38 @@ components:
                   type: string
                   enum: [simplified, full]
                   description: Present on large shapes; "simplified" means the geometry is a preview
+
+    ImportRequest:
+      type: object
+      required: [source]
+      properties:
+        source:
+          type: object
+          required: [type]
+          properties:
+            type: { type: string, enum: [upload, url, arcgis] }
+            key: { type: string, description: "upload: key from …/imports/upload-url" }
+            fileName: { type: string }
+            url: { type: string, format: uri, description: "url: https link to GeoJSON; arcgis: layer URL ending in FeatureServer/<n> or MapServer/<n>" }
+            where: { type: string, description: "arcgis: optional SQL filter, e.g. STATE = 'CO'" }
+        mode: { type: string, enum: [append, replace], default: append }
+        nameField: { type: string, description: Property to use as the feature name (case-insensitive); automatic when omitted }
+        categoryField: { type: string, description: Property to copy into properties.category }
+
+    Import:
+      type: object
+      properties:
+        importId: { type: string }
+        datasetId: { type: string }
+        status: { type: string, enum: [queued, running, succeeded, failed] }
+        source: { type: object }
+        mode: { type: string }
+        imported: { type: integer }
+        skipped: { type: integer }
+        errors: { type: array, items: { type: string }, description: First few skipped-feature reasons }
+        message: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
 
     FeatureCollection:
       type: object

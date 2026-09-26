@@ -109,9 +109,68 @@ Resources:
             Status: Enabled
             NoncurrentVersionExpiration: { NoncurrentDays: 30 }
             AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 }
+          - Id: expire-import-uploads
+            Status: Enabled
+            Prefix: uploads/
+            ExpirationInDays: 1
+            NoncurrentVersionExpiration: { NoncurrentDays: 1 }
+      # The browser uploads import files straight to uploads/ with a presigned URL
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [PUT]
+            AllowedOrigins: !Ref AllowedOrigins
+            AllowedHeaders: [content-type]
+            MaxAge: 600
       Tags:
         - { Key: project, Value: geovive }
         - { Key: env, Value: !Ref Env }
+
+  # Import jobs (status and results); items expire after 30 days
+  ImportsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub geovive-${Env}-imports
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: importId, AttributeType: S }
+      KeySchema:
+        - { AttributeName: importId, KeyType: HASH }
+      TimeToLiveSpecification: { AttributeName: expiresAt, Enabled: true }
+      Tags:
+        - { Key: project, Value: geovive }
+        - { Key: env, Value: !Ref Env }
+
+  # Background worker for imports (invoked asynchronously by the API)
+  ImportFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub geovive-${Env}-importer
+      Description: Imports GeoJSON and ArcGIS layers into GeoVivé datasets
+      CodeUri: dist/
+      Handler: importer.handler
+      MemorySize: 2048
+      Timeout: 900
+      EventInvokeConfig:
+        MaximumRetryAttempts: 0
+      Environment:
+        Variables:
+          DATASETS_TABLE: !Ref DatasetsTable
+          FEATURES_TABLE: !Ref FeaturesTable
+          IMPORTS_TABLE: !Ref ImportsTable
+          GEOMETRY_BUCKET: !Ref GeometryBucket
+          USER_POOL_ID: !Ref UserPoolId
+          USER_POOL_CLIENT_ID: !Ref UserPoolClientId
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref DatasetsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref FeaturesTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref ImportsTable }
+        - S3CrudPolicy: { BucketName: !Ref GeometryBucket }
+
+  ImportLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/geovive-${Env}-importer
+      RetentionInDays: 30
 
   HttpApi:
     Type: AWS::Serverless::HttpApi
@@ -153,6 +212,8 @@ Resources:
           DATASETS_TABLE: !Ref DatasetsTable
           FEATURES_TABLE: !Ref FeaturesTable
           GEOMETRY_BUCKET: !Ref GeometryBucket
+          IMPORTS_TABLE: !Ref ImportsTable
+          IMPORT_FUNCTION: !Ref ImportFunction
           USER_POOL_ID: !Ref UserPoolId
           USER_POOL_CLIENT_ID: !Ref UserPoolClientId
           ALLOWED_ORIGINS: !Join [",", !Ref AllowedOrigins]
@@ -160,6 +221,8 @@ Resources:
         - DynamoDBCrudPolicy: { TableName: !Ref DatasetsTable }
         - DynamoDBCrudPolicy: { TableName: !Ref FeaturesTable }
         - S3CrudPolicy: { BucketName: !Ref GeometryBucket }
+        - DynamoDBCrudPolicy: { TableName: !Ref ImportsTable }
+        - LambdaInvokePolicy: { FunctionName: !Ref ImportFunction }
       Events:
         # Public reads (visibility enforced in the handler)
         ListDatasets:     { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /v1/datasets, Auth: { Authorizer: NONE } } }
@@ -174,6 +237,9 @@ Resources:
         DeleteDataset:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: DELETE, Path: "/v1/datasets/{datasetId}" } }
         CreateFeature:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/datasets/{datasetId}/features" } }
         UpdateFeature:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: PUT, Path: "/v1/datasets/{datasetId}/features/{featureId}" } }
+        ImportUploadUrl:  { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/datasets/{datasetId}/imports/upload-url" } }
+        StartImport:      { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/datasets/{datasetId}/imports" } }
+        GetImport:        { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/datasets/{datasetId}/imports/{importId}" } }
         DeleteFeature:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: DELETE, Path: "/v1/datasets/{datasetId}/features/{featureId}" } }
 
   PreSignUpFunction:

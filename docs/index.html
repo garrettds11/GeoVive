@@ -28,6 +28,7 @@
       <a href="#signin">Signing in</a>
       <a href="#my-maps">My maps</a>
       <a href="#pins">Pins</a>
+      <a href="#import">Importing data</a>
       <a href="#privacy">Public &amp; private</a>
       <a href="#faq">FAQ</a>
     </nav>
@@ -87,6 +88,15 @@
       <li>Click <strong>Save</strong>.</li>
     </ol>
     <p>To change or remove a pin, click it on the map, edit the form, then <strong>Save</strong> or <strong>Delete</strong>. Press <strong>Esc</strong> to cancel adding a pin.</p>
+
+    <h2 id="import">Importing data</h2>
+    <p>Open one of your maps and click <strong>Import data</strong> to bring in places or areas from elsewhere:</p>
+    <ul>
+      <li><strong>GeoJSON file:</strong> a <code>.geojson</code> or <code>.json</code> file from your computer, up to 50 MB.</li>
+      <li><strong>GeoJSON link:</strong> a public web address of a GeoJSON file, such as an open-data download link.</li>
+      <li><strong>ArcGIS layer:</strong> the address of a government or organization map layer, ending in <code>FeatureServer/0</code> or <code>MapServer/2</code>. You can add a filter, such as <code>STATE = 'CO'</code>.</li>
+    </ul>
+    <p>Under <strong>Options</strong> you can choose which field holds each feature's name and category, and whether to add to the map or replace everything in it. Imports run in the background and show their progress; up to 20,000 features at a time. GeoVivé records where the data came from.</p>
 
     <h2 id="privacy">Public and private maps</h2>
     <div class="card">

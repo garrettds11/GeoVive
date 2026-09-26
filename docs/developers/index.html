@@ -30,6 +30,7 @@
       <a href="#formats">Formats</a>
       <a href="#errors">Errors</a>
       <a href="#examples">Examples</a>
+      <a href="#imports">Imports</a>
       <a href="#open-links">Open links</a>
       <a href="#connected-apps">Connected apps</a>
     </nav>
@@ -151,6 +152,30 @@ curl -X POST https://api.geovive.link/v1/datasets/&lt;datasetId&gt;/features \
 <pre><code>const res = await fetch("https://api.geovive.link/v1/datasets/world-capitals/features");
 const collection = await res.json();   // GeoJSON FeatureCollection
 map.getSource("places").setData(collection);</code></pre>
+
+    <h2 id="imports">Imports</h2>
+    <p>Load outside data into a dataset you own. Imports run in the background: start one, then poll it until <code>status</code> is <code>succeeded</code> or <code>failed</code>.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr>
+      <tr><td>POST</td><td><code>/v1/datasets/{datasetId}/imports/upload-url</code></td><td><span class="tag auth">owner</span></td><td>A presigned URL for uploading a GeoJSON file (PUT it within 15 minutes)</td></tr>
+      <tr><td>POST</td><td><code>/v1/datasets/{datasetId}/imports</code></td><td><span class="tag auth">owner</span></td><td>Start an import. Returns <code>202</code> with the import</td></tr>
+      <tr><td>GET</td><td><code>/v1/datasets/{datasetId}/imports/{importId}</code></td><td><span class="tag auth">owner</span></td><td>Status, counts and the first few problems</td></tr>
+    </table></div>
+<pre><code>// A state agency's ArcGIS layer, filtered, replacing what's in the map
+{
+  "source": { "type": "arcgis", "url": "https://…/FeatureServer/0", "where": "STATE = 'CO'" },
+  "mode": "replace",            // or "append" (default)
+  "nameField": "UNIT_NAME",     // optional; otherwise name/title/…name fields are tried
+  "categoryField": "TYPE"       // optional; copied into properties.category
+}
+// or { "source": { "type": "url", "url": "https://…/data.geojson" } }
+// or { "source": { "type": "upload", "key": "&lt;from upload-url&gt;" } }</code></pre>
+    <ul>
+      <li>Up to 20,000 features and 50 MB per import. GeoJSON must use longitude/latitude (WGS 84); ArcGIS layers are requested in WGS 84.</li>
+      <li>Each feature is checked like <code>POST …/features</code>. Invalid ones are skipped and counted. Large shapes are stored in full.</li>
+      <li>Imported features keep their original properties, plus <code>sourceId</code> when the source has one.</li>
+      <li>The dataset records each import in <code>imports</code>: source URL or file name, layer title, attribution, time and counts.</li>
+    </ul>
 
     <h2 id="open-links">Open in GeoVivé links</h2>
     <p>A registered app can send its signed-in users to their own GeoVivé map for one item in the app (for example, a hunt plan), then bring them back.</p>

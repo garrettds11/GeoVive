@@ -17,19 +17,24 @@ import {
 } from "@aws-sdk/client-s3";
 import { CognitoJwtVerifier } from "aws-jwt-verify";
 import { randomUUID } from "node:crypto";
+import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { getApp, originAllowed } from "./apps.mjs";
 import {
   GeometryError, validateGeometry, bboxOf, byteSize, simplifyToFit,
   INLINE_LIMIT, MAX_GEOMETRY
 } from "./geometry.mjs";
 
-const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+export const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true }
 });
 
 const DATASETS_TABLE = process.env.DATASETS_TABLE;
 const FEATURES_TABLE = process.env.FEATURES_TABLE;
 const GEOMETRY_BUCKET = process.env.GEOMETRY_BUCKET;
+const IMPORTS_TABLE = process.env.IMPORTS_TABLE;
+const IMPORT_FUNCTION = process.env.IMPORT_FUNCTION;
+const lambda = new LambdaClient({});
 const s3 = new S3Client({});
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
 
@@ -43,7 +48,7 @@ const VISIBILITIES = new Set(["public", "private"]);
 
 // ------------------------------------------------------------------ helpers
 
-class HttpError extends Error {
+export class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 
@@ -96,7 +101,7 @@ async function getCaller(event, { required }) {
   return null;
 }
 
-async function loadDataset(datasetId) {
+export async function loadDataset(datasetId) {
   const { Item } = await ddb.send(new GetCommand({ TableName: DATASETS_TABLE, Key: { datasetId } }));
   if (!Item) throw new HttpError(404, "Dataset not found");
   return Item;
@@ -113,19 +118,19 @@ function assertOwner(dataset, caller) {
   if (!caller || caller.sub !== dataset.ownerId) throw new HttpError(403, "Only the dataset owner can modify it");
 }
 
-function datasetView(d) {
+export function datasetView(d) {
   return {
     datasetId: d.datasetId, name: d.name, description: d.description || "",
     visibility: d.visibility, ownerId: d.ownerId, source: d.source,
     origin: d.origin, referenceArea: d.referenceArea, featureTypes: d.featureTypes,
-    featureCount: d.featureCount || 0, createdAt: d.createdAt, updatedAt: d.updatedAt
+    featureCount: d.featureCount || 0, imports: d.imports, createdAt: d.createdAt, updatedAt: d.updatedAt
   };
 }
 
 // Large geometries live in S3; the table keeps a simplified preview.
 const geometryKey = (datasetId, featureId) => `geometry/${datasetId}/${featureId}.json`;
 
-async function featureItem(datasetId, featureId, body, existing) {
+export async function featureItem(datasetId, featureId, body, existing) {
   if (!body || body.type !== "Feature") throw new HttpError(400, "Body must be a GeoJSON Feature");
   try { validateGeometry(body.geometry); } catch (e) {
     if (e instanceof GeometryError) throw new HttpError(400, e.message);
@@ -191,7 +196,7 @@ function toFeature(item, full) {
   return f;
 }
 
-async function adjustCount(datasetId, delta) {
+export async function adjustCount(datasetId, delta) {
   await ddb.send(new UpdateCommand({
     TableName: DATASETS_TABLE, Key: { datasetId },
     UpdateExpression: "ADD featureCount :d SET updatedAt = :u",
@@ -256,8 +261,15 @@ async function deleteDataset(event, datasetId) {
   const caller = await getCaller(event, { required: true });
   const ds = await loadDataset(datasetId);
   assertOwner(ds, caller);
-  // Delete all features, then the dataset record.
-  let ExclusiveStartKey;
+  await deleteAllFeatures(datasetId);
+  await deleteDatasetGeometry(datasetId);
+  await ddb.send(new DeleteCommand({ TableName: DATASETS_TABLE, Key: { datasetId } }));
+  return undefined;
+}
+
+// Remove every feature of a dataset (table rows; call deleteDatasetGeometry for S3).
+export async function deleteAllFeatures(datasetId) {
+  let ExclusiveStartKey, removed = 0;
   do {
     const page = await ddb.send(new QueryCommand({
       TableName: FEATURES_TABLE, KeyConditionExpression: "datasetId = :d",
@@ -265,18 +277,28 @@ async function deleteDataset(event, datasetId) {
     }));
     const keys = page.Items || [];
     for (let i = 0; i < keys.length; i += 25) {
-      await ddb.send(new BatchWriteCommand({
-        RequestItems: { [FEATURES_TABLE]: keys.slice(i, i + 25).map(Key => ({ DeleteRequest: { Key } })) }
-      }));
+      await batchWrite(keys.slice(i, i + 25).map(Key => ({ DeleteRequest: { Key } })));
     }
+    removed += keys.length;
     ExclusiveStartKey = page.LastEvaluatedKey;
   } while (ExclusiveStartKey);
-  await deleteDatasetGeometry(datasetId);
-  await ddb.send(new DeleteCommand({ TableName: DATASETS_TABLE, Key: { datasetId } }));
-  return undefined;
+  return removed;
 }
 
-async function deleteDatasetGeometry(datasetId) {
+// BatchWrite with retries for unprocessed items.
+export async function batchWrite(requests) {
+  let pending = requests, tries = 0;
+  while (pending.length) {
+    const res = await ddb.send(new BatchWriteCommand({ RequestItems: { [FEATURES_TABLE]: pending } }));
+    pending = res.UnprocessedItems?.[FEATURES_TABLE] || [];
+    if (pending.length) {
+      if (++tries > 8) throw new Error("DynamoDB kept throttling the batch write");
+      await new Promise(r => setTimeout(r, 100 * 2 ** tries));
+    }
+  }
+}
+
+export async function deleteDatasetGeometry(datasetId) {
   let ContinuationToken;
   do {
     const page = await s3.send(new ListObjectsV2Command({
@@ -425,6 +447,76 @@ async function openAppMap(event, appId, externalRef) {
   return { created: true, dataset: datasetView(item) };
 }
 
+// ------------------------------------------------------------------ imports
+// Imports run in a separate worker (importer.mjs); these routes start and track them.
+
+const IMPORT_SOURCES = new Set(["upload", "url", "arcgis"]);
+
+async function createUploadUrl(event, datasetId) {
+  const caller = await getCaller(event, { required: true });
+  assertOwner(await loadDataset(datasetId), caller);
+  const key = `uploads/${caller.sub}/${randomUUID()}.geojson`;
+  const uploadUrl = await getSignedUrl(s3, new PutObjectCommand({
+    Bucket: GEOMETRY_BUCKET, Key: key, ContentType: "application/geo+json"
+  }), { expiresIn: 900 });
+  return { key, uploadUrl, contentType: "application/geo+json", maxBytes: 50_000_000 };
+}
+
+function checkUrl(raw) {
+  let u;
+  try { u = new URL(raw); } catch { throw new HttpError(400, "source.url must be a valid URL"); }
+  if (u.protocol !== "https:") throw new HttpError(400, "source.url must use https");
+  return u.toString();
+}
+
+async function startImport(event, datasetId) {
+  const caller = await getCaller(event, { required: true });
+  assertOwner(await loadDataset(datasetId), caller);
+  const body = parseBody(event);
+  const src = body.source || {};
+  if (!IMPORT_SOURCES.has(src.type)) throw new HttpError(400, "source.type must be upload, url or arcgis");
+  const source = { type: src.type };
+  if (src.type === "upload") {
+    if (typeof src.key !== "string" || !src.key.startsWith(`uploads/${caller.sub}/`)) throw new HttpError(400, "source.key is not one of your uploads");
+    source.key = src.key;
+    if (typeof src.fileName === "string") source.fileName = src.fileName.slice(0, 200);
+  } else {
+    source.url = checkUrl(src.url);
+    if (src.type === "arcgis" && typeof src.where === "string" && src.where.trim()) source.where = src.where.slice(0, 1000);
+  }
+  const mode = body.mode === "replace" ? "replace" : "append";
+  const str = (v) => typeof v === "string" && v.trim() ? v.trim().slice(0, 100) : undefined;
+  const now = new Date();
+  const job = {
+    importId: randomUUID(), datasetId, ownerId: caller.sub, status: "queued", source, mode,
+    nameField: str(body.nameField), categoryField: str(body.categoryField),
+    createdAt: now.toISOString(), updatedAt: now.toISOString(),
+    expiresAt: Math.floor(now.getTime() / 1000) + 30 * 86400
+  };
+  await ddb.send(new PutCommand({ TableName: IMPORTS_TABLE, Item: job }));
+  await lambda.send(new InvokeCommand({
+    FunctionName: IMPORT_FUNCTION, InvocationType: "Event",
+    Payload: Buffer.from(JSON.stringify({ importId: job.importId }))
+  }));
+  return importView(job);
+}
+
+function importView(j) {
+  return {
+    importId: j.importId, datasetId: j.datasetId, status: j.status, source: j.source, mode: j.mode,
+    nameField: j.nameField, categoryField: j.categoryField,
+    imported: j.imported || 0, skipped: j.skipped || 0, errors: j.errors || [], message: j.message,
+    createdAt: j.createdAt, updatedAt: j.updatedAt
+  };
+}
+
+async function getImport(event, datasetId, importId) {
+  const caller = await getCaller(event, { required: true });
+  const { Item } = await ddb.send(new GetCommand({ TableName: IMPORTS_TABLE, Key: { importId } }));
+  if (!Item || Item.datasetId !== datasetId || Item.ownerId !== caller.sub) throw new HttpError(404, "Import not found");
+  return importView(Item);
+}
+
 // ------------------------------------------------------------------ router
 
 export const handler = async (event) => {
@@ -448,6 +540,9 @@ export const handler = async (event) => {
       case "GET /v1/datasets/{datasetId}/features/{featureId}": result = await getFeature(event, p.datasetId, p.featureId); break;
       case "PUT /v1/datasets/{datasetId}/features/{featureId}": result = await updateFeature(event, p.datasetId, p.featureId); break;
       case "DELETE /v1/datasets/{datasetId}/features/{featureId}": result = await deleteFeature(event, p.datasetId, p.featureId); status = 204; break;
+      case "POST /v1/datasets/{datasetId}/imports/upload-url": result = await createUploadUrl(event, p.datasetId); break;
+      case "POST /v1/datasets/{datasetId}/imports": result = await startImport(event, p.datasetId); status = 202; break;
+      case "GET /v1/datasets/{datasetId}/imports/{importId}": result = await getImport(event, p.datasetId, p.importId); break;
       case "GET /v1/apps/{appId}": result = await getAppInfo(p.appId); break;
       case "PUT /v1/apps/{appId}/maps/{externalRef}": {
         const out = await openAppMap(event, p.appId, p.externalRef);
