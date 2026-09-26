@@ -20,7 +20,8 @@ import { randomUUID } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { getApp, originAllowed } from "./apps.mjs";
+import { originAllowed } from "./apps.mjs";
+import { getActiveApp } from "./appstore.mjs";
 import { FORMATS, render as renderExport, fileName as exportFileName } from "./export.mjs";
 import { validateLayerList, publicLayer, buildLayer, LayerListError } from "./overlays.mjs";
 import {
@@ -390,7 +391,7 @@ function publicAppView(appId, app) {
 }
 
 async function getAppInfo(appId) {
-  const app = getApp(appId);
+  const app = await getActiveApp(ddb, appId);
   if (!app) throw new HttpError(404, "Unknown app");
   return publicAppView(appId, app);
 }
@@ -399,7 +400,7 @@ async function getAppInfo(appId) {
 // owner + appId + externalRef is unique (GSI byOrigin on originKey).
 async function openAppMap(event, appId, externalRef) {
   const caller = await getCaller(event, { required: true });
-  const app = getApp(appId);
+  const app = await getActiveApp(ddb, appId);
   if (!app) throw new HttpError(404, "Unknown app");
   if (!externalRef || externalRef.length > 200) throw new HttpError(400, "Invalid item reference");
 
@@ -585,7 +586,7 @@ const LAYER_LIST_TTL_MS = 5 * 60 * 1000;
 const layerLists = new Map();   // appId -> { at, list }
 
 export async function loadAppLayers(appId) {
-  const app = getApp(appId);
+  const app = await getActiveApp(ddb, appId);
   if (!app) throw new HttpError(404, "Unknown app");
   if (!app.layers && !app.layersUrl) return { title: undefined, layers: [] };
   const hit = layerLists.get(appId);
@@ -616,7 +617,7 @@ export async function loadAppLayers(appId) {
 }
 
 async function getAppLayers(appId) {
-  const app = getApp(appId);
+  const app = await getActiveApp(ddb, appId);
   const list = await loadAppLayers(appId);
   return { appId, appName: app.name, title: list.title, layers: list.layers.map(publicLayer) };
 }
