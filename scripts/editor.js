@@ -175,13 +175,14 @@ function pinFormHtml(props = {}) {
   const cat = props.category || "location";
   return `
     <form class="pin-form">
-      <label>Name<input name="name" required maxlength="120" value="${esc(props.name)}"></label>
+      <label>Name<span class="field-row"><input name="name" required maxlength="120" value="${esc(props.name)}"><button type="button" class="emoji-btn" data-emoji-for="name" title="Insert emoji" aria-label="Insert emoji">😀</button></span></label>
       <label>Type
         <select name="category">
           ${categoriesFor(currentDataset()).map(c => `<option value="${c.value}" ${c.value === cat ? "selected" : ""}>${c.label}</option>`).join("")}
         </select>
       </label>
-      <label>Notes <span class="hint">(Markdown: **bold**, *italic*, - lists, links)</span><textarea name="description" rows="4" maxlength="2000">${esc(props.description)}</textarea></label>
+      <label>Notes <span class="hint">(Markdown: **bold**, *italic*, - lists, links)</span><span class="field-row"><textarea name="description" rows="4" maxlength="2000">${esc(props.description)}</textarea><button type="button" class="emoji-btn" data-emoji-for="description" title="Insert emoji" aria-label="Insert emoji">😀</button></span></label>
+      <div class="emoji-pop" hidden></div>
       <div class="pin-form-actions">
         ${props.id ? `<button type="button" class="btn danger" data-action="delete">Delete</button>` : ""}
         <button type="button" class="btn" data-action="cancel">Cancel</button>
@@ -191,16 +192,58 @@ function pinFormHtml(props = {}) {
     </form>`;
 }
 
+// ------------------------------------------------------------ emoji picker
+// A small picker for desktop (phones have emoji keyboards). Also: Win + . or Ctrl + Cmd + Space.
+const EMOJI = [
+  ["Places", "🏠 home house|🏡 house garden|🏕️ camp camping tent|⛺ tent camp|🏔️ mountain snow|⛰️ mountain|🌲 tree forest pine|🌳 tree|🌊 water wave|🏞️ park|🏖️ beach|🏜️ desert|🌋 volcano|🏢 office building|🏫 school|🏥 hospital|🏛️ government|⛪ church|🏪 store shop|🏨 hotel|🏭 factory|🌉 bridge|🗼 tower|⛽ fuel gas|🅿️ parking|🚏 bus stop|⚓ anchor harbor port|🛖 hut cabin|🗻 mount fuji"],
+  ["Map", "📍 pin location|📌 pushpin|🗺️ map|🧭 compass|🚩 flag|🏁 finish flag|⭐ star|❗ important|❓ question|⚠️ warning caution|⛔ no entry|🚫 prohibited|✅ done check|❌ cross no|🔴 red|🟠 orange|🟡 yellow|🟢 green|🔵 blue|🟣 purple|⚫ black|⚪ white|🔺 up triangle|🔻 down triangle|➡️ right arrow|⬆️ up arrow|🎯 target|🔒 locked|🔑 key access|📷 camera photo"],
+  ["Outdoors", "🦌 deer|🐻 bear|🐺 wolf|🦃 turkey|🦆 duck|🐟 fish|🦅 eagle|🐗 boar hog|🐾 tracks paws|🏹 bow arrow hunt|🎣 fishing|🥾 boot hike|🚶 walk|🚴 bike|🛶 canoe|🚤 boat|🔥 fire|💧 water drop|☀️ sun|🌧️ rain|❄️ snow|🌙 moon night|🌿 plant|🍂 leaves|🍄 mushroom|🌾 field|🪨 rock|🌵 cactus"],
+  ["Transport", "🚗 car|🛻 truck pickup|🚙 suv|🚌 bus|🚆 train|✈️ plane airport|🚁 helicopter|🚀 rocket|🛣️ highway road|🛤️ railway|🚦 traffic light|🚧 construction|🏍️ motorcycle|🚲 bicycle|🛴 scooter|🚢 ship"],
+  ["People & events", "👤 person|👥 people group|🧑‍🤝‍🧑 meet|🎉 party event|📅 calendar date|⏰ alarm time|🎓 graduation|💼 work|🛒 shopping|🍽️ food restaurant|☕ coffee|🍺 beer bar|🎵 music|🏆 trophy|⚽ soccer|🏈 football|⚾ baseball|🏀 basketball|❤️ heart love|👍 thumbs up|📞 phone call|✉️ mail|💡 idea|📝 note|🆘 sos help|🚑 ambulance|🚒 fire engine|🚓 police"]
+].map(([cat, list]) => [cat, list.split("|").map(x => { const i = x.indexOf(" "); return { ch: x.slice(0, i), words: x.slice(i + 1) }; })]);
+
+function wireEmojiPicker(form) {
+  const pop = form.querySelector(".emoji-pop");
+  let target = null;
+  const render = (q = "") => {
+    const ql = q.trim().toLowerCase();
+    const cats = EMOJI.map(([cat, items]) => [cat, items.filter(e => !ql || e.words.includes(ql) || cat.toLowerCase().includes(ql))]).filter(([, i]) => i.length);
+    pop.querySelector(".emoji-list").innerHTML = cats.map(([cat, items]) =>
+      `<div class="emoji-cat">${cat}</div><div class="emoji-grid">${items.map(e => `<button type="button" title="${e.words}" data-ch="${e.ch}">${e.ch}</button>`).join("")}</div>`).join("") || `<p class="hint">No match</p>`;
+  };
+  pop.innerHTML = `<input type="search" placeholder="Search emoji (e.g. deer, camp, warning)" aria-label="Search emoji"><div class="emoji-list"></div>`;
+  const search = pop.querySelector("input");
+  search.addEventListener("input", () => render(search.value));
+  form.querySelectorAll(".emoji-btn").forEach(btn => btn.addEventListener("click", () => {
+    const same = !pop.hidden && target === btn.dataset.emojiFor;
+    target = btn.dataset.emojiFor;
+    pop.hidden = same;
+    if (!pop.hidden) { search.value = ""; render(); search.focus(); }
+  }));
+  pop.addEventListener("click", (e) => {
+    const ch = e.target.closest("button[data-ch]")?.dataset.ch;
+    if (!ch || !target) return;
+    const el = form.elements[target];
+    const start = el.selectionStart ?? el.value.length, end = el.selectionEnd ?? el.value.length;
+    if (el.value.length + ch.length > (el.maxLength > 0 ? el.maxLength : 1e9)) return;
+    el.value = el.value.slice(0, start) + ch + el.value.slice(end);
+    el.focus();
+    el.setSelectionRange(start + ch.length, start + ch.length);
+  });
+  pop.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); pop.hidden = true; form.elements[target]?.focus(); } });
+}
+
 function openPinForm(lngLat, feature) {
   closePopup();
   const props = feature ? { ...feature.properties } : {};
-  const popup = new mapboxgl.Popup({ closeOnClick: false, maxWidth: "280px" })
+  const popup = new mapboxgl.Popup({ closeOnClick: false, maxWidth: "300px" })
     .setLngLat(lngLat)
     .setHTML(pinFormHtml(props))
     .addTo(window.GeoVive.map);
   state.popup = popup;
 
   const form = popup.getElement().querySelector(".pin-form");
+  wireEmojiPicker(form);
   const errEl = form.querySelector(".pin-form-error");
   if (!feature) form.querySelector("input[name=name]").focus();
 

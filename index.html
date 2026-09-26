@@ -651,6 +651,16 @@
       border: 1px solid rgba(148,163,184,0.35); background: transparent; color: inherit; cursor: pointer; padding: 0; }
     .pin-act:hover { border-color: var(--accent1); color: var(--accent1); }
     .pin-act svg { width: 17px; height: 17px; }
+    .pin-form .field-row { display: flex; gap: 0.3rem; align-items: stretch; }
+    .pin-form .field-row > input, .pin-form .field-row > textarea { flex: 1; min-width: 0; }
+    .emoji-btn { flex: none; width: 32px; border-radius: 6px; border: 1px solid rgba(148,163,184,0.35); background: transparent; cursor: pointer; font-size: 16px; padding: 0; }
+    .emoji-btn:hover { border-color: var(--accent1); }
+    .emoji-pop { margin-top: 0.3rem; border: 1px solid rgba(148,163,184,0.3); border-radius: 8px; padding: 0.35rem; background: rgba(15,23,42,0.97); max-height: 180px; overflow-y: auto; }
+    .emoji-pop input { width: 100%; box-sizing: border-box; margin-bottom: 0.3rem; font-size: 12px; }
+    .emoji-pop .emoji-cat { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0.25rem 0 0.1rem; }
+    .emoji-pop .emoji-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
+    .emoji-pop .emoji-grid button { border: 0; background: transparent; font-size: 18px; line-height: 1; padding: 3px 0; cursor: pointer; border-radius: 4px; }
+    .emoji-pop .emoji-grid button:hover, .emoji-pop .emoji-grid button:focus { background: rgba(148,163,184,0.2); outline: none; }
     .pin-copied { font-size: 0.75rem; color: var(--accent1); margin-left: 0.2rem; }
     .popup-title {
       font-weight: 600;
@@ -705,9 +715,9 @@
     .north-lock-btn.is-locked { color: #fff; background: #16a34a; }
     .north-lock-btn.is-locked:hover { background: #15803d; }
     .three-d-btn { display: flex; align-items: center; justify-content: center; }
-    .three-d-btn:not(.is-on) .ctrl-emoji { opacity: 0.55; filter: grayscale(1); }
-    .three-d-btn.is-on { color: #fff; background: #2563eb; }
-    .three-d-btn.is-on:hover { background: #1d4ed8; }
+    .three-d-btn { color: #6b7280; }
+    .three-d-btn.is-on { color: #2563eb; }
+    .three-d-btn.is-on:hover { color: #1d4ed8; }
     /* On phones the tray handle sits over the top of the map */
     @media (max-width: 850px) { .mapboxgl-ctrl-top-left { top: 56px; } }
 
@@ -1651,7 +1661,9 @@
         this.button = document.createElement("button");
         this.button.type = "button";
         this.button.className = "three-d-btn";
-        this.button.innerHTML = `<span class="ctrl-emoji" aria-hidden="true">🆛</span>`;
+        this.button.innerHTML = `<svg class="ctrl-3d" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <rect x="2" y="3" width="20" height="18" rx="4" fill="currentColor"/>
+          <text x="12" y="16.6" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#fff">3D</text></svg>`;
         this.button.setAttribute("aria-label", "3D terrain and buildings");
         this.button.addEventListener("click", () => this.set(!this.on, { move: true }));
         this.container.appendChild(this.button);
