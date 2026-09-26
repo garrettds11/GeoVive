@@ -67,7 +67,7 @@ function closePopup() {
 }
 
 async function reloadCurrent() {
-  await window.GeoVive.applyDataset(window.GeoVive.currentDataset, { keepView: true });
+  await window.GeoVive.applyDataset(window.GeoVive.currentDataset);
 }
 
 async function refreshDatasets() {
