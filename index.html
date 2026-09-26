@@ -72,6 +72,27 @@
       overflow: auto;
     }
 
+    /* Sidebar scrolling: a thin, dark scroll bar that appears on hover */
+    .tray-content {
+      scrollbar-width: thin;
+      scrollbar-color: transparent transparent;
+      scrollbar-gutter: stable;
+    }
+    .tray-content:hover, .tray-content:focus-within {
+      scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+    }
+    .tray-content::-webkit-scrollbar { width: 8px; }
+    .tray-content::-webkit-scrollbar-track { background: transparent; }
+    .tray-content::-webkit-scrollbar-thumb { background: transparent; border-radius: 8px; }
+    .tray-content:hover::-webkit-scrollbar-thumb,
+    .tray-content:focus-within::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.35); }
+    .tray-content::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.6); }
+
+    /* Desktop: the page itself never scrolls (the sidebar and map do) */
+    @media (min-width: 851px) {
+      html, body { overflow: hidden; }
+    }
+
     .layout {
       display: grid;
       grid-template-columns: 320px minmax(0, 1fr); /* tray | map */
