@@ -17,3 +17,4 @@ frontend:
       - docs/**/*
       - appconnect/**/*
       - mydata/**/*
+      - connect/**/*

@@ -72,3 +72,10 @@
   .md-form, .md-edit .grid { grid-template-columns: 1fr 1fr; }
   .md-table .hide-sm { display: none; }
 }
+
+/* Connected apps */
+.md-app + .md-app { margin-top: 0.1rem; }
+.md-appshare { border: 1px solid var(--border); border-top: 0; border-radius: 0 0 0.7rem 0.7rem; padding: 0.6rem 0.9rem; margin-top: -0.4rem; background: rgba(2,6,23,0.5); }
+.md-appshare label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.86rem; padding: 0.2rem 0; }
+.md-appshare .s { font-size: 0.78rem; color: var(--muted); }
+.md-appshare .row { display: flex; gap: 0.4rem; justify-content: flex-end; margin-top: 0.5rem; }

@@ -40,7 +40,7 @@
       <a href="#layer-lists">Layer lists</a>
       <a href="#open-links">Open links</a>
       <a href="#appconnect-api">AppConnect API</a>
-      <a href="#connected-apps">Account linking</a>
+      <a href="#account-linking">Account linking</a>
     </nav>
 
     <h2 id="overview">Overview</h2>
@@ -60,7 +60,7 @@
       <tr><td>Flow</td><td>Authorization code + PKCE</td></tr>
       <tr><td>Token</td><td>Access token (<code>token_use: access</code>); the user is identified by its <code>sub</code> claim</td></tr>
     </table></div>
-    <p>Tokens are currently issued only to GeoVivé's own web app. Third-party account access is coming through <a href="#connected-apps">account linking</a>.</p>
+    <p>These tokens are issued only to GeoVivé's own web app. Other apps get access to a user's maps through <a href="#account-linking">account linking</a>, with the user's consent.</p>
 
     <h2 id="access">Access rules</h2>
     <ul>
@@ -299,13 +299,51 @@ map.getSource("places").setData(collection);</code></pre>
     </table></div>
     <p>Stages: registered → checking → checks passed or needs fixes → awaiting payment → live, renewed yearly; plus sandbox, expired, suspended, disconnected (90-day reconnect window) and closed.</p>
 
-    <h2 id="connected-apps">Account linking (coming soon)</h2>
+    <h2 id="connected-apps"><span id="account-linking"></span>Account linking</h2>
+    <p>A live or sandbox <a href="/docs/developers/appconnect/">AppConnect</a> app can ask a user to link their GeoVivé account. With the user's consent, your app can read the maps it created for them (and any they choose to share), and create maps and pins. It's standard OAuth 2.0: authorization code with PKCE, and your client secret stays on your server.</p>
+
+    <h3>1. Set up</h3>
+    <p>On your app's <a href="/appconnect/">AppConnect page</a>, under <b>Account linking</b>, add your redirect URIs (exact https addresses on your verified domain; <code>http://localhost</code> is allowed while in the sandbox) and create a client secret. The secret is shown once. Your client ID is your app ID.</p>
+
+    <h3>2. Send the user to GeoVivé</h3>
+    <pre><code>https://geovive.link/connect/?response_type=code
+  &amp;client_id=YOUR_APP_ID
+  &amp;redirect_uri=https%3A%2F%2Fyourapp.example%2Fgeovive%2Fcallback
+  &amp;scope=profile%20maps%3Aread%20maps%3Awrite
+  &amp;state=RANDOM_PER_REQUEST
+  &amp;code_challenge=BASE64URL(SHA256(code_verifier))
+  &amp;code_challenge_method=S256</code></pre>
+    <p>The user signs in if needed, sees your app's name, domain and what it's asking for, and can share extra maps read-only. They come back to your <code>redirect_uri</code> with <code>?code=…&amp;state=…</code>, or <code>?error=access_denied</code> if they cancel. Check that <code>state</code> matches.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Scope</th><th>Lets your app</th></tr>
+      <tr><td><code>profile</code></td><td>Get a user ID for your app and the user's display name</td></tr>
+      <tr><td><code>maps:read</code> (default)</td><td>Read maps your app created for this user, and maps the user shared with it</td></tr>
+      <tr><td><code>maps:write</code></td><td>Create maps, and add, change and delete pins in maps your app created</td></tr>
+    </table></div>
+
+    <h3>3. Swap the code for tokens (on your server)</h3>
+    <pre><code>POST https://api.geovive.link/v1/oauth/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code&amp;code=…&amp;code_verifier=…
+&amp;redirect_uri=…&amp;client_id=YOUR_APP_ID&amp;client_secret=…</code></pre>
+    <pre><code>{ "access_token": "gva_…", "token_type": "Bearer", "expires_in": 3600,
+  "refresh_token": "gvr_…", "scope": "maps:read maps:write profile" }</code></pre>
+    <p>Codes last 5 minutes and work once. Access tokens last an hour. Refresh tokens last 90 days and are replaced every time you use one (<code>grant_type=refresh_token</code>): store the new one. Using an old refresh token again is treated as theft and ends the link. HTTP Basic client authentication also works. Revoke a token with <code>POST /v1/oauth/revoke</code> (<code>token</code>, plus your client credentials).</p>
+
+    <h3>4. Call the linked API</h3>
+    <pre><code>Authorization: Bearer gva_…</code></pre>
+    <div class="table-wrap"><table>
+      <tr><th>Method</th><th>Path</th><th>Scope</th><th>Does</th></tr>
+      <tr><td>GET</td><td><code>/v1/linked/me</code></td><td>any</td><td><code>userId</code> (stable for your app only), scopes, and <code>displayName</code> with <code>profile</code></td></tr>
+      <tr><td>GET</td><td><code>/v1/linked/datasets</code></td><td>maps:read</td><td>Maps your app can see; <code>createdByThisApp</code> says which you can change</td></tr>
+      <tr><td>POST</td><td><code>/v1/linked/datasets</code></td><td>maps:write</td><td>Create a private map: <code>{ name, description?, tags?, externalRef? }</code>. The same <code>externalRef</code> returns the existing map</td></tr>
+      <tr><td>GET</td><td><code>/v1/linked/datasets/{id}</code>, <code>…/features</code>, <code>…/features/{featureId}</code></td><td>maps:read</td><td>Same shapes as the public dataset and feature routes</td></tr>
+      <tr><td>POST, PUT, DELETE</td><td><code>/v1/linked/datasets/{id}/features[/{featureId}]</code></td><td>maps:write</td><td>Add, replace or delete pins, only in maps your app created</td></tr>
+    </table></div>
     <div class="card">
-      <p>Next, apps will be able to link a user's GeoVivé account with their own and read that user's maps, with the user's consent:</p>
-      <ul>
-        <li><strong>Account linking</strong> via OAuth 2.0, with a consent screen and a Connected apps page where users can revoke access.</li>
-        <li><strong>App-scoped access:</strong> an app sees only maps created through it or shared with it.</li>
-      </ul>
+      <p style="margin-top:0"><strong>What your app never gets:</strong> the user's email, password, GeoVivé account ID, or any map they didn't create through you or share with you. <code>userId</code> is different for every app, so apps can't match users with each other.</p>
+      <p style="margin:0"><strong>When access ends:</strong> the user removes your app in <a href="/mydata/#connected-apps">My data → Connected apps</a>, your app leaves AppConnect or lapses, or a refresh token is reused. Calls then return <code>401</code>; send the user through step 2 again. Maps your app created stay with the user.</p>
     </div>
 
     <footer>GeoVivé API v1 · <a href="/docs/">User guide</a></footer>

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Link an app · GeoVivé</title>
+  <meta name="robots" content="noindex" />
+  <meta name="referrer" content="no-referrer" />
+  <link rel="icon" href="/assets/favicon-32x32.png" />
+  <link rel="stylesheet" href="/docs/docs.css" />
+  <link rel="stylesheet" href="/mydata/mydata.css" />
+  <link rel="stylesheet" href="/connect/connect.css" />
+  <script>if (window.top !== window.self) { document.documentElement.style.display = "none"; window.top.location = window.self.location; }</script>
+  <script src="/config.js"></script>
+  <script type="importmap">{ "imports": { "oidc-client-ts": "https://cdn.jsdelivr.net/npm/oidc-client-ts@3.4.1/+esm" } }</script>
+</head>
+<body>
+  <main class="page cx-page">
+    <header>
+      <div class="top">
+        <a class="brand" href="/"><h1>Geo<span>Vivé</span></h1></a>
+        <span class="tagline">Link an app to your account</span>
+      </div>
+    </header>
+    <div id="cx-root"><p class="muted">Loading…</p></div>
+    <footer>You can remove this link any time in <a href="/mydata/#connected-apps">My data → Connected apps</a>. · <a href="/docs/security/">Security</a></footer>
+  </main>
+  <script type="module" src="/connect/connect.js"></script>
+</body>
+</html>

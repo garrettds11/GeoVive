@@ -154,6 +154,21 @@ async function appView(appId) {
     <p style="color:var(--muted)">Only approved layers are shown to your users. New or changed layers are checked automatically; any needing a person are reviewed within 5 business days.</p>
     <ul class="ac-hist">${app.layers.sort((a, b) => a.id.localeCompare(b.id)).map(l => `<li><code>${esc(l.id)}</code> · <span class="ac-badge ${l.state === "approved" ? "live" : l.state === "rejected" ? "checks_failed" : "verifying"}">${esc(LAYER_STATE[l.state] || l.state)}</span>${l.findings?.length && l.state !== "approved" ? ` · ${esc(l.findings.join("; "))}` : ""}</li>`).join("")}</ul>` : ""}
 
+    <h3>Account linking <small style="color:var(--muted);font-weight:400">(optional)</small></h3>
+    <p style="color:var(--muted)">Let your users link their GeoVivé account to your app, so it can read and add to their maps with their consent. See the <a href="/docs/developers/#account-linking">developer guide</a>.</p>
+    <div class="card">
+      <p style="margin-top:0">Client ID <span class="ac-copy">${esc(app.oauth?.clientId || app.appId)}</span></p>
+      <p>Client secret: ${app.oauth?.hasSecret ? `set, ends in <code>…${esc(app.oauth.secretHint)}</code> (created ${date(app.oauth.secretCreatedAt)})` : "not created yet"}
+        <button class="ac-btn secondary" id="ac-secret" style="margin-left:6px">${app.oauth?.hasSecret ? "Replace secret" : "Create secret"}</button></p>
+      <div id="ac-secret-out"></div>
+      <form class="ac-form" id="ac-oauth-form">
+        <label>Redirect URIs (one per line, https on ${esc(app.domain)}${app.status === "sandbox" ? " or http://localhost while in the sandbox" : ""}; up to 5)
+          <textarea name="uris" rows="3" spellcheck="false" placeholder="https://${esc(app.domain)}/geovive/callback">${esc((app.oauth?.redirectUris || []).join("\n"))}</textarea></label>
+        <div id="ac-oauth-msg"></div>
+        <div class="ac-row"><button class="ac-btn" type="submit">Save redirect URIs</button></div>
+      </form>
+    </div>
+
     <h3>History</h3>
     <ul class="ac-hist">${(app.history || []).map(h => `<li>${date(h.at)} · ${esc(describe(h))}</li>`).join("")}</ul>
 
@@ -177,6 +192,29 @@ async function appView(appId) {
     </details>`;
 
   document.getElementById("ac-export")?.addEventListener("click", () => downloadExport(appId));
+  const oauthForm = document.getElementById("ac-oauth-form");
+  if (oauthForm) oauthForm.onsubmit = async e => {
+    e.preventDefault();
+    const out = document.getElementById("ac-oauth-msg");
+    const redirectUris = oauthForm.uris.value.split(/\s+/).map(x => x.trim()).filter(Boolean);
+    try {
+      await api(`/v1/appconnect/apps/${encodeURIComponent(appId)}/oauth`, { method: "PUT", body: JSON.stringify({ redirectUris }) });
+      msg(out, `Saved ${redirectUris.length} redirect URI${redirectUris.length === 1 ? "" : "s"}.`, "ok");
+    } catch (err) { msg(out, err.message); }
+  };
+  document.getElementById("ac-secret")?.addEventListener("click", async () => {
+    if (app.oauth?.hasSecret && !confirm("Replace the client secret? The old one stops working immediately, so update your server first or right after.")) return;
+    const out = document.getElementById("ac-secret-out");
+    try {
+      const r = await api(`/v1/appconnect/apps/${encodeURIComponent(appId)}/oauth/secret`, { method: "POST" });
+      out.innerHTML = `<div class="ac-msg ok"><strong>Copy this secret now. GeoVivé won't show it again.</strong><br>
+        <span class="ac-copy" id="ac-secret-val">${esc(r.clientSecret)}</span> <button class="ac-btn secondary" id="ac-secret-copy">Copy</button><br>
+        Keep it on your server only (never in a browser or mobile app).</div>`;
+      document.getElementById("ac-secret-copy").onclick = () => navigator.clipboard.writeText(r.clientSecret);
+      document.getElementById("ac-secret").textContent = "Replace secret";
+      app.oauth = { ...(app.oauth || {}), hasSecret: true, secretHint: r.secretHint, secretCreatedAt: r.secretCreatedAt };
+    } catch (err) { msg(out, err.message); }
+  });
   document.getElementById("ac-cancel-leave")?.addEventListener("click", async () => {
     await api(`/v1/appconnect/apps/${encodeURIComponent(appId)}/disconnect`, { method: "DELETE" }); appView(appId);
   });
@@ -262,6 +300,8 @@ function describe(h) {
   if (h.type === "notice") return `“Connection is live” notice sent`;
   if (h.type === "layer-change") return `Layer changes found: ${(h.layers || []).join(", ")}`;
   if (h.type === "layer-review") return `Layer update checked: ${(h.approved || []).length} approved, ${(h.review || []).length} in review, ${(h.rejected || []).length} not approved`;
+  if (h.type === "oauth-redirects") return `Account linking: ${h.count} redirect URI${h.count === 1 ? "" : "s"} saved`;
+  if (h.type === "oauth-secret") return `Account linking: client secret created (…${h.hint})`;
   if (h.type === "layer-decision") return `Reviewer ${h.decision === "approve" ? "approved" : "rejected"} ${h.layerId}`;
   return h.type;
 }

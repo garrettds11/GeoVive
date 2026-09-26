@@ -136,6 +136,34 @@ Resources:
         - { Key: env, Value: !Ref Env }
 
   # Connected apps (AppConnect): one record per app plus its setup history
+  # Account linking: grants, one-time codes and tokens (hashed). Expired rows removed by TTL.
+  LinksTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub geovive-${Env}-links
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+        - { AttributeName: appId, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: byApp
+          KeySchema:
+            - { AttributeName: appId, KeyType: HASH }
+            - { AttributeName: pk, KeyType: RANGE }
+          Projection: { ProjectionType: KEYS_ONLY }
+      TimeToLiveSpecification: { AttributeName: ttl, Enabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      SSESpecification: { SSEEnabled: true }
+      Tags:
+        - { Key: project, Value: geovive }
+        - { Key: env, Value: !Ref Env }
+
   AppsTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -302,6 +330,7 @@ Resources:
           USER_POOL_CLIENT_ID: !Ref UserPoolClientId
           ALLOWED_ORIGINS: !Join [",", !Ref AllowedOrigins]
           APPS_TABLE: !Ref AppsTable
+          LINKS_TABLE: !Ref LinksTable
           APPCHECK_FUNCTION: !Ref AppCheckFunction
           STRIPE_SECRET_ID: geovive/stripe
       Policies:
@@ -311,6 +340,7 @@ Resources:
         - DynamoDBCrudPolicy: { TableName: !Ref ImportsTable }
         - LambdaInvokePolicy: { FunctionName: !Ref ImportFunction }
         - DynamoDBCrudPolicy: { TableName: !Ref AppsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref LinksTable }
         - LambdaInvokePolicy: { FunctionName: !Ref AppCheckFunction }
         - Statement:
             - Effect: Allow
@@ -322,6 +352,9 @@ Resources:
               Action: [ses:SendEmail, ses:SendRawEmail]
               Resource: "*"
               Condition: { StringEquals: { "ses:FromAddress": appconnect@geovive.link } }
+            - Effect: Allow
+              Action: cognito-idp:ListUsers
+              Resource: !Sub arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}
       Events:
         # Public reads (visibility enforced in the handler)
         ListDatasets:     { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /v1/datasets, Auth: { Authorizer: NONE } } }
@@ -356,6 +389,25 @@ Resources:
         ReviewPage:       { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /v1/appconnect/review, Auth: { Authorizer: NONE } } }
         ReviewDecision:   { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: /v1/appconnect/review, Auth: { Authorizer: NONE } } }
         StripeWebhook:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: /v1/appconnect/stripe/webhook, Auth: { Authorizer: NONE } } }
+        # Account linking: consent + Connected apps (GeoVivé sign-in); token endpoint and /v1/linked/* check app credentials and tokens in the handler
+        OAuthInfo:        { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/oauth/authorize" } }
+        OAuthDecide:      { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/oauth/authorize" } }
+        OAuthToken:       { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/oauth/token", Auth: { Authorizer: NONE } } }
+        OAuthRevoke:      { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/oauth/revoke", Auth: { Authorizer: NONE } } }
+        ConnList:         { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/connections" } }
+        ConnShare:        { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: PATCH, Path: "/v1/connections/{appId}" } }
+        ConnRevoke:       { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: DELETE, Path: "/v1/connections/{appId}" } }
+        AppOAuth:         { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: PUT, Path: "/v1/appconnect/apps/{appId}/oauth" } }
+        AppOAuthSecret:   { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/appconnect/apps/{appId}/oauth/secret" } }
+        LinkedMe:         { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/linked/me", Auth: { Authorizer: NONE } } }
+        LinkedList:       { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/linked/datasets", Auth: { Authorizer: NONE } } }
+        LinkedCreate:     { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/linked/datasets", Auth: { Authorizer: NONE } } }
+        LinkedGet:        { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/linked/datasets/{datasetId}", Auth: { Authorizer: NONE } } }
+        LinkedFeats:      { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/linked/datasets/{datasetId}/features", Auth: { Authorizer: NONE } } }
+        LinkedFeat:       { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/linked/datasets/{datasetId}/features/{featureId}", Auth: { Authorizer: NONE } } }
+        LinkedAddFeat:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/linked/datasets/{datasetId}/features", Auth: { Authorizer: NONE } } }
+        LinkedPutFeat:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: PUT, Path: "/v1/linked/datasets/{datasetId}/features/{featureId}", Auth: { Authorizer: NONE } } }
+        LinkedDelFeat:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: DELETE, Path: "/v1/linked/datasets/{datasetId}/features/{featureId}", Auth: { Authorizer: NONE } } }
         DeleteFeature:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: DELETE, Path: "/v1/datasets/{datasetId}/features/{featureId}" } }
 
   # AppConnect connection checks, reports and emails (invoked asynchronously by the API)
@@ -378,12 +430,14 @@ Resources:
       Environment:
         Variables:
           APPS_TABLE: !Ref AppsTable
+          LINKS_TABLE: !Ref LinksTable
           GEOMETRY_BUCKET: !Ref GeometryBucket
           STRIPE_SECRET_ID: geovive/stripe
           ALLOWED_ORIGINS: !Join [",", !Ref AllowedOrigins]
           EVIDENCE_BUCKET: !Ref EvidenceBucket
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref AppsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref LinksTable }
         - Statement:
             - Effect: Allow
               Action: s3:PutObject

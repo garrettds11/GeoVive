@@ -22,7 +22,9 @@ import { gzipSync } from "node:zlib";
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { originAllowed } from "./apps.mjs";
-import { getActiveApp } from "./appstore.mjs";
+import { getActiveApp, getAppRecord, isActive } from "./appstore.mjs";
+import * as linking from "./linking.mjs";
+import { CognitoIdentityProviderClient, ListUsersCommand } from "@aws-sdk/client-cognito-identity-provider";
 import * as appconnect from "./appconnect.mjs";
 import { fetchLayerList, layerHash } from "./appcheck.mjs";
 import { cleanTags, searchTextOf, searchPublic, MetaError } from "./search.mjs";
@@ -764,6 +766,141 @@ async function relayLayer(appId, layerId) {
   return { appId, layerId, url, fetchedAt, count };
 }
 
+// ------------------------------------------------------------------ account linking (OAuth 2.0)
+// The consent page (/connect/) and the Connected apps list use the user's GeoVivé sign-in;
+// the token endpoint authenticates the app; /v1/linked/* takes the app's access token.
+
+const cognito = new CognitoIdentityProviderClient({});
+// Always read fresh: a rotated secret or changed redirect must apply at once.
+const linkApp = async id => {
+  const a = await getAppRecord(ddb, id, { fresh: true });
+  return a && isActive(a.status, a.termEndsAt) ? a : null;
+};
+const ownedMapsOf = sub => () => queryAll({ TableName: DATASETS_TABLE, IndexName: "byOwner",
+  KeyConditionExpression: "ownerId = :o", ExpressionAttributeValues: { ":o": sub } });
+
+function formBody(event) {
+  const raw = event.isBase64Encoded ? Buffer.from(event.body || "", "base64").toString("utf8") : (event.body || "");
+  const type = event.headers?.["content-type"] || event.headers?.["Content-Type"] || "";
+  if (type.includes("application/json")) { try { return JSON.parse(raw || "{}"); } catch { return {}; } }
+  return Object.fromEntries(new URLSearchParams(raw));
+}
+const header = (event, name) => event.headers?.[name] || event.headers?.[name.toLowerCase()] || event.headers?.[name[0].toUpperCase() + name.slice(1)];
+
+async function authorizeInfo(event) {
+  const caller = await getCaller(event, { required: true });
+  const q = event.queryStringParameters || {};
+  const out = await linking.checkAuthorize(ddb, { getApp: linkApp, sub: caller.sub }, q);
+  if (out.redirect) return out;
+  const maps = (await ownedMapsOf(caller.sub)()).map(d => ({ datasetId: d.datasetId, name: d.name, visibility: d.visibility,
+    featureCount: d.featureCount || 0, fromThisApp: d.origin?.appId === out.app.appId })).sort((a, b) => a.name.localeCompare(b.name));
+  return { app: { appId: out.app.appId, name: out.app.name, domain: out.app.domain },
+    scopes: out.scopes.map(s => ({ scope: s, label: linking.SCOPES[s] })),
+    grant: out.grant ? linking.grantView(out.grant) : null, maps };
+}
+
+async function authorizeDecision(event) {
+  const caller = await getCaller(event, { required: true });
+  const body = parseBody(event);
+  return linking.approve(ddb, { getApp: linkApp, sub: caller.sub, ownedMaps: ownedMapsOf(caller.sub) },
+    body.params || {}, { approve: body.approve === true, sharedDatasets: body.sharedDatasets || [] });
+}
+
+const oauthJson = (status, body) => ({ statusCode: status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "Pragma": "no-cache" }, body: JSON.stringify(body) });
+
+async function linkedRequest(event, scope) {
+  return linking.authenticate(ddb, { getApp: linkApp }, header(event, "authorization"), scope);
+}
+// The existing dataset/feature routes check the caller; after the link checks pass,
+// run them as the linked user.
+const asUser = (event, sub) => ({ ...event, headers: { ...event.headers, authorization: undefined, Authorization: undefined },
+  requestContext: { ...event.requestContext, authorizer: { jwt: { claims: { sub } } } } });
+const linkedView = d => { const v = datasetView(d); delete v.ownerId; return { ...v, createdByThisApp: undefined }; };
+
+async function linkedMap(link, datasetId, write) {
+  let ds;
+  try { ds = await loadDataset(datasetId); } catch { ds = null; }
+  if (!ds || !linking.canSee(link, ds)) throw new HttpError(404, "Dataset not found");
+  if (write && !linking.canChange(link, ds)) throw new HttpError(403, "Apps can only change maps they created. The user shared this one read-only.");
+  return ds;
+}
+
+async function linkedRoute(event, routeKey, p) {
+  switch (routeKey) {
+    case "GET /v1/linked/me": {
+      const link = await linkedRequest(event, null);
+      const { reviewKey } = await appconnect.reviewSettings();
+      const me = { userId: linking.pairwiseId(reviewKey, link.appId, link.sub), scopes: link.scopes };
+      if (link.scopes.includes("profile")) {
+        try {
+          const res = await cognito.send(new ListUsersCommand({ UserPoolId: process.env.USER_POOL_ID, Filter: `sub = "${link.sub.replace(/"/g, "")}"`, Limit: 1 }));
+          const attrs = Object.fromEntries((res.Users?.[0]?.Attributes || []).map(a => [a.Name, a.Value]));
+          me.displayName = attrs.preferred_username || attrs.name || null;
+        } catch (e) { console.error("Profile lookup failed", e.name); me.displayName = null; }
+      }
+      return me;
+    }
+    case "GET /v1/linked/datasets": {
+      const link = await linkedRequest(event, "maps:read");
+      const mine = await ownedMapsOf(link.sub)();
+      return { datasets: mine.filter(d => linking.canSee(link, d)).sort((a, b) => a.name.localeCompare(b.name))
+        .map(d => ({ ...linkedView(d), createdByThisApp: d.origin?.appId === link.appId })) };
+    }
+    case "POST /v1/linked/datasets": {
+      const link = await linkedRequest(event, "maps:write");
+      const body = parseBody(event);
+      if (!body.name || typeof body.name !== "string") throw new HttpError(400, "name is required");
+      const app = await linkApp(link.appId);
+      const now = new Date().toISOString(), meta = metaFields(body);
+      const externalRef = typeof body.externalRef === "string" ? body.externalRef.slice(0, 200) : undefined;
+      const item = { datasetId: randomUUID(), name: body.name.trim().slice(0, 120), description: meta.description || `Created from ${app.name}`,
+        tags: meta.tags || [], visibility: "private", ownerId: link.sub, origin: { appId: link.appId, externalRef },
+        ...(externalRef ? { originKey: `${link.sub}#${link.appId}#${externalRef}` } : {}),
+        featureTypes: app.featureTypes, featureCount: 0, createdAt: now, updatedAt: now };
+      if (item.originKey) {
+        const found = await ddb.send(new QueryCommand({ TableName: DATASETS_TABLE, IndexName: "byOrigin",
+          KeyConditionExpression: "originKey = :k", ExpressionAttributeValues: { ":k": item.originKey }, Limit: 1 }));
+        if (found.Items?.[0]) return { created: false, dataset: { ...linkedView(found.Items[0]), createdByThisApp: true } };
+      }
+      item.searchText = searchTextOf(item);
+      await ddb.send(new PutCommand({ TableName: DATASETS_TABLE, Item: item }));
+      return { created: true, dataset: { ...linkedView(item), createdByThisApp: true } };
+    }
+    case "GET /v1/linked/datasets/{datasetId}": {
+      const link = await linkedRequest(event, "maps:read");
+      const ds = await linkedMap(link, p.datasetId, false);
+      return { ...linkedView(ds), createdByThisApp: ds.origin?.appId === link.appId };
+    }
+    case "GET /v1/linked/datasets/{datasetId}/features": {
+      const link = await linkedRequest(event, "maps:read");
+      await linkedMap(link, p.datasetId, false);
+      return listFeatures(asUser(event, link.sub), p.datasetId);
+    }
+    case "GET /v1/linked/datasets/{datasetId}/features/{featureId}": {
+      const link = await linkedRequest(event, "maps:read");
+      await linkedMap(link, p.datasetId, false);
+      return getFeature(asUser(event, link.sub), p.datasetId, p.featureId);
+    }
+    case "POST /v1/linked/datasets/{datasetId}/features": {
+      const link = await linkedRequest(event, "maps:write");
+      await linkedMap(link, p.datasetId, true);
+      return { status: 201, body: await createFeature(asUser(event, link.sub), p.datasetId) };
+    }
+    case "PUT /v1/linked/datasets/{datasetId}/features/{featureId}": {
+      const link = await linkedRequest(event, "maps:write");
+      await linkedMap(link, p.datasetId, true);
+      return updateFeature(asUser(event, link.sub), p.datasetId, p.featureId);
+    }
+    case "DELETE /v1/linked/datasets/{datasetId}/features/{featureId}": {
+      const link = await linkedRequest(event, "maps:write");
+      await linkedMap(link, p.datasetId, true);
+      await deleteFeature(asUser(event, link.sub), p.datasetId, p.featureId);
+      return { status: 204 };
+    }
+  }
+  return undefined;
+}
+
 const html = body => ({ statusCode: 200, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store",
   "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action https://api.geovive.link", "X-Frame-Options": "DENY" }, body });
 
@@ -834,11 +971,42 @@ export const handler = async (event) => {
         result = await appconnect.stripeWebhook(ddb, s3, raw, event.headers?.["stripe-signature"] || event.headers?.["Stripe-Signature"]);
         break;
       }
-      default: throw new HttpError(404, `No route for ${routeKey}`);
+      case "GET /v1/oauth/authorize": result = await authorizeInfo(event); break;
+      case "POST /v1/oauth/authorize": result = await authorizeDecision(event); break;
+      case "POST /v1/oauth/token":
+        try { return oauthJson(200, await linking.tokenEndpoint(ddb, { getApp: linkApp }, formBody(event), header(event, "authorization"))); }
+        catch (e) { if (e instanceof linking.LinkError) return oauthJson(e.status, { error: e.oauth || "invalid_request", error_description: e.message }); throw e; }
+      case "POST /v1/oauth/revoke":
+        try { return oauthJson(200, await linking.revokeToken(ddb, { getApp: linkApp }, formBody(event), header(event, "authorization"))); }
+        catch (e) { if (e instanceof linking.LinkError) return oauthJson(e.status, { error: e.oauth || "invalid_request", error_description: e.message }); throw e; }
+      case "GET /v1/connections":
+        result = { connections: await linking.listGrants(ddb, (await getCaller(event, { required: true })).sub) }; break;
+      case "PATCH /v1/connections/{appId}": {
+        const caller = await getCaller(event, { required: true });
+        result = await linking.updateShared(ddb, caller.sub, p.appId, parseBody(event).sharedDatasets, ownedMapsOf(caller.sub)); break;
+      }
+      case "DELETE /v1/connections/{appId}": {
+        const caller = await getCaller(event, { required: true });
+        if (!(await linking.revokeGrant(ddb, caller.sub, p.appId))) throw new HttpError(404, "This app isn't linked to your account");
+        status = 204; break;
+      }
+      case "PUT /v1/appconnect/apps/{appId}/oauth":
+        result = await appconnect.setOAuth(ddb, await getCaller(event, { required: true }), p.appId, parseBody(event)); break;
+      case "POST /v1/appconnect/apps/{appId}/oauth/secret":
+        result = await appconnect.rotateOAuthSecret(ddb, await getCaller(event, { required: true }), p.appId); break;
+      default: {
+        if (routeKey.includes(" /v1/linked/")) {
+          const out = await linkedRoute(event, routeKey, p);
+          if (out === undefined) throw new HttpError(404, `No route for ${routeKey}`);
+          if (out && out.status) { status = out.status; result = out.body; } else result = out;
+          break;
+        }
+        throw new HttpError(404, `No route for ${routeKey}`);
+      }
     }
     return respond(event, status, result);
   } catch (err) {
-    if (err instanceof HttpError || err instanceof appconnect.AppConnectError) return respond(event, err.status, { message: err.message });
+    if (err instanceof HttpError || err instanceof appconnect.AppConnectError || err instanceof linking.LinkError) return respond(event, err.status, { message: err.message });
     console.error("Unhandled error", err);
     return respond(event, 500, { message: "Internal error" });
   }

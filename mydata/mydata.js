@@ -15,7 +15,7 @@ const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const PAGE = 50;
 const TYPES = ["location", "event", "alert"];
 
-const S = { user: null, maps: [], pins: [], sel: new Set(), editing: null, page: 0, sort: ["updatedAt", -1],
+const S = { user: null, maps: [], pins: [], apps: [], appEdit: null, sel: new Set(), editing: null, page: 0, sort: ["updatedAt", -1],
   f: { q: "", map: "", vis: "", type: "" } };
 
 async function token() { const u = await users.getUser(); return u && !u.expired ? u.access_token : null; }
@@ -44,6 +44,7 @@ async function load() {
     return out.map(f => ({ f, map: m }));
   }));
   S.pins = all.flat();
+  try { S.apps = (await api("GET", "/v1/connections")).connections; } catch { S.apps = []; }
   S.sel = new Set([...S.sel].filter(k => S.pins.some(p => key(p) === k)));
 }
 
@@ -102,6 +103,11 @@ function render() {
         </div>`).join("")}</div>` : `<p class="muted">No maps yet. <a href="/">Create one on the map.</a></p>`}
     </section>
 
+    <section class="md-section" id="connected-apps">
+      <h2>Connected apps</h2>
+      ${S.apps.length ? `<div class="md-maps">${S.apps.map(appHtml).join("")}</div>` : `<p class="muted">No apps are linked to your account. When an app asks to link, you'll see what it wants and can say no; linked apps show up here, where you can remove them.</p>`}
+    </section>
+
     <section class="md-section">
       <h2>Your pins <button class="btn2 primary" data-a="new">＋ New pin</button></h2>
       <form class="md-form" id="md-new" hidden>
@@ -139,6 +145,27 @@ function render() {
         ${pages > 1 ? `<button class="icon-btn" data-a="prev" ${S.page ? "" : "disabled"}>‹ Prev</button> Page ${S.page + 1} of ${pages} <button class="icon-btn" data-a="next" ${S.page < pages - 1 ? "" : "disabled"}>Next ›</button>` : ""}</div>
     </section>`;
   bind();
+}
+
+const SCOPE_SHORT = { profile: "Your name", "maps:read": "Read its maps", "maps:write": "Edit its maps" };
+function appHtml(c) {
+  const shared = S.maps.filter(m => c.sharedDatasets.includes(m.datasetId));
+  const made = S.maps.filter(m => m.origin?.appId === c.appId);
+  const used = c.lastUsedAt ? `last used ${new Date(c.lastUsedAt).toLocaleDateString()}` : "not used yet";
+  return `<div class="md-app" data-app="${esc(c.appId)}">
+    <div class="md-map">
+      <div><div class="n">${esc(c.appName)} <span class="s">${esc(c.appDomain || "")}</span></div>
+        <div class="s">${c.scopes.map(x => SCOPE_SHORT[x] || x).join(" · ")} · linked ${new Date(c.createdAt).toLocaleDateString()} · ${used}</div>
+        <div class="s">${made.length} map${made.length === 1 ? "" : "s"} it created${shared.length ? ` · shared with it: ${shared.map(m => esc(m.name)).join(", ")}` : ""}</div></div>
+      <span></span><span></span>
+      <span><button class="icon-btn" data-a="app-share">Shared maps</button><button class="icon-btn del" data-a="app-remove">Remove</button></span>
+    </div>
+    ${S.appEdit === c.appId ? `<div class="md-appshare">
+      <p class="s">Maps ${esc(c.appName)} can read (it can't change them). Maps it created are always available to it.</p>
+      ${S.maps.filter(m => m.origin?.appId !== c.appId).map(m => `<label><input type="checkbox" value="${esc(m.datasetId)}" ${c.sharedDatasets.includes(m.datasetId) ? "checked" : ""}> ${esc(m.name)} <span class="vis ${m.visibility}">${m.visibility === "public" ? "Public" : "Private"}</span></label>`).join("") || `<p class="s">You have no other maps.</p>`}
+      <div class="row"><button class="btn2" data-a="app-share-cancel">Cancel</button><button class="btn2 primary" data-a="app-share-save">Save</button></div>
+    </div>` : ""}
+  </div>`;
 }
 
 function arrow(k) { return S.sort[0] === k ? (S.sort[1] > 0 ? " ▲" : " ▼") : ""; }
@@ -202,6 +229,19 @@ async function onClick(e) {
   const b = e.target.closest("[data-a]"); if (!b || b.tagName === "INPUT") return;
   const a = b.dataset.a, tr = b.closest("tr"), k = tr?.dataset.k;
   const pin = k && S.pins.find(p => key(p) === k);
+  const appEl = b.closest("[data-app]"), app = appEl && S.apps.find(x => x.appId === appEl.dataset.app);
+  if (a === "app-share") { S.appEdit = S.appEdit === app.appId ? null : app.appId; render(); document.getElementById("connected-apps").scrollIntoView({ block: "nearest" }); }
+  if (a === "app-share-cancel") { S.appEdit = null; render(); }
+  if (a === "app-share-save") {
+    const ids = [...appEl.querySelectorAll(".md-appshare input:checked")].map(i => i.value);
+    try { const g = await api("PATCH", `/v1/connections/${encodeURIComponent(app.appId)}`, { sharedDatasets: ids }); Object.assign(app, g); S.appEdit = null; render(); msg(`Updated what ${app.appName} can see.`); }
+    catch (err) { msg(err.message, "err"); }
+  }
+  if (a === "app-remove") {
+    if (!confirm(`Remove ${app.appName}? It loses access to your GeoVivé account right away. Maps it created stay in your account.`)) return;
+    try { await api("DELETE", `/v1/connections/${encodeURIComponent(app.appId)}`); S.apps = S.apps.filter(x => x !== app); render(); msg(`${app.appName} is no longer linked.`); }
+    catch (err) { msg(err.message, "err"); }
+  }
   if (a === "review-public") { S.f.vis = "public"; S.page = 0; render(); document.querySelector(".md-toolbar")?.scrollIntoView({ behavior: "smooth" }); }
   if (a === "only") { S.f.map = b.dataset.id; S.page = 0; render(); document.querySelector(".md-toolbar")?.scrollIntoView({ behavior: "smooth" }); }
   if (a === "new") { const f = document.getElementById("md-new"); f.hidden = !f.hidden; if (!f.hidden) f.name.focus(); }
@@ -295,6 +335,7 @@ async function refresh(text, kind = "ok") { await load(); render(); msg(text, ki
     const q = new URLSearchParams(location.search);
     if (q.get("vis")) S.f.vis = q.get("vis");
     render();
+    if (location.hash === "#connected-apps") document.getElementById("connected-apps")?.scrollIntoView();
   } catch (e) {
     if (e.status === 401) { await users.removeUser(); location.reload(); return; }
     root.innerHTML = `<p class="md-msg err">${esc(e.message)}</p>`;

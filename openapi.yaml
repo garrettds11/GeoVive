@@ -548,8 +548,109 @@ paths:
       responses:
         "200": { description: "{ exportedAt, app, history }" }
 
+  /v1/oauth/token:
+    post:
+      tags: [Account linking]
+      summary: Swap an authorization code (with PKCE verifier) or a refresh token for tokens
+      description: Server-to-server. Client credentials in the body or HTTP Basic. Refresh tokens rotate on every use; reusing one ends the link.
+      security: []
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [grant_type, client_id, client_secret]
+              properties:
+                grant_type: { type: string, enum: [authorization_code, refresh_token] }
+                code: { type: string }
+                code_verifier: { type: string }
+                redirect_uri: { type: string }
+                refresh_token: { type: string }
+                client_id: { type: string, description: Your app ID }
+                client_secret: { type: string }
+      responses:
+        "200": { description: "{ access_token, token_type: Bearer, expires_in: 3600, refresh_token, scope }" }
+        "400": { description: "{ error: invalid_grant | invalid_request | unsupported_grant_type, error_description }" }
+        "401": { description: "{ error: invalid_client }" }
+
+  /v1/oauth/revoke:
+    post:
+      tags: [Account linking]
+      summary: Revoke an access or refresh token (RFC 7009)
+      security: []
+      responses:
+        "200": { description: Always, even for unknown tokens }
+
+  /v1/oauth/authorize:
+    get:
+      tags: [Account linking]
+      summary: (GeoVivé consent page) check a link request; returns the app, scopes and the user's maps
+    post:
+      tags: [Account linking]
+      summary: "(GeoVivé consent page) approve or decline: { params, approve, sharedDatasets } → { redirect }"
+
+  /v1/connections:
+    get:
+      tags: [Account linking]
+      summary: The signed-in user's linked apps
+  /v1/connections/{appId}:
+    parameters:
+      - { name: appId, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [Account linking]
+      summary: "Change which maps are shared with the app: { sharedDatasets: [datasetId] }"
+    delete:
+      tags: [Account linking]
+      summary: Remove the link; every token stops at once
+      responses:
+        "204": { description: Removed }
+
+  /v1/linked/me:
+    get:
+      tags: [Linked API]
+      summary: "{ userId (per app), scopes, displayName (with profile) }"
+      security: [{ linked: [] }]
+  /v1/linked/datasets:
+    get:
+      tags: [Linked API]
+      summary: Maps the app created for this user, and maps the user shared with it (maps:read)
+      security: [{ linked: [] }]
+    post:
+      tags: [Linked API]
+      summary: "Create a private map { name, description?, tags?, externalRef? } (maps:write)"
+      security: [{ linked: [] }]
+  /v1/linked/datasets/{datasetId}:
+    parameters: [{ $ref: "#/components/parameters/datasetId" }]
+    get: { tags: [Linked API], summary: One visible map (maps:read), security: [{ linked: [] }] }
+  /v1/linked/datasets/{datasetId}/features:
+    parameters: [{ $ref: "#/components/parameters/datasetId" }]
+    get: { tags: [Linked API], summary: Pins in a visible map (maps:read), security: [{ linked: [] }] }
+    post: { tags: [Linked API], summary: Add a pin to a map the app created (maps:write), security: [{ linked: [] }] }
+  /v1/linked/datasets/{datasetId}/features/{featureId}:
+    parameters: [{ $ref: "#/components/parameters/datasetId" }, { $ref: "#/components/parameters/featureId" }]
+    get: { tags: [Linked API], summary: One pin (maps:read), security: [{ linked: [] }] }
+    put: { tags: [Linked API], summary: Replace a pin in a map the app created (maps:write), security: [{ linked: [] }] }
+    delete: { tags: [Linked API], summary: Delete a pin in a map the app created (maps:write), security: [{ linked: [] }] }
+
+  /v1/appconnect/apps/{appId}/oauth:
+    parameters:
+      - { name: appId, in: path, required: true, schema: { type: string } }
+    put:
+      tags: [AppConnect]
+      summary: "Set account-linking redirect URIs { redirectUris: [https URLs on your domain] }"
+  /v1/appconnect/apps/{appId}/oauth/secret:
+    parameters:
+      - { name: appId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [AppConnect]
+      summary: Create or replace the client secret (returned once)
+
 components:
   securitySchemes:
+    linked:
+      type: http
+      scheme: bearer
+      description: Account-linking access token (gva_…) from /v1/oauth/token. Only for /v1/linked/*.
     cognito:
       type: http
       scheme: bearer

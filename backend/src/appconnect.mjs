@@ -23,6 +23,7 @@ import { CATEGORIES, categoryOfIssue } from "./findings.mjs";
 import { applyResults, changedLayers, changeKey, decide, signReview, verifyReview, businessDaysBetween, REVIEW_BUSINESS_DAYS } from "./approvals.mjs";
 import { validationReportPdf, liveNoticePdf, offboardingCertificatePdf, fmtDate } from "./report.mjs";
 import { sendMail, emailHtml } from "./mailer.mjs";
+import { validateRedirects, newClientSecret, revokeAllForApp, LinkError } from "./linking.mjs";
 
 export const TERMS_VERSION = "AppConnect Terms v1.0";
 const APPS_TABLE = process.env.APPS_TABLE;
@@ -113,7 +114,9 @@ function ownerView(app) {
     termStartsAt: app.termStartsAt, termEndsAt: app.termEndsAt, termsVersion: app.termsVersion,
     lastReportId: app.lastReportId, lastCheckAt: app.lastCheckAt, createdAt: app.createdAt, updatedAt: app.updatedAt,
     disconnectAt: app.disconnectAt, disconnectedAt: app.disconnectedAt, closedAt: app.closedAt, purgeAt: app.purgeAt, disconnectReason: app.disconnectReason,
-    layers: Object.entries(app.layerState || {}).map(([id, st]) => ({ id, state: st.state, at: st.at, findings: st.findings }))
+    layers: Object.entries(app.layerState || {}).map(([id, st]) => ({ id, state: st.state, at: st.at, findings: st.findings })),
+    oauth: { clientId: app.appId, redirectUris: app.oauth?.redirectUris || [], hasSecret: !!app.oauth?.secretHash,
+      secretHint: app.oauth?.secretHint, secretCreatedAt: app.oauth?.secretCreatedAt }
   };
 }
 
@@ -124,6 +127,34 @@ async function ownedApp(ddb, appId, caller) {
 }
 
 // ------------------------------------------------------------------ routes
+
+// Account linking settings. The client secret is shown once; only its hash is stored.
+const LINK_CLOSED = new Set(["disconnected", "closed"]);
+export async function setOAuth(ddb, caller, appId, body = {}) {
+  const app = await ownedApp(ddb, appId, caller);
+  if (LINK_CLOSED.has(app.status)) throw new AppConnectError(409, "Reconnect the app before changing account linking");
+  let uris;
+  try { uris = validateRedirects(body.redirectUris, app); }
+  catch (e) { if (e instanceof LinkError) throw new AppConnectError(400, e.message); throw e; }
+  await ddb.send(new UpdateCommand({ TableName: APPS_TABLE, Key: { appId, sk: "APP" },
+    UpdateExpression: "SET oauth = :o, updatedAt = :t",
+    ExpressionAttributeValues: { ":o": { ...(app.oauth || {}), redirectUris: uris }, ":t": new Date().toISOString() } }));
+  await addEvent(ddb, appId, { type: "oauth-redirects", count: uris.length });
+  return { redirectUris: uris };
+}
+
+export async function rotateOAuthSecret(ddb, caller, appId) {
+  const app = await ownedApp(ddb, appId, caller);
+  if (LINK_CLOSED.has(app.status)) throw new AppConnectError(409, "Reconnect the app before changing account linking");
+  const { secret, hash, hint } = newClientSecret();
+  const at = new Date().toISOString();
+  const oauth = { ...(app.oauth || {}), secretHash: hash, secretHint: hint, secretCreatedAt: at };
+  await ddb.send(new UpdateCommand({ TableName: APPS_TABLE, Key: { appId, sk: "APP" },
+    UpdateExpression: "SET oauth = :o, updatedAt = :t", ExpressionAttributeValues: { ":o": oauth, ":t": at } }));
+  await addEvent(ddb, appId, { type: "oauth-secret", hint });
+  return { clientId: appId, clientSecret: secret, secretHint: hint, secretCreatedAt: at };
+}
+
 
 export async function signup(ddb, caller, body) {
   const v = validateSignup(body);
@@ -796,6 +827,8 @@ export async function disconnectApp(ddb, s3, app, { reason = "other", note = "",
     pendingFiles: await deletePrefix(s3, `appconnect-pending/${appId}/`)
   };
   await deletePrefix(s3, `appconnect/${appId}/approved.json`);
+  // End every user's account link with this app (their maps stay theirs)
+  try { deleted.accountLinks = await revokeAllForApp(ddb, appId); } catch (e) { console.error("Link revoke failed", e.name); deleted.accountLinks = 0; }
   const at = now.toISOString();
   const purgeAt = new Date(now.getTime() + RECONNECT_DAYS * 86400_000).toISOString();
   await ddb.send(new UpdateCommand({ TableName: APPS_TABLE, Key: { appId, sk: "APP" },

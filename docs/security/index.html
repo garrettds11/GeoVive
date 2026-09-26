@@ -51,6 +51,7 @@
       <li><strong>Relay</strong> layers are kept as a simplified display copy for no more than 7 days; <strong>direct</strong> layers are never copied.</li>
       <li>Cached copies are deleted within 7 days of a connection ending. Details are in the <a href="/docs/terms/appconnect/">AppConnect terms</a>.</li>
       <li>Maps users make belong to those users. Private maps are visible only to their owner.</li>
+      <li><strong>Account linking</strong> is always the user's choice. An app sees only maps it created for that user or that the user shared with it (read-only), never their email or GeoVivé account ID, and gets a user ID that's different for every app. Users can remove an app any time in My data, and access stops at once.</li>
     </ul>
 
     <h2 id="review">How layers are reviewed</h2>
@@ -101,6 +102,7 @@
       <tr><th>Who or what</th><th>How it proves itself</th></tr>
       <tr><td>People</td><td>Signed in with GeoVivé accounts (Amazon Cognito; email or Google). App owners see only their own apps.</td></tr>
       <tr><td>Payment confirmations</td><td>Stripe's signature on every message, checked within 5 minutes</td></tr>
+      <tr><td>Linked apps</td><td>Their client secret plus the user's consent (OAuth 2.0 with PKCE). Tokens are random, stored only as hashes, last an hour, and stop when the user or GeoVivé ends the link</td></tr>
       <tr><td>Layer reviewers</td><td>Signed links tied to one layer version, expiring in 30 days</td></tr>
       <tr><td>Scheduled checks and background jobs</td><td>AWS roles limited to the exact tables, files, email sender and model they use</td></tr>
       <tr><td>Your data sources</td><td>GeoVivé reads only public HTTPS addresses and sends no credentials</td></tr>

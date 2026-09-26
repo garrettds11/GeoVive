@@ -451,6 +451,7 @@ export async function offboardingCertificatePdf(app, ctx) {
     ["Approved layer copies", "done", `${ctx.deleted.approvedLayers} layer setting${ctx.deleted.approvedLayers === 1 ? "" : "s"} deleted`],
     ["Relay display copies", "done", `${ctx.deleted.relayFiles} cached file${ctx.deleted.relayFiles === 1 ? "" : "s"} deleted`],
     ["Layers waiting for review", "done", `${ctx.deleted.pendingFiles} file${ctx.deleted.pendingFiles === 1 ? "" : "s"} deleted`],
+    ...(ctx.deleted.accountLinks !== undefined ? [["User account links", "done", `${ctx.deleted.accountLinks} link${ctx.deleted.accountLinks === 1 ? "" : "s"} ended; tokens stop working`]] : []),
     ["Checks, re-checks and reminders", "done", "Stopped. No further emails except this one and the final closure notice."],
     ["Renewals", "done", "None. AppConnect never renews automatically; no further payments are due."]
   ]);
