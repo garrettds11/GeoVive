@@ -170,3 +170,9 @@ kbd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.78rem;
 .tour.js .scene { display: flex; }
 .tour.js .scene > .panel { flex: 1; }
 .tour.js .scene.active { min-height: inherit; }
+/* Phones: each step is its own height (they're taller than the screen anyway),
+   with the picture and text packed at the top, so there's no stretched gap */
+@media (max-width: 720px) {
+  .scene > .panel { align-content: start; }
+  .tour.js .scene.active { min-height: 0; }
+}

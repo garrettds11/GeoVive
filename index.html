@@ -66,11 +66,15 @@
         sans-serif;
     }
     
+    /* The page itself never scrolls, on any screen: the map pans and the tray
+       scrolls inside itself. (On phones 100vh is taller than the visible screen,
+       which used to let the page scroll into blank space.) */
     html, body {
       margin: 0;
       padding: 0;
       height: 100%;
-      overflow: auto;
+      overflow: hidden;
+      overscroll-behavior: none;
     }
 
     /* Sidebar scrolling: a thin, dark scroll bar that appears on hover */
@@ -89,10 +93,8 @@
     .tray-content:focus-within::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.35); }
     .tray-content::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.6); }
 
-    /* Desktop: the page itself never scrolls (the sidebar and map do) */
-    @media (min-width: 851px) {
-      html, body { overflow: hidden; }
-    }
+    /* Reaching the end of the tray doesn't scroll the page behind it */
+    .tray-content { overscroll-behavior: contain; }
 
     .layout {
       display: grid;
@@ -108,7 +110,8 @@
     body {
       background: radial-gradient(circle at top left, #1e293b 0, #020617 40%, #000 100%);
       color: var(--text);
-      min-height: 100vh;
+      height: 100vh;
+      height: 100dvh;
       display: flex;
       flex-direction: column;
     }
@@ -318,6 +321,7 @@
         z-index: 1000;
 
         max-height: 80vh;
+        max-height: 80dvh;
         display: flex;
         flex-direction: column;
       }
@@ -364,7 +368,7 @@
       .map-wrapper {
         grid-column: 1 / -1;
         grid-row: 1;
-        min-height: 100vh;
+        min-height: 0;   /* the layout is exactly the visible screen */
       }
     }
 
@@ -585,7 +589,7 @@
         flex-direction: column-reverse;   /* the wider "Mapbox connected" pill sits lowest */
       }
       .map-wrapper {
-        min-height: 70vh;  /* keep at least half the screen for the map */
+        min-height: 0;  /* fills the layout, which is exactly the visible screen */
       }
     }
 

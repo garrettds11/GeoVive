@@ -52,11 +52,19 @@
     count.textContent = `${i + 1} / ${scenes.length}`;
   }
 
+  const phone = window.matchMedia("(max-width: 720px)");
   function go(i, user = false) {
     finished = false; endCard.hidden = true;
-    idx = Math.max(0, Math.min(scenes.length - 1, i));
+    const next = Math.max(0, Math.min(scenes.length - 1, i));
+    const moved = next !== idx;
+    idx = next;
     elapsed = 0;
     show(idx);
+    // Phones: steps differ in height, so after Back/Next start the reader at the top of the new step
+    if (user && moved && phone.matches) {
+      const top = tour.getBoundingClientRect().top;
+      if (top < 0) tour.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
     if (user && !playing) setPlaying(true);
   }
 
@@ -100,6 +108,7 @@
   // Keep the stage as tall as the tallest step so the page doesn't jump
   function fitStage() {
     const st = tour.querySelector(".stage");
+    if (phone.matches) { st.style.minHeight = ""; return; }
     const h = Math.max(...scenes.map(s => { const was = s.style.cssText; s.style.cssText = "position:relative;visibility:hidden"; const v = s.offsetHeight; s.style.cssText = was; return v; }));
     st.style.minHeight = h + "px";
   }
