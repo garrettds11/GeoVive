@@ -137,6 +137,36 @@ Resources:
         UpdateFeature:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: PUT, Path: "/v1/datasets/{datasetId}/features/{featureId}" } }
         DeleteFeature:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: DELETE, Path: "/v1/datasets/{datasetId}/features/{featureId}" } }
 
+  PreSignUpFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub geovive-${Env}-presignup
+      Description: Cognito pre sign-up trigger that links sign-in methods sharing an email
+      CodeUri: dist/
+      Handler: presignup.handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cognito-idp:ListUsers
+                - cognito-idp:AdminLinkProviderForUser
+                - cognito-idp:AdminDeleteUser
+              Resource: !Sub arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}
+
+  PreSignUpPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt PreSignUpFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: cognito-idp.amazonaws.com
+      SourceArn: !Sub arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}
+
+  PreSignUpLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/geovive-${Env}-presignup
+      RetentionInDays: 30
+
   ApiLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
@@ -152,3 +182,5 @@ Outputs:
     Value: !Ref DatasetsTable
   FeaturesTableName:
     Value: !Ref FeaturesTable
+  PreSignUpFunctionArn:
+    Value: !GetAtt PreSignUpFunction.Arn

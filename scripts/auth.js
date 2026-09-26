@@ -37,12 +37,10 @@ window.userManager = userManager;
 
 export async function login() {
   // Redirects to Cognito Hosted UI (which then shows Google)
-  // Go straight to Google and always show its account chooser,
-  // so users can switch Google accounts at every sign-in.
-  await userManager.signinRedirect({
-    prompt: "select_account",
-    extraQueryParams: { identity_provider: "Google" }
-  });
+  // Opens the GeoVivé sign-in page (email + password, or Continue with Google).
+  // prompt=select_account makes Google show its account chooser, so users can
+  // switch Google accounts at every sign-in.
+  await userManager.signinRedirect({ prompt: "select_account" });
 }
 
 export async function handleRedirectCallback() {
