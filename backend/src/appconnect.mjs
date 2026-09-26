@@ -18,6 +18,8 @@ import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-sec
 import { randomBytes, createHmac, timingSafeEqual } from "node:crypto";
 import { getAppRecord, setStatus, addEvent, listEvents, startTerm, isActive } from "./appstore.mjs";
 import { runChecks, checkLayer, fetchLayerList } from "./appcheck.mjs";
+import { aiReviewLayer } from "./aireview.mjs";
+import { CATEGORIES, categoryOfIssue } from "./findings.mjs";
 import { applyResults, changedLayers, changeKey, decide, signReview, verifyReview, businessDaysBetween, REVIEW_BUSINESS_DAYS } from "./approvals.mjs";
 import { validationReportPdf, liveNoticePdf, fmtDate } from "./report.mjs";
 import { sendMail, emailHtml } from "./mailer.mjs";
@@ -216,6 +218,7 @@ export async function runAppChecks(ddb, s3, { appId, reportId }, net) {
 
   let layerOutcome = { approved: [], review: [], rejected: [] };
   if (checks.list) {
+    await assessRows(ddb, s3, app, checks.layers);
     layerOutcome = await applyResults(ddb, s3, app, checks.layers, checks.list);
     await ddb.send(new UpdateCommand({ TableName: APPS_TABLE, Key: { appId, sk: "APP" },
       UpdateExpression: "SET layerCheckKey = :k", ExpressionAttributeValues: { ":k": changeKey(checks.list.layers) } }));
@@ -424,6 +427,7 @@ export async function runDaily(ddb, { now = Date.now(), invokeWorker, net }) {
     }
   }
   done.reviewReminders = await reviewReminders(ddb, apps.filter(a => !done.expired.includes(a.appId)), now);
+  done.weeklyNotices = await sendWeeklyNotices(ddb, apps, new Date(now));
   return done;
 }
 
@@ -471,6 +475,7 @@ export async function runLayerReview(ddb, s3, { appId, reportId }, net) {
   if (!changed.length) return { nothing: true };
   const rows = [];
   for (const l of changed) rows.push(await checkLayer(l, l, net));
+  await assessRows(ddb, s3, app, rows);
   const outcome = await applyResults(ddb, s3, app, rows, list);
   if (outcome.review.length) await emailReviewer(ddb, app, rows.filter(r => r.result === "review"));
 
@@ -515,14 +520,15 @@ export async function emailReviewer(ddb, app, rows, { reminder = false } = {}) {
   const exp = Math.floor(Date.now() / 1000) + 30 * 86400;
   const items = [];
   for (const r of rows) items.push({ r, url: await reviewLink(app, r, exp) });
-  const heading = `${reminder ? "Reminder: " : ""}${rows.length} layer${rows.length > 1 ? "s" : ""} from ${app.name} need${rows.length > 1 ? "" : "s"} review`;
+  const retained = rows.some(r => r.retained);
+  const heading = `${retained ? "GeoVivé-only finding — " : ""}${reminder ? "Reminder: " : ""}${rows.length} layer${rows.length > 1 ? "s" : ""} from ${app.name} need${rows.length > 1 ? "" : "s"} review`;
   const html = emailHtml({ heading,
     paragraphs: [`App ${app.appId} (${app.domain}), contact ${app.contactEmail}. The owner was told review takes up to ${REVIEW_BUSINESS_DAYS} business days.`,
       ...items.map(({ r }) => `${r.id} — ${r.name}: ${r.issues.join("; ")}`)],
     button: items.length === 1 ? { label: "Review layer", url: items[0].url } : undefined })
     .replace("</h1>", `</h1>${items.length > 1 ? items.map(({ r, url }) => `<p><a href="${url}">Review ${r.id}</a></p>`).join("") : ""}`);
   try {
-    await sendMail({ to: reviewerEmail, subject: `${reminder ? "Reminder: " : ""}AppConnect review needed — ${app.name} (${rows.length})`,
+    await sendMail({ to: reviewerEmail, subject: `${retained ? "[Restricted] " : ""}${reminder ? "Reminder: " : ""}AppConnect review needed — ${app.name} (${rows.length})`,
       text: items.map(({ r, url }) => `${r.id} (${r.name}): ${r.issues.join("; ")}\nReview: ${url}`).join("\n\n"), html });
     await addEvent(ddb, app.appId, { type: "email", what: reminder ? "review reminder" : "review request", to: "reviewer", layers: rows.map(r => r.id) });
   } catch (e) { console.error("Reviewer email failed", e); }
@@ -541,7 +547,7 @@ export async function reviewPage(ddb, s3, q) {
   const app = await getAppRecord(ddb, q.appId, { fresh: true });
   const st = app?.layerState?.[q.layerId];
   if (!st || st.hash !== q.hash || st.state !== "review") return page("Already decided", `<h1>Nothing to review</h1><p>This layer version is ${escHtml(st?.state || "no longer listed")}.</p>`);
-  const res = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: `appconnect/${q.appId}/pending/${q.layerId}-${q.hash}.json` }));
+  const res = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: `appconnect-pending/${q.appId}/${q.layerId}-${q.hash}.json` }));
   const pending = JSON.parse(await res.Body.transformToString());
   const L = pending.layer;
   const hidden = ["appId", "layerId", "hash", "exp", "sig"].map(k => `<input type="hidden" name="${k}" value="${escHtml(q[k])}">`).join("");
@@ -550,7 +556,12 @@ export async function reviewPage(ddb, s3, q) {
 <ul><li>Source: <code>${escHtml(L.source.url)}</code> (${escHtml(L.source.type)}, ${escHtml(L.delivery)})</li><li>Label: <code>${escHtml(L.label)}</code></li>
 <li>Shown fields: ${escHtml(Object.entries(L.fields || {}).map(([k, v]) => `${k} → ${v}`).join(", ") || "none")}</li>
 <li>Attribution: ${escHtml(L.attribution)} · License: ${escHtml(L.license)}</li><li>Shapes: ${escHtml(pending.features)}</li></ul></div>
-<div class="card"><strong>Findings</strong><ul>${pending.findings.map(f => `<li>${escHtml(f)}</li>`).join("")}</ul></div>
+${pending.retained ? `<div class="card" style="border-color:#ef4444"><strong>GeoVivé-only finding.</strong> The owner has only been told this layer is held for review. Evidence is preserved in the restricted evidence store for possible escalation.</div>` : ""}
+<div class="card"><strong>Findings</strong><ul>${pending.findings.map(f => `<li>${escHtml(f)}</li>`).join("")}
+${(pending.retainedFindings || []).map(f => `<li style="color:#fca5a5">GeoVivé-only · ${escHtml(CATEGORIES[f.category]?.label || f.category)} (${escHtml(f.severity)}, ${escHtml(f.confidence)}): ${escHtml(f.reason)} ${f.evidence ? `“${escHtml(f.evidence)}”` : ""}</li>`).join("")}
+${(pending.aiFindings || []).map(f => `<li>AI · ${escHtml(CATEGORIES[f.category]?.label || f.category)} (${escHtml(f.severity)}, ${escHtml(f.confidence)}): ${escHtml(f.reason)} ${f.field ? `[${escHtml(f.field)}]` : ""} ${f.evidence ? `“${escHtml(f.evidence)}”` : ""}</li>`).join("")}</ul></div>
+<div class="card"><strong>Sample values</strong> (as users would see them; up to 25 features)
+<table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:8px">${(pending.samples || []).map(p => `<tr>${Object.entries(p || {}).map(([k, v]) => `<td style="border-top:1px solid #1f2937;padding:4px;vertical-align:top"><span style="color:#9ca3af">${escHtml(k === "_label" ? "label" : k)}</span><br>${escHtml(v)}</td>`).join("")}</tr>`).join("")}</table></div>
 <p>App ${escHtml(app.appId)} · ${escHtml(app.domain)} · contact ${escHtml(app.contactEmail)} · waiting ${businessDaysBetween(st.at)} business day(s)</p>
 <form method="post" action="${API_BASE}/v1/appconnect/review">${hidden}
 <button class="ok" name="decision" value="approve">Approve and show</button><button class="no" name="decision" value="reject">Reject</button></form>`);
@@ -586,6 +597,116 @@ export async function reviewReminders(ddb, apps, now = Date.now()) {
     waiting.forEach(([id]) => { state[id] = { ...state[id], reminded: true }; });
     await ddb.send(new UpdateCommand({ TableName: APPS_TABLE, Key: { appId: app.appId, sk: "APP" },
       UpdateExpression: "SET layerState = :s", ExpressionAttributeValues: { ":s": state } }));
+    sent.push(app.appId);
+  }
+  return sent;
+}
+
+
+// ------------------------------------------------------------------ AI review, notices, evidence
+
+const EVIDENCE_BUCKET = process.env.EVIDENCE_BUCKET;
+const SEVERITY_RANK = { low: 0, medium: 1, high: 2 };
+
+// Add AI findings (when enabled) to each checked layer and decide what they mean:
+// owner categories become notices and may hold the layer for review; GeoVivé-only
+// categories hold the layer, preserve evidence and are never shown to the owner.
+export async function assessRows(ddb, s3, app, rows, { send } = {}) {
+  const cfg = (await reviewSettings()).bedrock || {};
+  const notices = [];
+  for (const row of rows) {
+    // Rule-based findings map onto the same categories
+    for (const text of row.issues) {
+      const category = categoryOfIssue(text);
+      if (category && CATEGORIES[category].audience === "owner") notices.push({ layerId: row.id, category, reason: text, source: "checks" });
+    }
+    if (row.result === "fail" || !row._features?.length) continue;
+    let ai;
+    try { ai = await aiReviewLayer(ddb, row._layer, row._features, cfg, { send }); }
+    catch (e) { console.error("AI review failed", app.appId, row.id, e.name); ai = { skipped: "AI review unavailable" }; }
+    row.ai = { skipped: ai.skipped, model: ai.model, count: ai.findings?.length || 0 };
+    const worse = r => { const o = { pass: 0, note: 1, review: 2, fail: 3 }; if (o[r] > o[row.result]) row.result = r; };
+    for (const f of ai.findings || []) {
+      const cat = CATEGORIES[f.category];
+      if (cat.audience === "geovive") {
+        row.retained = true;
+        (row.retainedFindings ||= []).push(f);
+        worse("review");
+      } else {
+        (row.aiFindings ||= []).push(f);
+        row.issues.push(`${cat.label}: ${f.reason}${f.field ? ` (${f.field})` : ""}`);
+        worse(cat.hold === "review" && SEVERITY_RANK[f.severity] >= 1 ? "review" : "note");
+        notices.push({ layerId: row.id, category: f.category, reason: f.reason, field: f.field, severity: f.severity, source: "ai" });
+      }
+    }
+    if (row.retained) {
+      row.issues.push("Held for a GeoVivé review");
+      await preserveEvidence(s3, app, row);
+    }
+  }
+  await queueNotices(ddb, app, notices);
+  return rows;
+}
+
+// Restricted evidence store: versioned, encrypted, write-once from the worker.
+async function preserveEvidence(s3, app, row) {
+  if (!EVIDENCE_BUCKET) return;
+  const at = new Date().toISOString();
+  await s3.send(new PutObjectCommand({
+    Bucket: EVIDENCE_BUCKET, Key: `${app.appId}/${row.id}/${at}.json`, ContentType: "application/json",
+    Body: JSON.stringify({ at, app: { appId: app.appId, name: app.name, domain: app.domain, ownerId: app.ownerId, contactEmail: app.contactEmail },
+      layer: row._layer || null, hash: row.hash, findings: row.retainedFindings,
+      samples: (row._features || []).slice(0, 100).map(f => f.properties) })
+  }));
+}
+
+// Owner notices: each finding (layer + category + field) is sent once. Immediate
+// categories go out now; the rest in a weekly digest (Mondays).
+export async function queueNotices(ddb, app, notices, { now = new Date() } = {}) {
+  if (!notices.length) return { sent: 0, queued: 0 };
+  const fresh = await getAppRecord(ddb, app.appId, { fresh: true });
+  const seen = new Set(fresh?.noticedKeys || []);
+  const queue = [...(fresh?.pendingNotices || [])];
+  const immediate = [];
+  for (const n of notices) {
+    const key = `${n.layerId}|${n.category}|${n.field || ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const item = { ...n, key, at: now.toISOString() };
+    if (CATEGORIES[n.category].schedule === "immediate") immediate.push(item); else queue.push(item);
+  }
+  if (immediate.length) await sendNotices(ddb, fresh || app, immediate, "Findings to fix now");
+  await ddb.send(new UpdateCommand({ TableName: APPS_TABLE, Key: { appId: app.appId, sk: "APP" },
+    UpdateExpression: "SET noticedKeys = :k, pendingNotices = :q",
+    ExpressionAttributeValues: { ":k": [...seen].slice(-500), ":q": queue.slice(-200) } }));
+  return { sent: immediate.length, queued: queue.length };
+}
+
+async function sendNotices(ddb, app, items, title) {
+  const byCat = {};
+  items.forEach(i => (byCat[i.category] ||= []).push(i));
+  const paras = [`GeoVivé found the following in ${app.name}'s layers. Please fix them in your own data; GeoVivé only reports what it detects.`];
+  for (const [cat, list] of Object.entries(byCat)) {
+    paras.push(`${CATEGORIES[cat].label} — ${CATEGORIES[cat].guidance}`);
+    list.slice(0, 20).forEach(i => paras.push(`• ${i.layerId}${i.field ? ` (${i.field})` : ""}: ${i.reason}`));
+  }
+  try {
+    await sendMail({ to: app.contactEmail, subject: `${title}: ${items.length} finding${items.length > 1 ? "s" : ""} in ${app.name}'s layers`,
+      text: paras.join("\n\n"), html: emailHtml({ heading: title, paragraphs: paras,
+        button: { label: "Open AppConnect", url: `${SITE}/appconnect/?app=${app.appId}` } }) });
+    await addEvent(ddb, app.appId, { type: "notice-sent", what: title, count: items.length, categories: Object.keys(byCat) });
+  } catch (e) { console.error("Notice email failed", app.appId, e.name); }
+}
+
+// Weekly digest of queued (non-urgent) findings, sent on Mondays by the daily job.
+export async function sendWeeklyNotices(ddb, apps, now = new Date()) {
+  if (now.getUTCDay() !== 1) return [];
+  const sent = [];
+  for (const app of apps) {
+    if (!app.pendingNotices?.length) continue;
+    await sendNotices(ddb, app, app.pendingNotices, "Weekly layer findings");
+    await ddb.send(new UpdateCommand({ TableName: APPS_TABLE, Key: { appId: app.appId, sk: "APP" },
+      UpdateExpression: "SET pendingNotices = :e", ExpressionAttributeValues: { ":e": [] } }));
     sent.push(app.appId);
   }
   return sent;

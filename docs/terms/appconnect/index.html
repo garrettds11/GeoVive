@@ -18,6 +18,7 @@
         <a href="/docs/developers/">Developers</a>
         <a href="/docs/developers/appconnect/">AppConnect</a>
         <a href="/docs/terms/appconnect/" class="active">Terms</a>
+        <a href="/docs/security/">Security</a>
         <a href="/">Open the map →</a>
       </nav>
     </header>
@@ -33,7 +34,7 @@
       <a href="#t4">4. Fees</a>
       <a href="#t5">5. Your data</a>
       <a href="#t6">6. Your responsibilities</a>
-      <a href="#t7">7. Checks and suspension</a>
+      <a href="#t7">7. Checks, findings and suspension</a>
       <a href="#t8">8. GeoVivé's responsibilities</a>
       <a href="#t9">9. Users and privacy</a>
       <a href="#t10">10. Ending the connection</a>
@@ -73,7 +74,7 @@
     <h2 id="t5">5. Your data</h2>
     <ul>
       <li><strong>You keep all rights to your data.</strong> Nothing in these terms transfers ownership to GeoVivé.</li>
-      <li>You give GeoVivé a limited, non-exclusive, non-transferable license for the term to fetch, simplify, cache (for relay layers, up to the cache time you set, and no more than 7 days) and display your data, only to your users and only in GeoVivé, as needed to run the connection.</li>
+      <li>You give GeoVivé a limited, non-exclusive, non-transferable license for the term to fetch, simplify, cache (for relay layers, up to the cache time you set, and no more than 7 days) and display your data, only to your users and only in GeoVivé, as needed to run the connection. The license also covers reviewing your data for these terms: automated checks, AI review on Amazon Bedrock in GeoVivé's AWS account (text values only; not used to train models), and human review, as described on the <a href="/docs/security/">Trust &amp; Security</a> page.</li>
       <li>GeoVivé won't sell your data, list it for other users or apps, offer it for download, or use it to build its own layers or train models.</li>
       <li>For <strong>direct</strong> layers, GeoVivé keeps no copy; users' browsers load the data from your source.</li>
       <li>When the connection ends, GeoVivé deletes cached copies of your relay layers within 7 days.</li>
@@ -90,10 +91,12 @@
     </ul>
     <p>You're responsible for your data and for claims arising from it, and you'll cover GeoVivé's reasonable costs if a third party brings a claim because your data broke these promises.</p>
 
-    <h2 id="t7">7. Checks and suspension</h2>
+    <h2 id="t7">7. Checks, findings and suspension</h2>
     <ul>
       <li>GeoVivé checks your domain, layer list and sources at signup, when your list changes, and on a schedule. Results are sent as validation reports.</li>
       <li><strong>New and changed layers are approved before they're shown.</strong> Most are checked and approved automatically within minutes. A layer whose checks find something a person must judge (for example, values that look like personal information) is held for review, which takes <strong>up to 5 business days</strong>. Until a change is approved, the previously approved version of that layer keeps showing; a new layer isn't shown until it's approved. GeoVivé may decline to show a layer that breaks section 6 and will tell you why.</li>
+      <li><strong>Findings.</strong> GeoVivé tells your contact what it detects so you can fix it in your own systems: personal information and offensive content immediately; misleading content, data quality and licensing in a weekly digest. Remediation is your responsibility; GeoVivé reports and may hold the affected layer.</li>
+      <li><strong>Findings GeoVivé keeps.</strong> If a layer appears to involve criminal activity, a security threat, or targeting of people or protected sites, GeoVivé holds the layer and tells you only that it's under review. GeoVivé may preserve evidence (including a sample of the layer's values) in a restricted store for up to two years, and may share it with law enforcement or other authorities where the law requires or allows, to protect users, the public and the platform.</li>
       <li>GeoVivé may move your app back to sandbox, or suspend it, if checks fail, your domain token is removed, your sources break, or GeoVivé reasonably believes your data breaks section 6. GeoVivé will tell your contact why and what to fix.</li>
       <li>A suspension because checks failed doesn't extend or refund the term.</li>
     </ul>

@@ -2,7 +2,8 @@
 //
 // GeoVivé shows only layers that passed review. Each app has:
 //   S3 appconnect/<appId>/approved.json            the approved copy of each layer (what users see)
-//   S3 appconnect/<appId>/pending/<id>-<hash>.json a layer version waiting for a person's review
+//   S3 appconnect-pending/<appId>/<id>-<hash>.json a layer version waiting for a person's review
+//                                                 (with a sample of real values; expires after 90 days)
 //   app record layerState { <layerId>: { hash, state, at } }
 //     state: approved | review | rejected | checking
 // When the app's live list changes, new or changed layers are checked
@@ -75,8 +76,9 @@ export async function applyResults(ddb, s3, app, rows, list, { by = "automatic c
       state[row.id] = { hash, state: "approved", at };
       out.approved.push(row.id);
     } else if (row.result === "review") {
-      await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: `appconnect/${app.appId}/pending/${row.id}-${hash}.json`,
-        Body: JSON.stringify({ layer, findings: row.issues, features: row.features, at }), ContentType: "application/json" }));
+      await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: `appconnect-pending/${app.appId}/${row.id}-${hash}.json`,
+        Body: JSON.stringify({ layer, findings: row.issues, aiFindings: row.aiFindings || [], retained: !!row.retained, retainedFindings: row.retainedFindings || [],
+          samples: (row._features || []).slice(0, 25).map(f => f.properties), features: row.features, at }), ContentType: "application/json" }));
       state[row.id] = { hash, state: "review", at, findings: row.issues.slice(0, 5) };
       out.review.push(row.id);
     } else {
@@ -101,7 +103,7 @@ export async function decide(ddb, s3, app, layerId, hash, decision, reviewer) {
   const at = new Date().toISOString();
   const state = { ...(app.layerState || {}) };
   if (decision === "approve") {
-    const res = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: `appconnect/${app.appId}/pending/${layerId}-${hash}.json` }));
+    const res = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: `appconnect-pending/${app.appId}/${layerId}-${hash}.json` }));
     const { layer } = JSON.parse(await res.Body.transformToString());
     const approved = await loadApproved(s3, app.appId, { fresh: true });
     approved.layers[layerId] = { hash, approvedAt: at, by: reviewer, layer };

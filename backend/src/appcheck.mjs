@@ -116,6 +116,8 @@ export async function checkLayer(layer, rawLayer, net) {
     row.issues.push(`License text “${rawLayer.license}” is generic; name the source's terms or link to them`);
   }
   row.hash = layerHash(layer);
+  Object.defineProperty(row, "_features", { value: feats, enumerable: false });
+  Object.defineProperty(row, "_layer", { value: layer, enumerable: false });
   return row;
 }
 

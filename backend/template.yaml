@@ -118,6 +118,11 @@ Resources:
             Status: Enabled
             Prefix: uploads/
             ExpirationInDays: 1
+          - Id: expire-appconnect-pending
+            Status: Enabled
+            Prefix: appconnect-pending/
+            ExpirationInDays: 90
+            NoncurrentVersionExpiration: { NoncurrentDays: 1 }
             NoncurrentVersionExpiration: { NoncurrentDays: 1 }
       # The browser uploads import files straight to uploads/ with a presigned URL
       CorsConfiguration:
@@ -160,6 +165,49 @@ Resources:
       Tags:
         - { Key: project, Value: geovive }
         - { Key: env, Value: !Ref Env }
+
+  # AppConnect evidence for GeoVivé-only findings (possible legal escalation).
+  # Encrypted, versioned, private; the check worker can add objects but not delete them.
+  EvidenceBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub geovive-${Env}-evidence-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: aws:kms }
+            BucketKeyEnabled: true
+      VersioningConfiguration: { Status: Enabled }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls: { Rules: [{ ObjectOwnership: BucketOwnerEnforced }] }
+      LifecycleConfiguration:
+        Rules:
+          - Id: retain-two-years
+            Status: Enabled
+            ExpirationInDays: 730
+            NoncurrentVersionExpiration: { NoncurrentDays: 730 }
+      Tags:
+        - { Key: project, Value: geovive }
+        - { Key: env, Value: !Ref Env }
+        - { Key: data, Value: restricted }
+
+  EvidenceBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref EvidenceBucket
+      PolicyDocument:
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource: [!GetAtt EvidenceBucket.Arn, !Sub "${EvidenceBucket.Arn}/*"]
+            Condition: { Bool: { "aws:SecureTransport": "false" } }
 
   # Import jobs (status and results); items expire after 30 days
   ImportsTable:
@@ -327,8 +375,20 @@ Resources:
           GEOMETRY_BUCKET: !Ref GeometryBucket
           STRIPE_SECRET_ID: geovive/stripe
           ALLOWED_ORIGINS: !Join [",", !Ref AllowedOrigins]
+          EVIDENCE_BUCKET: !Ref EvidenceBucket
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref AppsTable }
+        - Statement:
+            - Effect: Allow
+              Action: s3:PutObject
+              Resource: !Sub "${EvidenceBucket.Arn}/*"
+            - Effect: Allow
+              Action: bedrock:InvokeModel
+              Resource:
+                - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0
+                - arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
+                - arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
+                - arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
         - S3CrudPolicy: { BucketName: !Ref GeometryBucket }
         - LambdaInvokePolicy: { FunctionName: !Sub "geovive-${Env}-appcheck" }
         - Statement:
@@ -395,6 +455,8 @@ Outputs:
     Value: !Ref DatasetsTable
   FeaturesTableName:
     Value: !Ref FeaturesTable
+  EvidenceBucketName:
+    Value: !Ref EvidenceBucket
   GeometryBucketName:
     Value: !Ref GeometryBucket
   PreSignUpFunctionArn:
