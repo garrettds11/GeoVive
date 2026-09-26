@@ -637,6 +637,15 @@
     .open-banner .btn { padding: 0.3rem 0.8rem; font-size: 0.8rem; }
     @media (max-width: 850px) { .open-banner { top: auto; bottom: 0.75rem; } }
 
+    /* ---------- North lock control ---------- */
+    .north-lock-btn { display: flex; align-items: center; justify-content: center; color: #374151; }
+    .north-lock-btn .shackle { transition: transform 0.2s ease; transform-origin: 16px 11px; }
+    .north-lock-btn:not(.is-locked) .shackle { transform: translateY(-2px) rotate(20deg); }
+    .north-lock-btn.is-locked { color: #fff; background: #16a34a; }
+    .north-lock-btn.is-locked:hover { background: #15803d; }
+    /* On phones the tray handle sits over the top of the map */
+    @media (max-width: 850px) { .mapboxgl-ctrl-top-left { top: 56px; } }
+
     /* ---------- Dataset view controls ---------- */
     .dataset-actions { display: flex; gap: 0.35rem; margin-top: 0.45rem; }
     .dataset-actions .btn { padding: 0.25rem 0.7rem; font-size: 0.78rem; }
@@ -1300,6 +1309,63 @@
     // Map scale (bottom-left): miles/feet and kilometers/meters
     GeoVivéMap.addControl(new mapboxgl.ScaleControl({ maxWidth: 120, unit: "imperial" }), "bottom-left");
     GeoVivéMap.addControl(new mapboxgl.ScaleControl({ maxWidth: 120, unit: "metric" }), "bottom-left");
+
+    // Compass (top-left): the needle shows the map's rotation; click to reset
+    // to north-up and flat.
+    GeoVivéMap.addControl(
+      new mapboxgl.NavigationControl({ showZoom: false, visualizePitch: true }),
+      "top-left"
+    );
+
+    // North lock (under the compass): when on, the map stays north-up and every
+    // rotate gesture is disabled. Off by default; remembered per browser.
+    const NORTH_LOCK_KEY = "geovive:northLock";
+    class NorthLockControl {
+      onAdd(map) {
+        this.map = map;
+        this.container = document.createElement("div");
+        this.container.className = "mapboxgl-ctrl mapboxgl-ctrl-group";
+        this.button = document.createElement("button");
+        this.button.type = "button";
+        this.button.className = "north-lock-btn";
+        this.button.innerHTML = `
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="5" y="11" width="14" height="10" rx="2"></rect>
+            <path class="shackle" d="M8 11V7a4 4 0 0 1 8 0v4"></path>
+            <text x="12" y="19" text-anchor="middle" font-size="7" font-weight="700"
+                  fill="currentColor" stroke="none">N</text>
+          </svg>`;
+        this.button.addEventListener("click", () => this.set(!this.locked));
+        this.container.appendChild(this.button);
+        let saved = false;
+        try { saved = localStorage.getItem(NORTH_LOCK_KEY) === "1"; } catch { /* ignore */ }
+        this.set(saved, { save: false });
+        return this.container;
+      }
+      onRemove() { this.container.remove(); this.map = undefined; }
+      set(locked, { save = true } = {}) {
+        this.locked = locked;
+        const m = this.map;
+        if (locked) {
+          m.dragRotate.disable();
+          m.touchZoomRotate.disableRotation();
+          m.keyboard.disableRotation();
+          if (m.getBearing() !== 0) m.easeTo({ bearing: 0, duration: 300 });
+        } else {
+          m.dragRotate.enable();
+          m.touchZoomRotate.enableRotation();
+          m.keyboard.enableRotation();
+        }
+        this.button.classList.toggle("is-locked", locked);
+        this.button.setAttribute("aria-pressed", String(locked));
+        const label = locked ? "North locked: rotation off (click to unlock)" : "Lock north up";
+        this.button.setAttribute("aria-label", label);
+        this.button.title = label;
+        if (save) { try { localStorage.setItem(NORTH_LOCK_KEY, locked ? "1" : "0"); } catch { /* ignore */ } }
+      }
+    }
+    GeoVivéMap.addControl(new NorthLockControl(), "top-left");
 
     // Shared API for module scripts (scripts/editor.js)
     let resolveGeoViveReady;
