@@ -392,6 +392,28 @@
       padding: 0.75rem 0.75rem 0.5rem;
     }
 
+    /* Collapsible sidebar sections */
+    .filter-group.collapsible > summary {
+      list-style: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .filter-group.collapsible > summary::-webkit-details-marker { display: none; }
+    .filter-group.collapsible > summary h3 { margin-bottom: 0; }
+    .filter-group.collapsible > summary::after {
+      content: "";
+      width: 0.45rem; height: 0.45rem;
+      border-right: 2px solid var(--muted);
+      border-bottom: 2px solid var(--muted);
+      transform: rotate(45deg);
+      transition: transform 0.15s ease;
+      margin-right: 0.2rem;
+    }
+    .filter-group.collapsible[open] > summary { margin-bottom: 0.5rem; }
+    .filter-group.collapsible[open] > summary::after { transform: rotate(-135deg); }
+
     .filter-group h3 {
       font-size: 0.8rem;
       text-transform: uppercase;
@@ -770,12 +792,12 @@
           </div>
 
           <!-- Extra datasets and external overlays (scripts/layers.js) -->
-          <div class="filter-group" id="layers-panel">
-            <h3>Layers</h3>
+          <details class="filter-group collapsible" id="layers-panel">
+            <summary><h3>Layers</h3></summary>
             <p class="hint">Show more datasets and outside map layers on top of the active dataset.</p>
             <div id="layers-datasets"></div>
             <div id="layers-overlays"></div>
-          </div>
+          </details>
 
           <!-- My maps (signed-in users) -->
           <div id="my-maps" class="filter-group" hidden>
@@ -1311,6 +1333,23 @@
       return String(v).replace(/[_-]+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
     }
 
+    // Layers section: remember whether it's open (closed by default)
+    (() => {
+      const panel = document.getElementById("layers-panel");
+      if (!panel) return;
+      try { panel.open = localStorage.getItem("geovive:layersOpen") === "1"; } catch { /* ignore */ }
+      panel.addEventListener("toggle", () => {
+        try { localStorage.setItem("geovive:layersOpen", panel.open ? "1" : "0"); } catch { /* ignore */ }
+      });
+    })();
+
+    // Pin types offered for maps that don't define their own (matches editor.js)
+    const DEFAULT_PIN_TYPES = [
+      { key: "location", label: "Location", color: categoryColor.location },
+      { key: "event", label: "Event", color: categoryColor.event },
+      { key: "alert", label: "Alert", color: categoryColor.alert }
+    ];
+
     function categoriesOf(meta, features) {
       const counts = new Map();
       features.forEach(f => {
@@ -1318,7 +1357,10 @@
         counts.set(c, (counts.get(c) || 0) + 1);
       });
       const cats = [];
-      (meta?.featureTypes || []).forEach(t => cats.push({ key: t.key, label: t.label, color: t.color }));
+      // A dataset's own types first; people's maps (no source) get the default pin types
+      const types = meta?.featureTypes?.length ? meta.featureTypes
+        : (meta && !meta.source ? DEFAULT_PIN_TYPES : []);
+      types.forEach(t => cats.push({ key: t.key, label: t.label, color: t.color }));
       [...counts.keys()].sort().forEach(k => {
         if (!cats.some(c => c.key === k)) cats.push({ key: k, label: titleCase(k), color: categoryColor[k] });
       });
