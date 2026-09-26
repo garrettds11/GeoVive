@@ -10,8 +10,8 @@
 export const APPS = {
   "geovive-demo": {
     name: "GeoVivé demo",
-    returnOrigins: ["https://geovive.link", "https://stage.geovive.link", "https://dev.d24kp6zzj6jjwt.amplifyapp.com", "https://stage-d24kp6zzj6jjwt.d24kp6zzj6jjwt.amplifyapp.com", "http://localhost:8080"],
-    areaOrigins: ["https://geovive.link", "https://stage.geovive.link", "https://dev.d24kp6zzj6jjwt.amplifyapp.com", "https://stage-d24kp6zzj6jjwt.d24kp6zzj6jjwt.amplifyapp.com", "http://localhost:8080"],
+    returnOrigins: ["https://geovive.link", "https://stage.geovive.link", "https://dev.d24kp6zzj6jjwt.amplifyapp.com", "https://stage.d24kp6zzj6jjwt.amplifyapp.com", "http://localhost:8080"],
+    areaOrigins: ["https://geovive.link", "https://stage.geovive.link", "https://dev.d24kp6zzj6jjwt.amplifyapp.com", "https://stage.d24kp6zzj6jjwt.amplifyapp.com", "http://localhost:8080"],
     featureTypes: [
       { key: "location", label: "Location", color: "#3b82f6" },
       { key: "event", label: "Event", color: "#22c55e" },

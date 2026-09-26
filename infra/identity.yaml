@@ -236,8 +236,8 @@ Resources:
       - https://www.geovive.link/
       - https://stage.geovive.link
       - https://stage.geovive.link/
-      - https://stage-d24kp6zzj6jjwt.d24kp6zzj6jjwt.amplifyapp.com
-      - https://stage-d24kp6zzj6jjwt.d24kp6zzj6jjwt.amplifyapp.com/
+      - https://stage.d24kp6zzj6jjwt.amplifyapp.com
+      - https://stage.d24kp6zzj6jjwt.amplifyapp.com/
       EnablePropagateAdditionalUserContextData: false
       IdTokenValidity: 1
       AuthSessionValidity: 3
@@ -271,8 +271,8 @@ Resources:
       - https://www.geovive.link/
       - https://stage.geovive.link
       - https://stage.geovive.link/
-      - https://stage-d24kp6zzj6jjwt.d24kp6zzj6jjwt.amplifyapp.com
-      - https://stage-d24kp6zzj6jjwt.d24kp6zzj6jjwt.amplifyapp.com/
+      - https://stage.d24kp6zzj6jjwt.amplifyapp.com
+      - https://stage.d24kp6zzj6jjwt.amplifyapp.com/
       AccessTokenValidity: 1
       RefreshTokenValidity: 1
       WriteAttributes: []

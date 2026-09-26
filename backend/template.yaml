@@ -15,7 +15,7 @@ Parameters:
     Default: hfchi8fm98nberrcj43ge2ipu
   AllowedOrigins:
     Type: CommaDelimitedList
-    Default: https://geovive.link,https://www.geovive.link,https://stage.geovive.link,https://dev.d24kp6zzj6jjwt.amplifyapp.com,https://stage-d24kp6zzj6jjwt.d24kp6zzj6jjwt.amplifyapp.com,http://localhost:8080
+    Default: https://geovive.link,https://www.geovive.link,https://stage.geovive.link,https://dev.d24kp6zzj6jjwt.amplifyapp.com,https://stage.d24kp6zzj6jjwt.amplifyapp.com,http://localhost:8080
   ApiDomainName:
     Type: String
     Default: api.geovive.link
