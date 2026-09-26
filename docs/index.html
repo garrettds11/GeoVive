@@ -125,7 +125,7 @@
               <p>Browsing never needs an account. <b>Sign in</b> with Google or an email and password to start keeping your own maps.</p>
               <ul class="points">
                 <li><span class="dotico"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2"/></svg></span><span><b>Private by default.</b> Only you see a new map, even if someone has the link. Tick <b>Public</b> to share it for viewing; only you can edit.</span></li>
-                <li><span class="dotico"><svg viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 1 6 6c0 4.5-6 12-6 12S6 13.5 6 9a6 6 0 0 1 6-6z" fill="none" stroke="currentColor" stroke-width="2"/></svg></span><span><b>Drop pins</b> with <b>Add pin</b>, or <b>Pin my location</b> in the field. Your location stays on your device unless you save the pin.</span></li>
+                <li><span class="dotico"><svg viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 1 6 6c0 4.5-6 12-6 12S6 13.5 6 9a6 6 0 0 1 6-6z" fill="none" stroke="currentColor" stroke-width="2"/></svg></span><span><b>Drop pins</b> with <b>Add pin</b> or <b>Pin my location</b>, or <b>Save to my map</b> from any pin you find. Your location stays on your device unless you save a pin.</span></li>
                 <li><span class="dotico"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4z" fill="none" stroke="currentColor" stroke-width="2"/></svg></span><span><b>Make pins yours:</b> Markdown notes, emoji (the smiley button, or <kbd>Win</kbd>+<kbd>.</kbd> / <kbd>Ctrl</kbd>+<kbd>Cmd</kbd>+<kbd>Space</kbd>), and copy any pin as Markdown or JSON.</span></li>
               </ul>
             </div>
@@ -180,7 +180,7 @@
       <div class="tour-controls">
         <button type="button" data-act="prev" aria-label="Previous step"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.5"/></svg>Back</button>
         <button type="button" data-act="play" aria-label="Play the tour"></button>
-        <button type="button" data-act="next" aria-label="Next step">Next<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.5"/></svg></button>
+        <button type="button" data-act="next" class="primary" aria-label="Next step">Next<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.5"/></svg></button>
         <span class="tour-count" aria-live="polite"></span>
         <span class="spacer"></span>
         <a href="#faq">Skip to questions ↓</a>
@@ -206,6 +206,7 @@
       <details><summary>Who can see my maps?</summary><div><ul><li><b>Private</b> (the default): only you, even with the link.</li><li><b>Public</b>: anyone can view, signed in or not; only you can edit.</li></ul></div></details>
       <details><summary>How do I create, open or delete a map?</summary><div><ol><li>Sign in and open <b>My maps</b>.</li><li>Type a name, tick <b>Public</b> if you want to share it, and click <b>Create</b>.</li><li>Click any map in the list to open it. <b>Delete map</b> removes the map and all its pins, and can't be undone.</li></ol></div></details>
       <details><summary>How do I add, edit or delete pins?</summary><div><p>Open one of your maps, click <b>Add pin</b>, then click the spot (or use <b>Pin my location</b>). Give it a name, type and notes, and <b>Save</b>. To change a pin, click it, then the pencil. <kbd>Esc</kbd> cancels adding a pin.</p></div></details>
+      <details><summary>Can I save a pin from someone else's map?</summary><div><p>Yes. Click any pin on a map you don't own (a public map, or another dataset you've turned on under <b>Layers</b>) and choose <b>Save to my map</b>. Pick one of your maps, or name a new one, and a copy is added there with a note of where it came from. The copy is yours to edit; the original doesn't change.</p></div></details>
       <details><summary>What can I put in pin notes?</summary><div><p>Simple Markdown: <code>**bold**</code>, <code>*italic*</code>, <code>- lists</code>, headings and links. Emoji from the smiley button or your keyboard (<kbd>Win</kbd>+<kbd>.</kbd> on Windows, <kbd>Ctrl</kbd>+<kbd>Cmd</kbd>+<kbd>Space</kbd> on a Mac). Codes like <code>U+1F3E0</code> show as the character. Each pin card copies the pin as Markdown or JSON.</p></div></details>
       <details><summary>I can't see the edit buttons.</summary><div><p>Editing appears only on maps you own, while you're signed in. Other people's public maps are view-only.</p></div></details>
 
