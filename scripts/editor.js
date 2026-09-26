@@ -359,12 +359,47 @@ async function init() {
   $("new-map-name")?.addEventListener("keydown", (e) => { if (e.key === "Enter") createMap(); });
   $("add-pin-btn")?.addEventListener("click", () => setAddMode(!state.addMode));
   $("pin-here-btn")?.addEventListener("click", pinMyLocation);
+  $("details-map-btn")?.addEventListener("click", toggleDetails);
+  $("map-details")?.addEventListener("submit", saveDetails);
+  $("map-details")?.querySelector("[data-cancel]")?.addEventListener("click", () => { $("map-details").hidden = true; });
   $("delete-map-btn")?.addEventListener("click", deleteCurrentMap);
   $("dataset-select")?.addEventListener("change", () => { closePopup(); setTimeout(updateEditBar, 0); });
   window.addEventListener("geovive:dataset-applied", updateEditBar);
   window.addEventListener("geovive:datasets-changed", refreshDatasets);
 
   updateEditBar();
+}
+
+// ------------------------------------------------------------ map details (name, description, tags, visibility)
+
+function toggleDetails() {
+  const form = $("map-details"), ds = currentDataset();
+  if (!form || !ds) return;
+  if (!form.hidden) { form.hidden = true; return; }
+  form.name.value = ds.name || "";
+  form.description.value = ds.description || "";
+  form.tags.value = (ds.tags || []).join(", ");
+  form.public.checked = ds.visibility === "public";
+  form.hidden = false;
+  form.name.focus();
+}
+
+async function saveDetails(e) {
+  e.preventDefault();
+  const form = e.currentTarget, ds = currentDataset();
+  if (!ds) return;
+  try {
+    setStatus("Saving details…");
+    await api("PATCH", `/v1/datasets/${encodeURIComponent(ds.datasetId)}`, {
+      name: form.name.value.trim(), description: form.description.value.trim(),
+      tags: form.tags.value.split(",").map(t => t.trim()).filter(Boolean),
+      visibility: form.public.checked ? "public" : "private"
+    });
+    form.hidden = true;
+    await refreshDatasets();
+    updateEditBar();
+    setStatus("Details saved.");
+  } catch (err) { setStatus(err.message, true); }
 }
 
 // ------------------------------------------------------------ save a pin to my map

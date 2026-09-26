@@ -25,6 +25,7 @@ import { originAllowed } from "./apps.mjs";
 import { getActiveApp } from "./appstore.mjs";
 import * as appconnect from "./appconnect.mjs";
 import { fetchLayerList, layerHash } from "./appcheck.mjs";
+import { cleanTags, searchTextOf, searchPublic, MetaError } from "./search.mjs";
 import { loadApproved, visibleLayers } from "./approvals.mjs";
 import { promises as dns } from "node:dns";
 import { FORMATS, render as renderExport, fileName as exportFileName } from "./export.mjs";
@@ -130,7 +131,7 @@ function assertOwner(dataset, caller) {
 
 export function datasetView(d) {
   return {
-    datasetId: d.datasetId, name: d.name, description: d.description || "",
+    datasetId: d.datasetId, name: d.name, description: d.description || "", tags: d.tags || [],
     visibility: d.visibility, ownerId: d.ownerId, source: d.source,
     origin: d.origin, referenceArea: d.referenceArea, featureTypes: d.featureTypes,
     featureCount: d.featureCount || 0, imports: d.imports, createdAt: d.createdAt, updatedAt: d.updatedAt
@@ -216,23 +217,62 @@ export async function adjustCount(datasetId, delta) {
 
 // ------------------------------------------------------------------ datasets
 
+async function queryAll(input) {
+  const items = []; let key;
+  do {
+    const res = await ddb.send(new QueryCommand({ ...input, ExclusiveStartKey: key }));
+    items.push(...(res.Items || [])); key = res.LastEvaluatedKey;
+  } while (key);
+  return items;
+}
+
+// GET /v1/datasets            public datasets + the caller's own (all pages)
+// GET /v1/datasets?scope=mine the caller's own, plus any ids=a,b,c they can read
+//                             (the map uses this: search finds public maps)
 async function listDatasets(event) {
   const caller = await getCaller(event, { required: false });
-  const pub = await ddb.send(new QueryCommand({
-    TableName: DATASETS_TABLE, IndexName: "byVisibility",
-    KeyConditionExpression: "visibility = :v", ExpressionAttributeValues: { ":v": "public" }
-  }));
-  let items = pub.Items || [];
-  if (caller) {
-    const mine = await ddb.send(new QueryCommand({
-      TableName: DATASETS_TABLE, IndexName: "byOwner",
-      KeyConditionExpression: "ownerId = :o", ExpressionAttributeValues: { ":o": caller.sub }
+  const q = event.queryStringParameters || {};
+  const mine = caller ? await queryAll({
+    TableName: DATASETS_TABLE, IndexName: "byOwner",
+    KeyConditionExpression: "ownerId = :o", ExpressionAttributeValues: { ":o": caller.sub }
+  }) : [];
+  let items;
+  if (q.scope === "mine") {
+    const ids = [...new Set(String(q.ids || "").split(",").map(x => x.trim()).filter(Boolean))].slice(0, 25);
+    const have = new Set(mine.map(d => d.datasetId));
+    const extra = await Promise.all(ids.filter(id => !have.has(id)).map(async id => {
+      const { Item } = await ddb.send(new GetCommand({ TableName: DATASETS_TABLE, Key: { datasetId: id } }));
+      return Item && (Item.visibility === "public" || Item.ownerId === caller?.sub) ? Item : null;
     }));
-    const seen = new Set(items.map(d => d.datasetId));
-    items = items.concat((mine.Items || []).filter(d => !seen.has(d.datasetId)));
+    items = mine.concat(extra.filter(Boolean));
+  } else {
+    const pub = await queryAll({
+      TableName: DATASETS_TABLE, IndexName: "byVisibility",
+      KeyConditionExpression: "visibility = :v", ExpressionAttributeValues: { ":v": "public" }
+    });
+    const seen = new Set(pub.map(d => d.datasetId));
+    items = pub.concat(mine.filter(d => !seen.has(d.datasetId)));
   }
   items.sort((a, b) => a.name.localeCompare(b.name));
   return { datasets: items.map(datasetView) };
+}
+
+// GET /v1/datasets/search?q=&tag=&limit=  public datasets by name, description and tags
+async function searchDatasets(event) {
+  const q = event.queryStringParameters || {};
+  const out = await searchPublic(ddb, DATASETS_TABLE, { q: String(q.q || "").slice(0, 100), tag: q.tag, limit: parseLimit(q.limit, 20, 50) });
+  return { ...out, results: out.results.map(datasetView) };
+}
+
+function metaFields(body, existing = {}) {
+  const out = {};
+  if (body.description !== undefined) {
+    if (typeof body.description !== "string") throw new HttpError(400, "description must be text");
+    out.description = body.description.trim().slice(0, 1000);
+  }
+  try { const t = cleanTags(body.tags); if (t !== undefined) out.tags = t; }
+  catch (e) { if (e instanceof MetaError) throw new HttpError(400, e.message); throw e; }
+  return out;
 }
 
 async function createDataset(event) {
@@ -242,10 +282,12 @@ async function createDataset(event) {
   const visibility = body.visibility || "private";
   if (!VISIBILITIES.has(visibility)) throw new HttpError(400, "visibility must be public or private");
   const now = new Date().toISOString();
+  const meta = metaFields(body);
   const item = {
-    datasetId: randomUUID(), name: body.name.trim(), description: body.description || "",
+    datasetId: randomUUID(), name: body.name.trim().slice(0, 120), description: meta.description || "", tags: meta.tags || [],
     visibility, ownerId: caller.sub, source: body.source, featureCount: 0, createdAt: now, updatedAt: now
   };
+  item.searchText = searchTextOf(item);
   await ddb.send(new PutCommand({ TableName: DATASETS_TABLE, Item: item }));
   return datasetView(item);
 }
@@ -258,11 +300,12 @@ async function updateDataset(event, datasetId) {
   if (body.visibility !== undefined && !VISIBILITIES.has(body.visibility)) throw new HttpError(400, "visibility must be public or private");
   const next = {
     ...ds,
-    name: typeof body.name === "string" && body.name.trim() ? body.name.trim() : ds.name,
-    description: body.description ?? ds.description,
+    ...metaFields(body, ds),
+    name: typeof body.name === "string" && body.name.trim() ? body.name.trim().slice(0, 120) : ds.name,
     visibility: body.visibility ?? ds.visibility,
     updatedAt: new Date().toISOString()
   };
+  next.searchText = searchTextOf(next);
   await ddb.send(new PutCommand({ TableName: DATASETS_TABLE, Item: next }));
   return datasetView(next);
 }
@@ -452,8 +495,9 @@ async function openAppMap(event, appId, externalRef) {
     originKey,
     referenceArea,
     featureTypes: app.featureTypes,
-    featureCount: 0, createdAt: now, updatedAt: now
+    featureCount: 0, createdAt: now, updatedAt: now, tags: []
   };
+  item.searchText = searchTextOf(item);
   await ddb.send(new PutCommand({ TableName: DATASETS_TABLE, Item: item }));
   return { created: true, dataset: datasetView(item) };
 }
@@ -685,6 +729,7 @@ export const handler = async (event) => {
     let result, status = 200;
     switch (routeKey) {
       case "GET /v1/datasets": result = await listDatasets(event); break;
+      case "GET /v1/datasets/search": result = await searchDatasets(event); break;
       case "POST /v1/datasets": result = await createDataset(event); status = 201; break;
       case "GET /v1/datasets/{datasetId}": {
         const caller = await getCaller(event, { required: false });

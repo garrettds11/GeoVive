@@ -674,6 +674,36 @@
     .pin-save-row .btn { padding: 0.3rem 0.7rem; font-size: 0.8rem; }
     .pin-save-note { font-size: 0.78rem; margin: 0; color: var(--muted); }
     .pin-save-note.ok { color: var(--accent1); }
+    /* Dataset search */
+    .ds-search { position: relative; margin-bottom: 0.45rem; }
+    .ds-search input { width: 100%; box-sizing: border-box; background: #020617; color: #e5e7eb; border: 1px solid #1f2937; border-radius: 0.5rem;
+      padding: 0.45rem 0.6rem 0.45rem 1.9rem; font-size: 0.85rem;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5' fill='none' stroke='%239ca3af' stroke-width='2'/%3E%3Cpath d='M15.5 15.5 21 21' stroke='%239ca3af' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-size: 15px; background-position: 0.55rem center; }
+    .ds-search input:focus { outline: none; border-color: var(--accent1); }
+    .ds-search-results { margin-top: 0.35rem; border: 1px solid #1f2937; border-radius: 0.6rem; background: #030b1c; max-height: 320px; overflow-y: auto; }
+    .ds-search-results[hidden] { display: none; }
+    .ds-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; padding: 0.45rem 0.5rem 0.2rem; }
+    .ds-tag { font: inherit; font-size: 0.7rem; border-radius: 999px; padding: 0.12rem 0.5rem; cursor: pointer;
+      border: 1px solid #334155; background: transparent; color: #cbd5e1; }
+    .ds-tag.on, .ds-tag:hover { border-color: var(--accent1); color: var(--accent1); }
+    .ds-result { display: block; width: 100%; text-align: left; font: inherit; color: inherit; background: transparent; border: 0;
+      border-top: 1px solid #111827; padding: 0.5rem 0.6rem; cursor: pointer; }
+    .ds-result:first-of-type { border-top: 0; }
+    .ds-result:hover, .ds-result[aria-selected=true] { background: rgba(34,197,94,0.08); }
+    .ds-result .t { font-size: 0.85rem; font-weight: 600; color: #e5e7eb; display: flex; justify-content: space-between; gap: 0.4rem; }
+    .ds-result .t small { font-weight: 400; color: var(--muted); white-space: nowrap; }
+    .ds-result .d { font-size: 0.75rem; color: var(--muted); margin-top: 0.1rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .ds-result .tg { margin-top: 0.2rem; display: flex; flex-wrap: wrap; gap: 0.2rem; }
+    .ds-result .tg span { font-size: 0.66rem; color: #93c5fd; background: rgba(59,130,246,0.12); border-radius: 999px; padding: 0.05rem 0.4rem; }
+    .ds-result mark { background: rgba(34,197,94,0.25); color: inherit; border-radius: 2px; }
+    .ds-empty { padding: 0.6rem; font-size: 0.8rem; color: var(--muted); }
+    .ds-more { padding: 0.35rem 0.6rem 0.5rem; font-size: 0.72rem; color: var(--muted); }
+    .map-details { display: grid; gap: 0.45rem; margin-top: 0.5rem; padding: 0.6rem; border: 1px solid #1f2937; border-radius: 0.6rem; }
+    .map-details[hidden] { display: none; }
+    .map-details label { display: grid; gap: 0.2rem; font-size: 0.78rem; color: var(--muted); }
+    .map-details input:not([type=checkbox]), .map-details textarea { background: #020617; color: #e5e7eb; border: 1px solid #1f2937; border-radius: 0.4rem; padding: 0.35rem 0.5rem; font: inherit; font-size: 0.85rem; }
+    .map-details .new-map-public { display: flex; gap: 0.4rem; align-items: center; }
     .pin-from { font-size: 0.72rem; color: var(--muted); margin-top: 0.3rem; font-style: italic; }
     .popup-title {
       font-weight: 600;
@@ -926,8 +956,16 @@
               <div class="edit-actions">
                 <button type="button" id="add-pin-btn" class="btn primary">📍 Add pin</button>
                 <button type="button" id="pin-here-btn" class="btn">📍 Pin my location</button>
+                <button type="button" id="details-map-btn" class="btn">Details</button>
                 <button type="button" id="delete-map-btn" class="btn danger">Delete map</button>
               </div>
+              <form id="map-details" class="map-details" hidden>
+                <label>Name<input name="name" maxlength="120" required></label>
+                <label>Description<textarea name="description" rows="3" maxlength="1000" placeholder="What's on this map, and who is it for?"></textarea></label>
+                <label>Tags <span class="hint">(comma-separated, up to 10; help people find public maps)</span><input name="tags" placeholder="hiking, colorado, trailheads"></label>
+                <label class="new-map-public"><input type="checkbox" name="public"> Public (anyone can find and view it)</label>
+                <div class="edit-actions"><button type="submit" class="btn primary">Save details</button><button type="button" class="btn" data-cancel>Cancel</button></div>
+              </form>
               <p class="hint" style="margin-top:0.35rem;">Click a pin, then ✏️ to edit or delete it.</p>
             </div>
             <div id="editor-status"></div>
@@ -936,6 +974,10 @@
           <!-- Dataset selector -->
           <div class="filter-group" style="margin-top: 0.5rem;">
             <h3>Dataset</h3>
+            <div class="ds-search" id="ds-search">
+              <input type="search" id="ds-search-input" placeholder="Search public maps (name, description, tags)" autocomplete="off" aria-label="Search public maps" aria-controls="ds-search-results">
+              <div class="ds-search-results" id="ds-search-results" role="listbox" hidden></div>
+            </div>
             <select id="dataset-select" style="width:100%; background:#020617; color:#e5e7eb; border:1px solid #1f2937; border-radius:0.5rem; padding:0.35rem 0.5rem; font-size:0.85rem;">
                 <option value="">Loading…</option>
             </select>
@@ -1118,20 +1160,43 @@
       return { geojson: { type: "FeatureCollection", features }, categories };
     }
 
+    // The dataset menu lists your maps and the public maps you've opened recently.
+    // Public maps are found with the search box (scripts/dataset-search.js), so the
+    // menu stays short however many public maps there are.
+    const RECENT_KEY = "geovive:recentDatasets";
+    function recentIds() { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]"); } catch { return []; } }
+    function rememberDataset(id) {
+      if (!id) return;
+      const ids = [id, ...recentIds().filter(x => x !== id)].slice(0, 8);
+      try { localStorage.setItem(RECENT_KEY, JSON.stringify(ids)); } catch { /* ignore */ }
+    }
+
     async function refreshDatasetOptions() {
       const select = document.getElementById("dataset-select");
       try {
-        const { datasets } = await apiGet("/v1/datasets");
+        const current = select.value;
+        const want = [...new Set([DEFAULT_DATASET_ID, ...recentIds(), current.startsWith("api:") ? current.slice(4) : ""].filter(Boolean))];
+        const { datasets } = await apiGet(`/v1/datasets?scope=mine&ids=${encodeURIComponent(want.join(","))}`);
         datasetMeta = new Map(datasets.map(d => [d.datasetId, d]));
         window.dispatchEvent(new CustomEvent("geovive:datasets-listed", { detail: { datasets } }));
-        const current = select.value;
+        const me = window.userManager ? (await window.userManager.getUser())?.profile?.sub : null;
+        const mine = datasets.filter(d => me && d.ownerId === me);
+        const order = new Map(want.map((id, i) => [id, i]));
+        const others = datasets.filter(d => !mine.includes(d)).sort((a, b) => (order.get(a.datasetId) ?? 99) - (order.get(b.datasetId) ?? 99));
         select.innerHTML = "";
-        datasets.forEach(d => {
-          const opt = document.createElement("option");
-          opt.value = `api:${d.datasetId}`;
-          opt.textContent = `${d.name}${d.visibility === "private" ? " (private)" : ""}`;
-          select.appendChild(opt);
-        });
+        const group = (label, list) => {
+          if (!list.length) return;
+          const g = document.createElement("optgroup"); g.label = label;
+          list.forEach(d => {
+            const opt = document.createElement("option");
+            opt.value = `api:${d.datasetId}`;
+            opt.textContent = `${d.name}${d.visibility === "private" ? " (private)" : ""}`;
+            g.appendChild(opt);
+          });
+          select.appendChild(g);
+        };
+        group("Your maps", mine);
+        group("Public maps", others);
         if ([...select.options].some(o => o.value === current)) select.value = current;
         return datasets;
       } catch (e) {
@@ -1140,6 +1205,16 @@
         return [];
       }
     }
+
+    // Open any dataset by id (from search or a link): add it to the menu, then show it.
+    async function openDataset(datasetId, opts = {}) {
+      rememberDataset(datasetId);
+      await refreshDatasetOptions();
+      const key = `api:${datasetId}`;
+      document.getElementById("dataset-select").value = key;
+      await applyDataset(key, opts);
+    }
+
 
     let loadedCategories = [];
 
@@ -1322,6 +1397,7 @@
       applyFilters();
 
       currentGeojson = geojson;
+      if (key.startsWith("api:")) rememberDataset(key.slice(4));
       window.dispatchEvent(new CustomEvent("geovive:dataset-applied", { detail: { key } }));
 
       // The view only moves when explicitly asked (first visit, or "Zoom to data")
@@ -1725,6 +1801,7 @@
       zoomToData,
       loadDatasetFeatures,
       get datasets() { return [...datasetMeta.values()]; },
+      openDataset,
       refreshDatasetOptions,
       get currentDataset() { return currentDataset; },
       ready: new Promise(r => (resolveGeoViveReady = r))
@@ -1772,6 +1849,7 @@
   <script type="module" src="./scripts/importer.js"></script>
   <script type="module" src="./scripts/exporter.js"></script>
   <script type="module" src="./scripts/app-layers.js"></script>
+  <script type="module" src="./scripts/dataset-search.js"></script>
 
 
 </body>
