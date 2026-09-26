@@ -35,7 +35,8 @@
       <a href="#exports">Exports</a>
       <a href="#layer-lists">Layer lists</a>
       <a href="#open-links">Open links</a>
-      <a href="#connected-apps">Connected apps</a>
+      <a href="#appconnect-api">AppConnect API</a>
+      <a href="#connected-apps">Account linking</a>
     </nav>
 
     <h2 id="overview">Overview</h2>
@@ -55,7 +56,7 @@
       <tr><td>Flow</td><td>Authorization code + PKCE</td></tr>
       <tr><td>Token</td><td>Access token (<code>token_use: access</code>); the user is identified by its <code>sub</code> claim</td></tr>
     </table></div>
-    <p>Tokens are currently issued only to GeoVivé's own web app. Third-party access is coming through <a href="#connected-apps">connected apps</a>.</p>
+    <p>Tokens are currently issued only to GeoVivé's own web app. Third-party account access is coming through <a href="#connected-apps">account linking</a>.</p>
 
     <h2 id="access">Access rules</h2>
     <ul>
@@ -189,7 +190,8 @@ map.getSource("places").setData(collection);</code></pre>
     </ul>
 
     <h2 id="layer-lists">Layer lists (connected apps)</h2>
-    <p>GeoVivé keeps no subject-matter layers of its own. A connected app brings its layers by publishing a <strong>layer list</strong>, a JSON file on the app's own site whose address is registered with GeoVivé (for example <code>https://hunt.example.com/geovive-layers.json</code>). GeoVivé shows those layers only to people working with that app: users who arrived through the app's open link, or who open a map the app created.</p>
+    <p>GeoVivé keeps no subject-matter layers of its own. A connected app brings its layers by publishing a <strong>layer list</strong>, a JSON file on the app's own verified domain, registered through <a href="/docs/developers/appconnect/">AppConnect</a> (for example <code>https://hunt.example.com/geovive-layers.json</code>). GeoVivé shows those layers in the <strong>AppConnect</strong> section of the Layers panel, only to people working with that app: users who arrived through the app's open link, or who open a map the app created.</p>
+    <p><strong>No personal information.</strong> Labels and shown fields must not identify individuals (names, emails, phone numbers, home addresses). The connection checks look for it, and the <a href="/docs/terms/appconnect/">AppConnect terms</a> forbid it.</p>
 <pre><code>{
   "version": 1,
   "title": "Example layers",
@@ -219,7 +221,7 @@ map.getSource("places").setData(collection);</code></pre>
           <li><code>direct</code>: the browser loads the source itself. Use it when the data's terms don't allow a cached copy; the source must allow browser (CORS) requests.</li>
         </ul>
       </li>
-      <li>GeoVivé re-reads the list every few minutes. Changes on the app's site show up without anything changing in GeoVivé.</li>
+      <li>GeoVivé re-reads the list every few minutes, and re-runs the connection checks weekly or whenever you ask. Changes on the app's site show up without anything changing in GeoVivé.</li>
     </ul>
     <div class="table-wrap"><table>
       <tr><th>Method</th><th>Path</th><th>Description</th></tr>
@@ -255,7 +257,19 @@ map.getSource("places").setData(collection);</code></pre>
     </table></div>
     <p>To connect an app, see <a href="/docs/developers/appconnect/">AppConnect requirements</a> for what to have ready.</p>
 
-    <h2 id="connected-apps">Connected apps (coming soon)</h2>
+    <h2 id="appconnect-api">AppConnect API</h2>
+    <p>The <a href="/appconnect/">AppConnect page</a> uses these routes; all but the webhook need a signed-in user, who becomes the app's owner. See <a href="/docs/developers/appconnect/">requirements</a> and <a href="/docs/terms/appconnect/">terms</a>.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+      <tr><td>POST</td><td><code>/v1/appconnect/apps</code></td><td>Register an app: <code>appId</code>, <code>name</code>, <code>domain</code>, <code>layersUrl</code>, <code>returnOrigins</code>, <code>contactEmail</code>, <code>acceptTerms</code>. Returns the domain-verification token.</td></tr>
+      <tr><td>GET</td><td><code>/v1/appconnect/apps</code></td><td>Your apps and their stages</td></tr>
+      <tr><td>GET</td><td><code>/v1/appconnect/apps/{appId}</code></td><td>One app with its history</td></tr>
+      <tr><td>POST</td><td><code>/v1/appconnect/apps/{appId}/checks</code></td><td>Run the connection checks (<code>202</code>); the report is emailed and listed on the app</td></tr>
+      <tr><td>GET</td><td><code>/v1/appconnect/apps/{appId}/reports/{reportId}</code></td><td>A 10-minute link to a report or notice PDF</td></tr>
+    </table></div>
+    <p>Stages: registered → checking → checks passed or needs fixes → awaiting payment → live, renewed yearly; plus sandbox, expired and suspended.</p>
+
+    <h2 id="connected-apps">Account linking (coming soon)</h2>
     <div class="card">
       <p>Next, apps will be able to link a user's GeoVivé account with their own and read that user's maps, with the user's consent:</p>
       <ul>

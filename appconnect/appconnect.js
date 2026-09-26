@@ -71,7 +71,7 @@ function formHtml() {
     <label>Layer list address (on your domain)<input name="layersUrl" type="url" required placeholder="https://trails.example.com/geovive-layers.json"></label>
     <label>Return addresses, one per line (on your domain; http://localhost works in sandbox only)<textarea name="returnOrigins" rows="2" placeholder="https://trails.example.com"></textarea></label>
     <label>Contact email (reports and renewal notices go here)<input name="contactEmail" type="email" required></label>
-    <label class="check"><input type="checkbox" name="acceptTerms" required> <span>I accept the <a href="/docs/terms/appconnect/" target="_blank" rel="noopener">AppConnect Terms v1.0</a> and confirm I have the right to display the data my layer list describes.</span></label>
+    <label class="check"><input type="checkbox" name="acceptTerms" required> <span>I accept the <a href="/docs/terms/appconnect/" target="_blank" rel="noopener">AppConnect Terms v1.0</a> and confirm I have the right to display the data my layer list describes, and that it contains no personal information about individuals.</span></label>
     <div id="ac-form-msg"></div>
     <div><button class="ac-btn" type="submit">Register app</button></div>
   </form>`;
