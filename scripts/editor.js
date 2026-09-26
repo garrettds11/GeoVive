@@ -181,7 +181,7 @@ function pinFormHtml(props = {}) {
           ${categoriesFor(currentDataset()).map(c => `<option value="${c.value}" ${c.value === cat ? "selected" : ""}>${c.label}</option>`).join("")}
         </select>
       </label>
-      <label>Notes<textarea name="description" rows="3" maxlength="2000">${esc(props.description)}</textarea></label>
+      <label>Notes <span class="hint">(Markdown: **bold**, *italic*, - lists, links)</span><textarea name="description" rows="4" maxlength="2000">${esc(props.description)}</textarea></label>
       <div class="pin-form-actions">
         ${props.id ? `<button type="button" class="btn danger" data-action="delete">Delete</button>` : ""}
         <button type="button" class="btn" data-action="cancel">Cancel</button>
@@ -202,7 +202,7 @@ function openPinForm(lngLat, feature) {
 
   const form = popup.getElement().querySelector(".pin-form");
   const errEl = form.querySelector(".pin-form-error");
-  form.querySelector("input[name=name]").focus();
+  if (!feature) form.querySelector("input[name=name]").focus();
 
   const fail = (msg) => { errEl.textContent = msg; errEl.hidden = false; };
 
@@ -252,11 +252,18 @@ function openPinForm(lngLat, feature) {
 
 // Called by the inline script before it shows its read-only popup.
 // Returns true when the editor handled the click.
+// Existing pins open as a read-only card (pin-view.js); editing starts from its pencil.
 function onFeatureClick(feature, e) {
-  if (!canEditCurrent() || state.addMode) return state.addMode;
+  return !!state.addMode && canEditCurrent();
+}
+
+function canEditPin(props) {
+  return canEditCurrent() && (!props?.datasetId || props.datasetId === currentDatasetId());
+}
+
+function editPin(feature) {
   const [lng, lat] = feature.geometry.coordinates;
   openPinForm({ lng, lat }, feature);
-  return true;
 }
 
 // Add a pin at the device's current location (asks the browser for permission).
@@ -317,5 +324,5 @@ async function init() {
   updateEditBar();
 }
 
-window.GeoViveEditor = { onFeatureClick };
+window.GeoViveEditor = { onFeatureClick, canEdit: canEditPin, edit: editPin };
 init().catch(e => console.error("Editor init failed", e));
