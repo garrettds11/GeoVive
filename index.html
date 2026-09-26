@@ -399,6 +399,10 @@
     .filter-option label {
       font-size: 0.85rem;
       color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      cursor: pointer;
     }
 
     .legend {
@@ -701,35 +705,15 @@
             <h3>Show categories</h3>
             <div class="filter-option">
               <input type="checkbox" id="filter-events" value="event" checked />
-              <label for="filter-events">Events</label>
+              <label for="filter-events"><span class="legend-swatch events"></span>Events</label>
             </div>
             <div class="filter-option">
               <input type="checkbox" id="filter-locations" value="location" checked />
-              <label for="filter-locations">Locations</label>
+              <label for="filter-locations"><span class="legend-swatch locations"></span>Locations</label>
             </div>
             <div class="filter-option">
               <input type="checkbox" id="filter-alerts" value="alert" checked />
-              <label for="filter-alerts">Alerts</label>
-            </div>
-            <div class="filter-option">
-              <input type="checkbox" id="filter-capitals" value="capital" checked />
-              <label for="filter-capitals">Capitals</label>
-            </div>
-            
-            <!-- Legend -->
-            <div class="legend">
-              <div class="legend-item">
-                <span class="legend-swatch events"></span> Events
-              </div>
-              <div class="legend-item">
-                <span class="legend-swatch locations"></span> Locations
-              </div>
-              <div class="legend-item">
-                <span class="legend-swatch alerts"></span> Alerts
-              </div>
-              <div class="legend-item">
-                <span class="legend-swatch" style="background:#a855f7;"></span> Capitals
-              </div>
+              <label for="filter-alerts"><span class="legend-swatch alerts"></span>Alerts</label>
             </div>
           </div>
           
@@ -757,7 +741,7 @@
           <div class="filter-group" style="margin-top: 0.5rem;">
             <h3>Dataset</h3>
             <select id="dataset-select" style="width:100%; background:#020617; color:#e5e7eb; border:1px solid #1f2937; border-radius:0.5rem; padding:0.35rem 0.5rem; font-size:0.85rem;">
-                <option value="demo">Demo (built-in)</option>
+                <option value="">Loading…</option>
             </select>
             <p class="hint" style="margin-top:0.4rem;">
                 Choose which dataset GeoVivé displays.
@@ -860,102 +844,18 @@
       satellite: "mapbox://styles/mapbox/satellite-streets-v12"
     };
 
-    // 3. Base dataset (demo points) – define BEFORE we reference it
-    const GeoVivéData = {
-      type: "FeatureCollection",
-      features: [
-        {
-          type: "Feature",
-          properties: {
-            id: "loc-1",
-            name: "Home",
-            category: "location",
-            description: "No place like home."
-          },
-          geometry: {
-            type: "Point",
-            coordinates: [-93.7321, 32.5159]
-          }
-        },
-        {
-          type: "Feature",
-          properties: {
-            id: "evt-1",
-            name: "Security Summit",
-            category: "event",
-            description: "Regional cybersecurity meetup and roundtable."
-          },
-          geometry: {
-            type: "Point",
-            coordinates: [-96.7969, 32.7763]
-          }
-        },
-        {
-          type: "Feature",
-          properties: {
-            id: "loc-2",
-            name: "Revelation Escapes",
-            category: "location",
-            description: "Mobile escape room ministry."
-          },
-          geometry: {
-            type: "Point",
-            coordinates: [-103.06583718650495, 44.14067709235039]
-          }
-        },
-        {
-          type: "Feature",
-          properties: {
-            id: "loc-3",
-            name: "Escape Go Workshop",
-            category: "location",
-            description: "Small-batch puzzle kit assembly shop."
-          },
-          geometry: {
-            type: "Point",
-            coordinates: [-93.7321, 32.5159]
-          }
-        },
-        {
-          type: "Feature",
-          properties: {
-            id: "alrt-1",
-            name: "Weather Watch",
-            category: "alert",
-            description: "Heads-up: strong storms possible this weekend."
-          },
-          geometry: {
-            type: "Point",
-            coordinates: [-90.0715, 29.9511]
-          }
-        },
-        {
-          type: "Feature",
-          properties: {
-            id: "loc-4",
-            name: "VulnServer Lab Node",
-            category: "location",
-            description: "Experimental lab node for training environments."
-          },
-          geometry: {
-            type: "Point",
-            coordinates: [-122.3321, 47.6062]
-          }
-        }
-      ]
-    };
+    // 3. Empty collection shown when no dataset is available
+    const EMPTY_FC = { type: "FeatureCollection", features: [] };
 
     // Category → color
     const categoryColor = {
       event: "#22c55e",
       location: "#3b82f6",
-      alert: "#f97316",
-      capital: "#a855f7"
+      alert: "#f97316"
     };
 
     // Global cache of current dataset
-    let currentDataset = "demo";
-    let demoDataset = GeoVivéData;
+    let currentDataset = "";
 
     // GeoVive API base URL per frontend host (see backend/template.yaml outputs)
     const GEO_VIVE_ENV_MAP = {
@@ -968,7 +868,7 @@
       GEO_VIVE_ENV_MAP[window.location.hostname] ||
       "https://gb9ylm02sb.execute-api.us-east-1.amazonaws.com/dev";
 
-    // Default dataset shown on load (falls back to the built-in demo if the API is unavailable)
+    // Default dataset shown on load (falls back to the first available dataset)
     const DEFAULT_DATASET_ID = "world-capitals";
 
     // Escape text before inserting into HTML (popups, list items)
@@ -1009,14 +909,11 @@
           opt.textContent = `${d.name}${d.visibility === "private" ? " (private)" : ""}`;
           select.appendChild(opt);
         });
-        const demo = document.createElement("option");
-        demo.value = "demo";
-        demo.textContent = "Demo (built-in)";
-        select.appendChild(demo);
         if ([...select.options].some(o => o.value === current)) select.value = current;
         return datasets;
       } catch (e) {
-        console.warn("Dataset list unavailable; using built-in demo", e);
+        console.warn("Dataset list unavailable", e);
+        select.innerHTML = '<option value="">No datasets available</option>';
         return [];
       }
     }
@@ -1024,8 +921,8 @@
     async function loadDataset(key) {
       currentDataset = key;
 
-      if (key === "demo") {
-        return demoDataset;
+      if (!key) {
+        return EMPTY_FC;
       }
 
       if (key.startsWith("api:")) {
@@ -1102,7 +999,6 @@
               "event", categoryColor.event,
               "location", categoryColor.location,
               "alert", categoryColor.alert,
-              "capital", categoryColor.capital,
               "#e5e7eb"
             ],
             "circle-stroke-width": 1.5,
@@ -1209,8 +1105,7 @@
       const entries = [
         { el: eventsCheckbox, value: "event" },
         { el: locationsCheckbox, value: "location" },
-        { el: alertsCheckbox, value: "alert" },
-        { el: document.getElementById("filter-capitals"), value: "capital" }
+        { el: alertsCheckbox, value: "alert" }
       ];
 
       function applyFilters() {
@@ -1249,13 +1144,13 @@
       const datasets = await refreshDatasetOptions();
       const initialKey = datasets.some(d => d.datasetId === DEFAULT_DATASET_ID)
         ? `api:${DEFAULT_DATASET_ID}`
-        : "demo";
+        : (datasets[0] ? `api:${datasets[0].datasetId}` : "");
       document.getElementById("dataset-select").value = initialKey;
       try {
         await applyDataset(initialKey);
       } catch (e) {
         console.error(e);
-        await applyDataset("demo");
+        await applyDataset("");
       }
       ensurePointLayer();
         GeoVivéMap.on("mouseenter", "GeoVivé-layer", () => {

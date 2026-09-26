@@ -16,7 +16,7 @@ const items = src.features
       geometry: { type: "Point", coordinates: [Number(p.longitude.toFixed(6)), Number(p.latitude.toFixed(6))] },
       properties: {
         name: p.name,
-        category: "capital",
+        category: "location",
         capitalType: p.featurecla === "Admin-0 capital" ? "national" : "alternate",
         country: p.adm0name,
         countryCode: p.adm0_a3,

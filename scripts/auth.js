@@ -61,10 +61,25 @@ export async function logout() {
   const logoutUri = APP_URL;
   const cognitoDomain = COGNITO_DOMAIN;
 
-  // 1) Clear the local user from oidc-client-ts (localStorage)
+  // 1) Revoke the refresh token at Cognito, so it can't mint new access tokens
+  //    even if it was copied. (Access tokens already issued expire on their own.)
+  const user = await userManager.getUser();
+  if (user?.refresh_token) {
+    try {
+      await fetch(`${cognitoDomain}/oauth2/revoke`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ token: user.refresh_token, client_id: clientId })
+      });
+    } catch (e) {
+      console.warn("Token revocation failed", e);
+    }
+  }
+
+  // 2) Clear the local user from oidc-client-ts (localStorage)
   await userManager.removeUser();
 
-  // 2) Redirect to Cognito to clear server session
+  // 3) Redirect to Cognito to clear its sign-in session cookie
   const url =
     `${cognitoDomain}/logout?client_id=${encodeURIComponent(clientId)}` +
     `&logout_uri=${encodeURIComponent(logoutUri)}`;
