@@ -17,6 +17,7 @@
       <nav class="tabs">
         <a href="/docs/">User guide</a>
         <a href="/docs/developers/" class="active">Developers</a>
+        <a href="/docs/developers/appconnect/">AppConnect</a>
         <a href="/">Open the map →</a>
       </nav>
     </header>
@@ -252,7 +253,7 @@ map.getSource("places").setData(collection);</code></pre>
       <tr><td>GET</td><td><code>/v1/apps/{appId}</code></td><td><span class="tag public">none</span></td><td>App name, allowed origins and pin types</td></tr>
       <tr><td>PUT</td><td><code>/v1/apps/{appId}/maps/{ref}</code></td><td><span class="tag auth">required</span></td><td>Find or create the caller's map for that item. Body: <code>title</code>, <code>externalUrl</code>, <code>referenceArea</code>. Returns <code>201</code> when created, <code>200</code> when it already existed.</td></tr>
     </table></div>
-    <p>To register an app, send its name, return origins, outline origins and pin types to the GeoVivé team.</p>
+    <p>To connect an app, see <a href="/docs/developers/appconnect/">AppConnect requirements</a> for what to have ready.</p>
 
     <h2 id="connected-apps">Connected apps (coming soon)</h2>
     <div class="card">
