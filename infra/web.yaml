@@ -1,0 +1,67 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'GeoVivé web hosting: Amplify app, dev branch, geovive.link domain (imported from existing resources)'
+Parameters:
+  MapboxAccessToken:
+    Type: String
+    NoEcho: true
+    Description: Mapbox public token (pk.…) for the site build. Kept out of git; pass at deploy time.
+Resources:
+  WebApp:
+    UpdateReplacePolicy: Retain
+    Type: AWS::Amplify::App
+    DeletionPolicy: Retain
+    Properties:
+      Repository: https://github.com/garrettds11/GeoVive
+      EnvironmentVariables:
+      - Name: MAPBOX_ACCESS_TOKEN
+        Value: !Ref MapboxAccessToken
+      Platform: WEB
+      EnableBranchAutoDeletion: false
+      BuildSpec: "version: 1\nfrontend:\n  phases:\n    # IMPORTANT - Please verify your build commands\n    build:\n    \
+        \  commands: []\n  artifacts:\n    # IMPORTANT - Please verify your build output directory\n    baseDirectory: /\n\
+        \    files:\n      - '**/*'\n  cache:\n    paths: []\n"
+      CustomRules:
+      - Status: 404-200
+        Target: /index.html
+        Source: /<*>
+      CacheConfig:
+        Type: AMPLIFY_MANAGED_NO_COOKIES
+      JobConfig:
+        BuildComputeType: STANDARD_8GB
+      CustomHeaders: ''
+      Name: GeoVive
+  DevBranch:
+    UpdateReplacePolicy: Retain
+    Type: AWS::Amplify::Branch
+    DeletionPolicy: Retain
+    Properties:
+      Backend: {}
+      AppId:
+        Fn::GetAtt:
+        - WebApp
+        - AppId
+      EnablePullRequestPreview: false
+      EnableAutoBuild: true
+      EnablePerformanceMode: false
+      Stage: PRODUCTION
+      BranchName: dev
+      Framework: Web
+  SiteDomain:
+    UpdateReplacePolicy: Retain
+    Type: AWS::Amplify::Domain
+    DeletionPolicy: Retain
+    Properties:
+      SubDomainSettings:
+      - BranchName: dev
+        Prefix: ''
+      - Prefix: www
+        BranchName: dev
+      AppId:
+        Fn::GetAtt:
+        - WebApp
+        - AppId
+      DomainName: geovive.link
+      EnableAutoSubDomain: false
+      CertificateSettings:
+        CertificateType: CUSTOM
+        CustomCertificateArn: arn:aws:acm:us-east-1:666993265047:certificate/053f3d9a-dec0-4d35-b5f6-51b530fcd9ac

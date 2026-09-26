@@ -1,0 +1,318 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'GeoVivé identity: Cognito user pool, web app client, sign-in domains, Google provider (imported from existing
+  resources)'
+Resources:
+  UserPool:
+    UpdateReplacePolicy: Retain
+    Type: AWS::Cognito::UserPool
+    DeletionPolicy: Retain
+    Properties:
+      UserPoolTags:
+        project: geovive
+      Policies:
+        PasswordPolicy:
+          RequireNumbers: true
+          MinimumLength: 14
+          TemporaryPasswordValidityDays: 7
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireSymbols: true
+          PasswordHistorySize: 1
+        SignInPolicy:
+          AllowedFirstAuthFactors:
+          - PASSWORD
+          - WEB_AUTHN
+          - EMAIL_OTP
+      VerificationMessageTemplate:
+        EmailSubject: Your GeoVivé verification code
+        DefaultEmailOption: CONFIRM_WITH_CODE
+        EmailMessage: Welcome to GeoVivé. Your verification code is {####}
+      IssuerConfiguration:
+        Type: ORIGINAL
+      KeyConfiguration:
+        KeyType: AWS_OWNED_KEY
+      MfaConfiguration: 'OFF'
+      Schema:
+      - DeveloperOnlyAttribute: false
+        Mutable: true
+        AttributeDataType: String
+        StringAttributeConstraints:
+          MaxLength: '2048'
+          MinLength: '0'
+        Required: false
+        Name: profile
+      - DeveloperOnlyAttribute: false
+        Mutable: true
+        AttributeDataType: String
+        StringAttributeConstraints:
+          MaxLength: '2048'
+          MinLength: '0'
+        Required: false
+        Name: address
+      - DeveloperOnlyAttribute: false
+        Mutable: true
+        AttributeDataType: String
+        StringAttributeConstraints:
+          MaxLength: '10'
+          MinLength: '10'
+        Required: false
+        Name: birthdate
+      - DeveloperOnlyAttribute: false
+        Mutable: true
+        AttributeDataType: String
+        StringAttributeConstraints:
+          MaxLength: '2048'
+          MinLength: '0'
+        Required: false
+        Name: gender
+      - DeveloperOnlyAttribute: false
+        Mutable: true
+        AttributeDataType: String
+        StringAttributeConstraints:
+          MaxLength: '2048'
+          MinLength: '0'
+        Required: true
+        Name: preferred_username
+      - DeveloperOnlyAttribute: false
+        Mutable: true
+        AttributeDataType: Number
+        Required: false
+        NumberAttributeConstraints:
+          MinValue: '0'
+        Name: updated_at
+      - DeveloperOnlyAttribute: false
+        Mutable: true
+        AttributeDataType: String
+        StringAttributeConstraints:
+          MaxLength: '2048'
+          MinLength: '0'
+        Required: false
+        Name: website
+      - DeveloperOnlyAttribute: false
+        Mutable: true
+        AttributeDataType: String
+        StringAttributeConstraints:
+          MaxLength: '2048'
+          MinLength: '0'
+        Required: false
+        Name: picture
+      - DeveloperOnlyAttribute: false
+        Mutable: true
+        AttributeDataType: String
+        StringAttributeConstraints: {}
+        Required: false
+        Name: identities
+      - DeveloperOnlyAttribute: false
+        Mutable: false
+        AttributeDataType: String
+        StringAttributeConstraints:
+          MaxLength: '2048'
+          MinLength: '1'
+        Required: true
+        Name: sub
+      - DeveloperOnlyAttribute: false
+        Mutable: true
+        AttributeDataType: Boolean
+        Required: false
+        Name: email_verified
+      - DeveloperOnlyAttribute: false
+        Mutable: true
+        AttributeDataType: Boolean
+        Required: false
+        Name: phone_number_verified
+      - DeveloperOnlyAttribute: false
+        Mutable: true
+        AttributeDataType: String
+        StringAttributeConstraints:
+          MaxLength: '2048'
+          MinLength: '0'
+        Required: false
+        Name: phone_number
+      - DeveloperOnlyAttribute: false
+        Mutable: true
+        AttributeDataType: String
+        StringAttributeConstraints:
+          MaxLength: '2048'
+          MinLength: '0'
+        Required: false
+        Name: zoneinfo
+      - DeveloperOnlyAttribute: false
+        Mutable: true
+        AttributeDataType: String
+        StringAttributeConstraints:
+          MaxLength: '2048'
+          MinLength: '0'
+        Required: false
+        Name: locale
+      - DeveloperOnlyAttribute: false
+        Mutable: true
+        AttributeDataType: String
+        StringAttributeConstraints:
+          MaxLength: '2048'
+          MinLength: '0'
+        Required: true
+        Name: email
+      - DeveloperOnlyAttribute: false
+        Mutable: true
+        AttributeDataType: String
+        StringAttributeConstraints:
+          MaxLength: '2048'
+          MinLength: '0'
+        Required: false
+        Name: given_name
+      - DeveloperOnlyAttribute: false
+        Mutable: true
+        AttributeDataType: String
+        StringAttributeConstraints:
+          MaxLength: '2048'
+          MinLength: '0'
+        Required: false
+        Name: family_name
+      - DeveloperOnlyAttribute: false
+        Mutable: true
+        AttributeDataType: String
+        StringAttributeConstraints:
+          MaxLength: '2048'
+          MinLength: '0'
+        Required: false
+        Name: middle_name
+      - DeveloperOnlyAttribute: false
+        Mutable: true
+        AttributeDataType: String
+        StringAttributeConstraints:
+          MaxLength: '2048'
+          MinLength: '0'
+        Required: false
+        Name: name
+      - DeveloperOnlyAttribute: false
+        Mutable: true
+        AttributeDataType: String
+        StringAttributeConstraints:
+          MaxLength: '2048'
+          MinLength: '0'
+        Required: false
+        Name: nickname
+      AdminCreateUserConfig:
+        UnusedAccountValidityDays: 7
+        AllowAdminCreateUserOnly: false
+      UserPoolTier: ESSENTIALS
+      DeletionProtection: ACTIVE
+      WebAuthnFactorConfiguration: SINGLE_FACTOR
+      UsernameConfiguration:
+        CaseSensitive: false
+      UserPoolName: User pool - mbzzsg
+      WebAuthnUserVerification: required
+      UserAttributeUpdateSettings:
+        AttributesRequireVerificationBeforeUpdate: []
+      EmailConfiguration:
+        SourceArn: arn:aws:ses:us-east-1:666993265047:identity/geovive.link
+        EmailSendingAccount: DEVELOPER
+        From: =?UTF-8?Q?GeoViv=C3=A9?= <no-reply@geovive.link>
+      EmailVerificationSubject: Your GeoVivé verification code
+      LambdaConfig:
+        PreSignUp: arn:aws:lambda:us-east-1:666993265047:function:geovive-dev-presignup
+      UsernameAttributes:
+      - email
+      AutoVerifiedAttributes:
+      - email
+      EmailVerificationMessage: Welcome to GeoVivé. Your verification code is {####}
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+        - Priority: 1
+          Name: verified_email
+        - Priority: 2
+          Name: verified_phone_number
+  WebClient:
+    UpdateReplacePolicy: Retain
+    Type: AWS::Cognito::UserPoolClient
+    DeletionPolicy: Retain
+    Properties:
+      GenerateSecret: false
+      CallbackURLs:
+      - https://dev.d24kp6zzj6jjwt.amplifyapp.com
+      - https://dev.d24kp6zzj6jjwt.amplifyapp.com/
+      - https://geovive.link
+      - https://geovive.link/
+      - https://www.geovive.link/
+      EnablePropagateAdditionalUserContextData: false
+      IdTokenValidity: 1
+      AuthSessionValidity: 3
+      AllowedOAuthScopes:
+      - email
+      - openid
+      - profile
+      TokenValidityUnits:
+        IdToken: days
+        AccessToken: days
+        RefreshToken: days
+      ReadAttributes: []
+      AllowedOAuthFlowsUserPoolClient: true
+      SupportedIdentityProviders:
+      - COGNITO
+      - Google
+      ClientName: GeoVive
+      UserPoolId:
+        Ref: UserPool
+      AllowedOAuthFlows:
+      - code
+      ExplicitAuthFlows:
+      - ALLOW_REFRESH_TOKEN_AUTH
+      - ALLOW_USER_AUTH
+      LogoutURLs:
+      - https://dev.d24kp6zzj6jjwt.amplifyapp.com
+      - https://dev.d24kp6zzj6jjwt.amplifyapp.com/
+      - https://geovive.link
+      - https://geovive.link/
+      - https://us-east-1clqbezjhi.auth.us-east-1.amazoncognito.com/logout
+      - https://www.geovive.link/
+      AccessTokenValidity: 1
+      RefreshTokenValidity: 1
+      WriteAttributes: []
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+  AuthDomain:
+    UpdateReplacePolicy: Retain
+    Type: AWS::Cognito::UserPoolDomain
+    DeletionPolicy: Retain
+    Properties:
+      Domain: auth.geovive.link
+      CustomDomainConfig:
+        SecurityPolicy: TLS_V1_2_2021
+        CertificateArn: arn:aws:acm:us-east-1:666993265047:certificate/053f3d9a-dec0-4d35-b5f6-51b530fcd9ac
+      UserPoolId:
+        Ref: UserPool
+      ManagedLoginVersion: 2
+  PrefixDomain:
+    UpdateReplacePolicy: Retain
+    Type: AWS::Cognito::UserPoolDomain
+    DeletionPolicy: Retain
+    Properties:
+      Domain: us-east-1clqbezjhi
+      UserPoolId:
+        Ref: UserPool
+      ManagedLoginVersion: 2
+  GoogleProvider:
+    UpdateReplacePolicy: Retain
+    Type: AWS::Cognito::UserPoolIdentityProvider
+    DeletionPolicy: Retain
+    Properties:
+      ProviderName: Google
+      ProviderDetails:
+        authorize_url: https://accounts.google.com/o/oauth2/v2/auth
+        authorize_scopes: openid profile email
+        client_secret: '{{resolve:secretsmanager:geovive/google-oauth:SecretString:client_secret}}'
+        attributes_url_add_attributes: 'true'
+        token_url: https://www.googleapis.com/oauth2/v4/token
+        client_id: 545098336342-noqv8eo04f2h4gi221bfki4bnb4kei8o.apps.googleusercontent.com
+        attributes_url: https://people.googleapis.com/v1/people/me?personFields=
+        oidc_issuer: https://accounts.google.com
+        token_request_method: POST
+      UserPoolId:
+        Ref: UserPool
+      ProviderType: Google
+      IdpIdentifiers: []
+      AttributeMapping:
+        email: email
+        preferred_username: name
+        username: sub
+    DependsOn: []
