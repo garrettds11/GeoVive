@@ -415,6 +415,53 @@ async function updateFeature(event, datasetId, featureId) {
   return toFeature(item);
 }
 
+// POST /v1/datasets/{datasetId}/features/batch
+// { action: "delete" | "move" | "copy", ids: [...up to 100], targetDatasetId }
+// Owner only (and owner of the target for move/copy). Moves and copies keep full
+// geometry and properties, with new feature IDs in the target.
+const BATCH_MAX = 100;
+async function batchFeatures(event, datasetId) {
+  const caller = await getCaller(event, { required: true });
+  const ds = await loadDataset(datasetId);
+  assertOwner(ds, caller);
+  const body = parseBody(event);
+  const action = body.action;
+  if (!["delete", "move", "copy"].includes(action)) throw new HttpError(400, "action must be delete, move or copy");
+  const ids = [...new Set(Array.isArray(body.ids) ? body.ids.map(String) : [])];
+  if (!ids.length || ids.length > BATCH_MAX) throw new HttpError(400, `ids must list 1 to ${BATCH_MAX} feature IDs`);
+  let target = null;
+  if (action !== "delete") {
+    if (!body.targetDatasetId || body.targetDatasetId === datasetId) throw new HttpError(400, "targetDatasetId must be another of your datasets");
+    target = await loadDataset(body.targetDatasetId);
+    assertOwner(target, caller);
+  }
+  const done = [], failed = [];
+  for (const featureId of ids) {
+    try {
+      const { Item } = await ddb.send(new GetCommand({ TableName: FEATURES_TABLE, Key: { datasetId, featureId } }));
+      if (!Item) { failed.push({ id: featureId, message: "Not found" }); continue; }
+      if (target) {
+        const geometry = Item.geometryRef ? await loadFullGeometry(Item) : Item.geometry;
+        const copy = await featureItem(target.datasetId, randomUUID(), { type: "Feature", geometry, properties: Item.properties });
+        await ddb.send(new PutCommand({ TableName: FEATURES_TABLE, Item: copy }));
+      }
+      if (action !== "copy") {
+        await ddb.send(new DeleteCommand({ TableName: FEATURES_TABLE, Key: { datasetId, featureId } }));
+        await deleteStoredGeometry(Item);
+      }
+      done.push(featureId);
+    } catch (e) {
+      failed.push({ id: featureId, message: e instanceof HttpError ? e.message : "Couldn't process this feature" });
+      if (!(e instanceof HttpError)) console.error("Batch item failed", datasetId, featureId, e.name);
+    }
+  }
+  if (done.length) {
+    if (action !== "copy") await adjustCount(datasetId, -done.length);
+    if (target) await adjustCount(target.datasetId, done.length);
+  }
+  return { action, done, failed, targetDatasetId: target?.datasetId };
+}
+
 async function deleteFeature(event, datasetId, featureId) {
   const caller = await getCaller(event, { required: true });
   const ds = await loadDataset(datasetId);
@@ -730,6 +777,7 @@ export const handler = async (event) => {
     switch (routeKey) {
       case "GET /v1/datasets": result = await listDatasets(event); break;
       case "GET /v1/datasets/search": result = await searchDatasets(event); break;
+      case "POST /v1/datasets/{datasetId}/features/batch": result = await batchFeatures(event, p.datasetId); break;
       case "POST /v1/datasets": result = await createDataset(event); status = 201; break;
       case "GET /v1/datasets/{datasetId}": {
         const caller = await getCaller(event, { required: false });

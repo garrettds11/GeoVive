@@ -21,6 +21,40 @@ tags:
   - name: Overlays
 
 paths:
+  /v1/datasets/{datasetId}/features/batch:
+    parameters:
+      - $ref: "#/components/parameters/datasetId"
+    post:
+      tags: [Features]
+      summary: Delete, move or copy up to 100 features
+      description: Owner only (and owner of the target for move/copy). Moves and copies keep full geometry, with new IDs.
+      security: [{ cognito: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, ids]
+              properties:
+                action: { type: string, enum: [delete, move, copy] }
+                ids: { type: array, minItems: 1, maxItems: 100, items: { type: string } }
+                targetDatasetId: { type: string }
+      responses:
+        "200":
+          description: Per-feature results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  action: { type: string }
+                  done: { type: array, items: { type: string } }
+                  failed: { type: array, items: { type: object, properties: { id: { type: string }, message: { type: string } } } }
+                  targetDatasetId: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /v1/datasets/search:
     get:
       tags: [Datasets]

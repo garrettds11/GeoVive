@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "esbuild src/handler.mjs --bundle --platform=node --target=node22 --format=esm --external:@aws-sdk/* --outfile=dist/index.mjs && esbuild src/importer.mjs --bundle --platform=node --target=node22 --format=esm --external:@aws-sdk/* --outfile=dist/importer.mjs && esbuild src/appworker.mjs --bundle --platform=node --target=node22 --format=esm --external:@aws-sdk/* --outfile=dist/appworker.mjs && cp src/presignup.mjs dist/presignup.mjs",
-    "test": "node test/geometry.test.mjs && node test/largeshape.test.mjs && node test/importer.test.mjs && node test/export.test.mjs && node test/overlays.test.mjs && node test/openapp.test.mjs && node test/presignup.test.mjs && node test/appstore.test.mjs && node test/appconnect.test.mjs && node test/safelog.test.mjs && node test/aireview.test.mjs && node test/search.test.mjs"
+    "test": "node test/geometry.test.mjs && node test/largeshape.test.mjs && node test/importer.test.mjs && node test/export.test.mjs && node test/overlays.test.mjs && node test/openapp.test.mjs && node test/presignup.test.mjs && node test/appstore.test.mjs && node test/appconnect.test.mjs && node test/safelog.test.mjs && node test/aireview.test.mjs && node test/search.test.mjs && node test/batch.test.mjs"
   },
   "dependencies": {
     "aws-jwt-verify": "^5.1.0",

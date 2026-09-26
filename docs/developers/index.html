@@ -125,6 +125,13 @@
     </table></div>
     <p><strong>Pagination:</strong> when more results exist, the collection includes <code>nextToken</code>. Pass it back as a query parameter to get the next page.</p>
 
+    <h3 id="batch">Bulk delete, move and copy</h3>
+<pre><code>POST /v1/datasets/{datasetId}/features/batch
+{ "action": "move", "ids": ["f1", "f2"], "targetDatasetId": "d2" }   // "delete" | "move" | "copy"
+
+{ "action": "move", "done": ["f1", "f2"], "failed": [], "targetDatasetId": "d2" }</code></pre>
+    <p>Owner only; for <code>move</code> and <code>copy</code> you must also own the target. Up to 100 IDs per call. Moves and copies keep full geometry and properties, with new feature IDs in the target. Each ID succeeds or fails on its own, and pin counts are updated.</p>
+
     <h2 id="formats">Formats</h2>
     <h3>Feature (request)</h3>
 <pre><code>{

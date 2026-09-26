@@ -82,3 +82,19 @@ box.addEventListener("click", e => {
   if (r) pick(Number(r.dataset.i));
 });
 document.addEventListener("click", e => { if (!e.target.closest("#ds-search")) box.hidden = true; });
+
+// Links like /?dataset=<id>&lng=..&lat=.. (from My data or elsewhere) open that map
+(async () => {
+  const q = new URLSearchParams(location.search);
+  const id = q.get("dataset");
+  if (!id || q.get("app")) return;
+  await window.GeoVive.ready;
+  await new Promise(r => setTimeout(r, 300));   // let the default dataset finish first
+  const lng = Number(q.get("lng")), lat = Number(q.get("lat"));
+  const at = Number.isFinite(lng) && Number.isFinite(lat) && q.get("lng") !== null;
+  try {
+    await window.GeoVive.openDataset(id, { fit: !at });
+    if (at) window.GeoVive.map.flyTo({ center: [lng, lat], zoom: Math.max(window.GeoVive.map.getZoom(), 15) });
+  } catch (e) { console.warn("Couldn't open that map", e); }
+  history.replaceState(null, "", location.pathname);
+})();

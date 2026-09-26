@@ -699,6 +699,7 @@
     .ds-result mark { background: rgba(34,197,94,0.25); color: inherit; border-radius: 2px; }
     .ds-empty { padding: 0.6rem; font-size: 0.8rem; color: var(--muted); }
     .ds-more { padding: 0.35rem 0.6rem 0.5rem; font-size: 0.72rem; color: var(--muted); }
+    .manage-data-link { display: inline-block; font-size: 0.78rem; margin: 0.2rem 0 0.4rem; color: var(--accent1); }
     .map-details { display: grid; gap: 0.45rem; margin-top: 0.5rem; padding: 0.6rem; border: 1px solid #1f2937; border-radius: 0.6rem; }
     .map-details[hidden] { display: none; }
     .map-details label { display: grid; gap: 0.2rem; font-size: 0.78rem; color: var(--muted); }
@@ -951,6 +952,7 @@
               <button type="button" id="create-map-btn" class="btn primary">Create</button>
             </div>
             <label class="new-map-public"><input type="checkbox" id="new-map-public" /> Public (anyone can view)</label>
+            <a class="manage-data-link" href="/mydata/">Review &amp; manage all my pins →</a>
             <div id="edit-bar" hidden>
               <div class="edit-title">Editing <strong id="edit-bar-title"></strong></div>
               <div class="edit-actions">
