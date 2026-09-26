@@ -298,11 +298,12 @@
 
       /* collapsed state: only handle visible */
       .top-tray-container:not(.is-active) {
-        transform: translateY(calc(-100% + 40px)); /* 40px handle height */
+        transform: translateY(calc(-100% + 52px)); /* 52px handle height */
       }
 
       .tray-handle {
-        height: 2.5em;
+        height: 52px;
+        flex-shrink: 0;
         display: flex;
         justify-content: center;
         align-items: center;
@@ -311,20 +312,21 @@
         border-bottom: 1px solid rgba(255,255,255,0.15);
       }
 
-      .hamburger-icon {
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        height: 18px;
-        width: 24px;
+      /* Arrow points where the tray will move when tapped:
+         up while open (tap to close), down while closed (tap to open) */
+      .tray-arrow {
+        width: 28px;
+        height: 28px;
+        color: #fff;
+        transform: rotate(0deg);          /* points down: tray closed */
+        transition: transform 0.3s ease-in-out;
       }
-
-      .hamburger-icon span {
-        display: block;
-        height: 3px;
-        background-color: #fff;
-        border-radius: 2px;
-        transition: transform 0.3s ease, opacity 0.3s ease;
+      .top-tray-container.is-active .tray-arrow {
+        transform: rotate(180deg);        /* points up: tray open */
+      }
+      .tray-handle:focus-visible {
+        outline: 2px solid var(--accent1);
+        outline-offset: -4px;
       }
 
       .tray-content {
@@ -766,12 +768,12 @@
           </div>
         </aside>
       </div>
-      <div class="tray-handle" id="trayHandle">
-        <div class="hamburger-icon">
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
+      <div class="tray-handle" id="trayHandle" role="button" tabindex="0"
+           aria-controls="topTrayContainer" aria-expanded="true" aria-label="Hide panel">
+        <svg class="tray-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
       </div>
     </section>
 
@@ -817,9 +819,22 @@
 
       setInitialTrayState();
 
-      trayHandle.addEventListener("click", () => {
+      function syncTrayHandle() {
+        const open = topTrayContainer.classList.contains("is-active");
+        trayHandle.setAttribute("aria-expanded", String(open));
+        trayHandle.setAttribute("aria-label", open ? "Hide panel" : "Show panel");
+      }
+
+      function toggleTray() {
         topTrayContainer.classList.toggle("is-active");
+        syncTrayHandle();
+      }
+
+      trayHandle.addEventListener("click", toggleTray);
+      trayHandle.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleTray(); }
       });
+      syncTrayHandle();
 
       // Optional: adjust on resize (e.g., rotate phone)
       window.addEventListener("resize", () => {
