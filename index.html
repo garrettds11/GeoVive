@@ -531,6 +531,12 @@
     }
 
     @media (max-width: 850px) {
+      /* The tray covers the top of the map on small screens, so show the
+         status pills at the bottom-right instead */
+      .map-status {
+        top: auto;
+        bottom: 2.25rem;
+      }
       .map-wrapper {
         min-height: 70vh;  /* keep at least half the screen for the map */
       }
@@ -942,6 +948,9 @@
     }
 
     // 5. Map init
+    // Zoom level used when jumping to a single pin (15 ≈ neighborhood/street level)
+    const PIN_ZOOM = 15;
+
     const GeoVivéMap = new mapboxgl.Map({
       container: "map",
       style: MAP_STYLES.outdoors,
@@ -1031,7 +1040,7 @@
           const [lng, lat] = f.geometry.coordinates;
           bounds.extend([lng, lat]);
         });
-        GeoVivéMap.fitBounds(bounds, { padding: 60, maxZoom: 10 });
+        GeoVivéMap.fitBounds(bounds, { padding: 60, maxZoom: PIN_ZOOM });
       }
     }
 
@@ -1080,7 +1089,8 @@
 
           const [lng, lat] = coords;
 
-          GeoVivéMap.flyTo({ center: [lng, lat], zoom: 8, essential: true });
+          // Zoom in to the pin, never out from the current view
+          GeoVivéMap.flyTo({ center: [lng, lat], zoom: Math.max(GeoVivéMap.getZoom(), PIN_ZOOM), essential: true });
 
           new mapboxgl.Popup({ closeOnMove: true })
             .setLngLat([lng, lat])
@@ -1184,6 +1194,10 @@
       setupCategoryFilters();
       resolveGeoViveReady();
     });
+
+    // Map scale (bottom-left): miles/feet and kilometers/meters
+    GeoVivéMap.addControl(new mapboxgl.ScaleControl({ maxWidth: 120, unit: "imperial" }), "bottom-left");
+    GeoVivéMap.addControl(new mapboxgl.ScaleControl({ maxWidth: 120, unit: "metric" }), "bottom-left");
 
     // Shared API for module scripts (scripts/editor.js)
     let resolveGeoViveReady;

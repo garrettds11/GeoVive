@@ -37,7 +37,12 @@ window.userManager = userManager;
 
 export async function login() {
   // Redirects to Cognito Hosted UI (which then shows Google)
-  await userManager.signinRedirect();
+  // Go straight to Google and always show its account chooser,
+  // so users can switch Google accounts at every sign-in.
+  await userManager.signinRedirect({
+    prompt: "select_account",
+    extraQueryParams: { identity_provider: "Google" }
+  });
 }
 
 export async function handleRedirectCallback() {
