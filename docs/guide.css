@@ -1,0 +1,93 @@
+/* User guide: friendlier layout on top of docs.css */
+.guide p, .guide li { font-size: 0.95rem; line-height: 1.7; }
+.guide section { margin-top: 2.6rem; scroll-margin-top: 1rem; }
+.guide h2 { display: flex; align-items: center; gap: 0.6rem; font-size: 1.35rem; margin: 0 0 0.35rem; }
+.guide h2 .ico { display: inline-flex; width: 2.2rem; height: 2.2rem; align-items: center; justify-content: center; border-radius: 0.7rem;
+  background: var(--accent-soft); border: 1px solid rgba(34,197,94,0.35); font-size: 1.15rem; flex: none; }
+.guide .lede { color: var(--muted); margin: 0 0 1rem; max-width: 62ch; }
+.guide h3 { font-size: 1rem; margin: 1.4rem 0 0.4rem; color: var(--text); }
+
+/* Hero */
+.hero { position: relative; overflow: hidden; border-radius: 1rem; border: 1px solid var(--border); padding: 2.2rem 1.6rem 1.8rem; margin: 0.5rem 0 1.5rem;
+  background:
+    radial-gradient(600px 220px at 85% -10%, rgba(59,130,246,0.25), transparent 60%),
+    radial-gradient(500px 240px at 0% 120%, rgba(34,197,94,0.22), transparent 60%),
+    repeating-linear-gradient(0deg, rgba(148,163,184,0.06) 0 1px, transparent 1px 38px),
+    repeating-linear-gradient(90deg, rgba(148,163,184,0.06) 0 1px, transparent 1px 38px),
+    #030b1c; }
+.hero h2 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 0.6rem; display: block; }
+.hero h2 em { font-style: normal; background: linear-gradient(90deg, #22c55e, #3b82f6); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.hero p { font-size: 1.02rem; color: #cbd5e1; max-width: 56ch; margin-bottom: 1.2rem; }
+.hero .pins { position: absolute; right: 1.4rem; top: 1.1rem; font-size: 1.6rem; opacity: 0.9; letter-spacing: 0.4rem; }
+.cta { display: inline-flex; align-items: center; gap: 0.4rem; background: var(--accent); color: #02130a !important; font-weight: 700;
+  padding: 0.6rem 1.1rem; border-radius: 999px; text-decoration: none !important; margin-right: 0.5rem; }
+.cta.ghost { background: transparent; color: var(--text) !important; border: 1px solid var(--border); font-weight: 600; }
+.cta:hover { filter: brightness(1.08); }
+
+/* Quick start */
+.quick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.8rem; margin: 0 0 0.5rem; }
+.quick .step { border: 1px solid var(--border); border-radius: 0.8rem; padding: 1rem; background: rgba(15,23,42,0.6); }
+.quick .num { display: inline-flex; width: 1.7rem; height: 1.7rem; border-radius: 999px; align-items: center; justify-content: center;
+  background: var(--accent); color: #02130a; font-weight: 800; font-size: 0.85rem; margin-bottom: 0.5rem; }
+.quick h4 { font-size: 0.98rem; margin-bottom: 0.25rem; }
+.quick p { font-size: 0.88rem; margin: 0; }
+
+/* Jump menu */
+.jump { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.45rem; margin: 1.2rem 0 0.5rem; }
+.jump a { display: flex; align-items: center; gap: 0.45rem; padding: 0.5rem 0.7rem; border-radius: 0.6rem; border: 1px solid var(--border);
+  color: var(--text); font-size: 0.86rem; background: rgba(15,23,42,0.5); }
+.jump a:hover { border-color: var(--accent); text-decoration: none; background: var(--accent-soft); }
+
+/* Feature tiles */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.7rem; margin: 0.4rem 0 0.6rem; }
+.tile { border: 1px solid var(--border); border-radius: 0.8rem; padding: 0.85rem 0.95rem; background: rgba(15,23,42,0.55); }
+.tile .t { display: flex; align-items: center; gap: 0.45rem; font-weight: 650; color: var(--text); margin-bottom: 0.2rem; font-size: 0.95rem; }
+.tile p { margin: 0; font-size: 0.88rem; }
+
+/* Steps */
+ol.steps { list-style: none; margin: 0.5rem 0 0.8rem; padding: 0; counter-reset: s; }
+ol.steps li { counter-increment: s; position: relative; padding: 0.15rem 0 0.7rem 2.4rem; margin: 0; }
+ol.steps li::before { content: counter(s); position: absolute; left: 0; top: 0.05rem; width: 1.65rem; height: 1.65rem; border-radius: 999px;
+  display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 800; color: #02130a; background: var(--accent); }
+ol.steps li:not(:last-child)::after { content: ""; position: absolute; left: 0.8rem; top: 1.85rem; bottom: 0.1rem; width: 2px; background: rgba(34,197,94,0.25); }
+
+/* Callouts */
+.tip { display: flex; gap: 0.7rem; align-items: flex-start; border-radius: 0.7rem; padding: 0.75rem 0.9rem; margin: 0.7rem 0;
+  border: 1px solid rgba(59,130,246,0.35); background: rgba(59,130,246,0.08); }
+.tip.good { border-color: rgba(34,197,94,0.35); background: rgba(34,197,94,0.07); }
+.tip.warn { border-color: rgba(245,158,11,0.4); background: rgba(245,158,11,0.07); }
+.tip .i { font-size: 1.1rem; line-height: 1.5; flex: none; }
+.tip p { margin: 0; font-size: 0.9rem; }
+
+/* Two-up comparison */
+.duo { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; margin: 0.5rem 0; }
+.duo > div { border: 1px solid var(--border); border-radius: 0.8rem; padding: 0.9rem; background: rgba(15,23,42,0.55); }
+.duo h4 { font-size: 0.98rem; margin-bottom: 0.3rem; display: flex; gap: 0.4rem; align-items: center; }
+.duo p { margin: 0; font-size: 0.88rem; }
+
+/* Format chips */
+.chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.4rem 0 0.6rem; }
+.chip { border: 1px solid var(--border); border-radius: 0.7rem; padding: 0.55rem 0.75rem; background: rgba(15,23,42,0.55); flex: 1 1 200px; }
+.chip b { display: block; color: var(--text); font-size: 0.92rem; }
+.chip span { font-size: 0.84rem; color: var(--muted); }
+
+kbd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.78rem; padding: 0.1rem 0.4rem; border-radius: 0.3rem;
+  border: 1px solid #334155; border-bottom-width: 2px; background: #0f172a; color: var(--text); white-space: nowrap; }
+
+/* FAQ */
+.faq details { border: 1px solid var(--border); border-radius: 0.7rem; margin: 0.45rem 0; background: rgba(15,23,42,0.5); }
+.faq summary { cursor: pointer; padding: 0.75rem 0.95rem; font-weight: 600; color: var(--text); list-style: none; display: flex; justify-content: space-between; gap: 1rem; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: "+"; color: var(--accent); font-weight: 800; }
+.faq details[open] summary::after { content: "–"; }
+.faq details > div { padding: 0 0.95rem 0.8rem; }
+.faq details p { margin: 0; }
+
+.back { font-size: 0.8rem; display: inline-block; margin-top: 0.6rem; }
+
+@media (max-width: 640px) {
+  .quick, .duo { grid-template-columns: 1fr; }
+  .hero { padding: 1.6rem 1.1rem 1.3rem; }
+  .hero h2 { font-size: 1.5rem; }
+  .hero .pins { display: none; }
+}

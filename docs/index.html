@@ -6,9 +6,10 @@
   <title>GeoVivé User Guide</title>
   <link rel="icon" href="/assets/favicon-32x32.png" />
   <link rel="stylesheet" href="/docs/docs.css" />
+  <link rel="stylesheet" href="/docs/guide.css" />
 </head>
 <body>
-  <main class="page">
+  <main class="page guide">
     <header>
       <div class="top">
         <h1>Geo<span>Vivé</span> Docs</h1>
@@ -22,119 +23,150 @@
       </nav>
     </header>
 
-    <nav class="toc">
-      <a href="#explore">Explore the map</a>
-      <a href="#datasets">Datasets</a>
-      <a href="#layers">Layers</a>
-      <a href="#signin">Signing in</a>
-      <a href="#my-maps">My maps</a>
-      <a href="#pins">Pins</a>
-      <a href="#import">Importing data</a>
-      <a href="#export">Exporting</a>
-      <a href="#privacy">Public &amp; private</a>
-      <a href="#faq">FAQ</a>
-    </nav>
-
-    <p>GeoVivé is a map for exploring places and keeping your own collections of pinned locations. Anyone can browse public maps; sign in to create and edit your own.</p>
-
-    <h2 id="explore">Explore the map</h2>
-    <ul>
-      <li><strong>Move around:</strong> drag to pan, scroll or pinch to zoom.</li>
-      <li><strong>Inspect a place:</strong> click a point on the map to see its name, type and notes.</li>
-      <li><strong>Fly to a place:</strong> open <strong>Features</strong> in the sidebar and click an item. The map zooms in to street level.</li>
-      <li><strong>Change the look:</strong> use <strong>Map Style</strong> for Streets, Outdoors, Light, Dark or Satellite.</li>
-      <li><strong>Filter by type:</strong> each dataset has its own categories, shown with their colors and counts in the legend. Tick or untick a category to show or hide it.</li>
-      <li><strong>Measure distance:</strong> the scale bars in the bottom-left corner show miles/feet and kilometers/meters.</li>
-      <li><strong>Status:</strong> the upper-right corner shows the map connection and current zoom level. On a phone they move to the bottom-right.</li>
-      <li><strong>Find yourself:</strong> the location button in the top-left centers the map on where you are (your browser asks first). Your location stays on your device.</li>
-    </ul>
-    <p>On a phone, the sidebar is a tray: tap the bar with three lines to open or close it.</p>
-
-    <h2 id="datasets">Datasets</h2>
-    <p>A dataset is a collection of places. Pick one from <strong>Dataset</strong> in the sidebar. GeoVivé opens with <strong>World Capitals</strong>, the national capitals of the world from <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a>. When you're signed in, your own maps appear in the list too.</p>
-
-    <h2 id="layers">Layers</h2>
-    <p>Open <strong>Layers</strong> in the sidebar to stack more information on the map. Your choices are remembered in this browser.</p>
-    <ul>
-      <li><strong>More datasets:</strong> tick any other dataset to show its points alongside the one you're browsing. Click a point to see which dataset it belongs to.</li>
-      <li><strong>Overlays:</strong> live maps from public agencies, drawn directly from their servers: USGS topo, shaded relief and imagery, streams and lakes, BLM land ownership, National Forest boundaries, and state and county lines. Each has a <strong>Source</strong> link and an opacity slider.</li>
-    </ul>
-    <p>Overlays cover the United States and depend on the agency's servers; if one is slow or down, that layer stays blank while the rest of the map works. Land ownership is detailed down to about zoom 14.</p>
-
-    <h3>Layers from connected apps</h3>
-    <p>Apps and businesses that work with GeoVivé can bring their own map layers, such as hunting units, service areas or project sites. When you open GeoVivé from one of those apps, or open a map that app created, its layers appear at the top of <strong>Layers</strong> in the <strong>AppConnect</strong> section, which names the app they came from. They're shown for that visit only. The app decides which layers you see and may turn some on for you. <strong>Click a shape</strong> for its details. <strong>Zoom to layer</strong> jumps to where the layer is.</p>
-    <p>These layers belong to the app that provides them, and GeoVivé shows them only for that app's users. Shapes are simplified for display; check the provider's official sources for exact boundaries.</p>
-
-    <h2 id="signin">Signing in</h2>
-    <p>Browsing needs no account. To create maps, click <strong>Sign in</strong>, then either:</p>
-    <ul>
-      <li><strong>Sign in with Google</strong>: your GeoVivé account is created the first time. Google shows an account chooser each time, so you can switch accounts.</li>
-      <li><strong>Email and password</strong>: choose <strong>Create an account</strong>, enter your email and a password, then type the verification code we email you. Forgot your password? Use the reset link on the sign-in page.</li>
-    </ul>
-    <p>One email address is one GeoVivé account. If you created an account with email and password and later choose <strong>Sign in with Google</strong> using the same verified address, both methods open the same account and maps. (The very first time, you may need to click Sign in with Google a second time.) If you first signed in with Google, keep using Google for that address.</p>
-    <ul>
-      <li><strong>Sign out</strong> signs you out of GeoVivé only. It does not sign you out of Google itself; on a shared computer, sign out of Google too.</li>
-      <li>You stay signed in for about a day before GeoVivé asks you to sign in again.</li>
-    </ul>
-
-    <h2 id="my-maps">My maps</h2>
-    <p>After signing in, the <strong>My maps</strong> panel lists maps you own, with their pin counts.</p>
-    <ol>
-      <li>Type a name in <strong>New map name</strong>.</li>
-      <li>Tick <strong>Public</strong> if anyone should be able to view it (maps are private by default).</li>
-      <li>Click <strong>Create</strong>. The new, empty map opens, ready for pins.</li>
-    </ol>
-    <p>Click any map in the list to open it. To remove a map and all its pins, open it and click <strong>Delete map</strong>. This can't be undone.</p>
-
-    <h2 id="pins">Adding and editing pins</h2>
-    <p>Open one of your maps to show the edit bar.</p>
-    <ol>
-      <li>Click <strong>📍 Add pin</strong>. The cursor becomes a crosshair.</li>
-      <li>Click the spot on the map.</li>
-      <li>Enter a <strong>Name</strong>, choose a <strong>Type</strong> (Location, Event or Alert) and add any <strong>Notes</strong>.</li>
-      <li>Click <strong>Save</strong>.</li>
-    </ol>
-    <p><strong>Pin my location</strong> in the edit bar opens the pin form at your current position, handy in the field. Your browser asks for permission first, and your location is only saved if you save the pin.</p>
-    <p>Clicking a pin shows its card: name, type and notes. Notes support simple Markdown (<code>**bold**</code>, <code>*italic*</code>, <code>- lists</code>, links), and codes like <code>U+1F3E0</code> show as the character (🏠). On a computer, the 😀 button next to Name and Notes inserts an emoji (or press <strong>Win + .</strong> on Windows, <strong>Ctrl + Cmd + Space</strong> on a Mac). The card's buttons copy the pin as Markdown or as JSON (GeoJSON).</p>
-    <p>To change or remove a pin, click it, then the pencil, edit the form, then <strong>Save</strong> or <strong>Delete</strong>. Press <strong>Esc</strong> to cancel adding a pin.</p>
-
-    <h2 id="import">Importing data</h2>
-    <p>Open one of your maps and click <strong>Import data</strong> to bring in places or areas from elsewhere:</p>
-    <ul>
-      <li><strong>GeoJSON file:</strong> a <code>.geojson</code> or <code>.json</code> file from your computer, up to 50 MB.</li>
-      <li><strong>GeoJSON link:</strong> a public web address of a GeoJSON file, such as an open-data download link.</li>
-      <li><strong>ArcGIS layer:</strong> the address of a government or organization map layer, ending in <code>FeatureServer/0</code> or <code>MapServer/2</code>. You can add a filter, such as <code>STATE = 'CO'</code>.</li>
-    </ul>
-    <p>Under <strong>Options</strong> you can choose which field holds each feature's name and category, and whether to add to the map or replace everything in it. Imports run in the background and show their progress; up to 20,000 features at a time. GeoVivé records where the data came from.</p>
-
-    <h2 id="export">Exporting a map</h2>
-    <p>Under <strong>Dataset</strong>, pick a format and click <strong>Export</strong> to download the map you're viewing:</p>
-    <ul>
-      <li><strong>GeoJSON</strong>: for GIS software and other map apps. It includes where imported data came from.</li>
-      <li><strong>KML</strong>: for Google Earth and most mapping apps.</li>
-      <li><strong>GPX</strong>: for GPS units and outdoor apps. Pins become waypoints and lines become tracks. Areas become tracks along their edges.</li>
-    </ul>
-    <p>You can export public maps and your own maps. Shapes are exported at full detail.</p>
-
-    <h2 id="privacy">Public and private maps</h2>
-    <div class="card">
-      <ul>
-        <li><strong>Private</strong> maps are visible only to you, even to someone who has the link.</li>
-        <li><strong>Public</strong> maps can be viewed by anyone, signed in or not. Only you can edit them.</li>
-      </ul>
+    <div class="hero">
+      <div class="pins" aria-hidden="true">📍🧭🏕️</div>
+      <h2>The world is big.<br><em>Make it yours.</em></h2>
+      <p>GeoVivé is a map for exploring places and keeping your own collections of them: the trailhead, the hidden campsite, the café worth the detour. Browse freely; sign in when you're ready to start pinning.</p>
+      <a class="cta" href="/">Open the map →</a>
+      <a class="cta ghost" href="#start">Get started</a>
     </div>
 
-    <h2 id="faq">FAQ</h2>
-    <h3>How do I switch Google accounts?</h3>
-    <p>Sign out, then click <strong>Sign in</strong> and pick a different account from Google's chooser, or choose <strong>Use another account</strong>.</p>
-    <h3>I can't see the edit buttons.</h3>
-    <p>Editing is only available on maps you own, while signed in. Public maps from others are view-only.</p>
-    <h3>Where does GeoVivé's data come from?</h3>
-    <p>Public datasets list their source (for example, World Capitals comes from Natural Earth, which is public domain). Layers in the AppConnect section come from the connected app and show its credits. Your maps contain only what you add.</p>
-    <h3>Can my business bring its own layers?</h3>
-    <p>Yes, through <a href="/docs/developers/appconnect/">AppConnect</a>. Your app keeps its data and GeoVivé shows it to your users. See what you need, then register on the <a href="/appconnect/">AppConnect page</a>.</p>
+    <section id="start" style="margin-top:1.5rem">
+      <h2><span class="ico">🚀</span>Start in a minute</h2>
+      <div class="quick">
+        <div class="step"><div class="num">1</div><h4>Look around</h4><p>Drag, zoom, and click any point. No account needed.</p></div>
+        <div class="step"><div class="num">2</div><h4>Sign in</h4><p>Use Google or an email address. It's free.</p></div>
+        <div class="step"><div class="num">3</div><h4>Make a map</h4><p>Name it, then drop 📍 pins wherever life takes you.</p></div>
+      </div>
+    </section>
 
-    <footer>GeoVivé · <a href="/docs/developers/">Developer docs</a></footer>
+    <nav class="jump" aria-label="Guide sections">
+      <a href="#explore">🗺️ Explore the map</a>
+      <a href="#layers">🧅 Layers</a>
+      <a href="#signin">🔑 Signing in</a>
+      <a href="#my-maps">🗂️ My maps</a>
+      <a href="#pins">📍 Pins</a>
+      <a href="#import">📥 Importing</a>
+      <a href="#export">📤 Exporting</a>
+      <a href="#privacy">🔒 Public &amp; private</a>
+      <a href="#faq">💬 FAQ</a>
+    </nav>
+
+    <section id="explore">
+      <h2><span class="ico">🗺️</span>Explore the map</h2>
+      <p class="lede">Everything starts here. The map works on any screen; on a phone, the sidebar becomes a tray you open with the <strong>☰</strong> bar.</p>
+      <div class="tiles">
+        <div class="tile"><div class="t">✋ Move around</div><p>Drag to pan. Scroll or pinch to zoom.</p></div>
+        <div class="tile"><div class="t">👆 Inspect a place</div><p>Click a point to see its name, type and notes.</p></div>
+        <div class="tile"><div class="t">✈️ Fly to a place</div><p>Open <strong>Features</strong> and click an item; the map swoops in.</p></div>
+        <div class="tile"><div class="t">🎨 Change the look</div><p><strong>Map Style</strong>: Streets, Outdoors, Light, Dark or Satellite.</p></div>
+        <div class="tile"><div class="t">🏷️ Filter by type</div><p>Tick categories in the legend to show or hide them.</p></div>
+        <div class="tile"><div class="t">📏 Measure</div><p>Scale bars (bottom-left) show miles and kilometers.</p></div>
+        <div class="tile"><div class="t">➤ Find yourself</div><p>The arrow button (top-left) centers on you. Your location stays on your device.</p></div>
+        <div class="tile"><div class="t">🧭 Compass, 🔒 lock &amp; 3D</div><p>Reset north, lock north-up, or tilt into 3D terrain.</p></div>
+      </div>
+      <h3>Datasets</h3>
+      <p>A dataset is a collection of places. Choose one under <strong>Dataset</strong>. GeoVivé opens with <strong>World Capitals</strong> from <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a>; once you sign in, your own maps join the list.</p>
+    </section>
+
+    <section id="layers">
+      <h2><span class="ico">🧅</span>Layers</h2>
+      <p class="lede">Stack more on the map from <strong>Layers</strong> in the sidebar. Your choices are remembered in this browser.</p>
+      <div class="tiles">
+        <div class="tile"><div class="t">➕ More datasets</div><p>Show other datasets' points alongside the one you're browsing.</p></div>
+        <div class="tile"><div class="t">🏔️ Overlays</div><p>Live maps from public agencies: USGS topo, relief and imagery, streams and lakes, BLM land ownership, National Forests, state and county lines.</p></div>
+      </div>
+      <div class="tip"><span class="i">💡</span><p>Overlays cover the United States and come straight from each agency. If one is slow, that layer stays blank while everything else keeps working. Land ownership has detail down to about zoom 14.</p></div>
+      <h3>🔌 Layers from connected apps</h3>
+      <p>Apps and businesses that work with GeoVivé can bring their own layers, like hunting units, service areas or project sites. Arrive from one of those apps and its layers appear at the top of <strong>Layers</strong> in the <strong>AppConnect</strong> section, for that visit only. <strong>Click a shape</strong> for details, or <strong>Zoom to layer</strong> to jump there.</p>
+      <div class="tip warn"><span class="i">⚠️</span><p>These layers belong to the app that provides them. Shapes are simplified for display, so check the provider's official sources for exact boundaries.</p></div>
+    </section>
+
+    <section id="signin">
+      <h2><span class="ico">🔑</span>Signing in</h2>
+      <p class="lede">Browsing needs no account. To make maps, click <strong>Sign in</strong> and pick either way in:</p>
+      <div class="duo">
+        <div><h4>🟢 Google</h4><p>Your account is created the first time. Google shows its account chooser each time, so switching is easy.</p></div>
+        <div><h4>✉️ Email &amp; password</h4><p>Choose <strong>Create an account</strong>, then enter the code we email you. Forgot your password? Use the reset link.</p></div>
+      </div>
+      <div class="tip"><span class="i">🔗</span><p><strong>One email, one account.</strong> Signed up with email and later chose Google with the same verified address? Both open the same maps. (The first time, you may need to click <strong>Sign in with Google</strong> twice.) If you started with Google, keep using Google.</p></div>
+      <p><strong>Sign out</strong> signs you out of GeoVivé only, not Google. On a shared computer, sign out of Google too. Sessions last about a day.</p>
+    </section>
+
+    <section id="my-maps">
+      <h2><span class="ico">🗂️</span>My maps</h2>
+      <p class="lede">Your collections live in <strong>My maps</strong>, each with its pin count.</p>
+      <ol class="steps">
+        <li>Type a name in <strong>New map name</strong>.</li>
+        <li>Tick <strong>Public</strong> if anyone should be able to view it. Maps are private until you do.</li>
+        <li>Click <strong>Create</strong>. Your empty map opens, ready for pins.</li>
+      </ol>
+      <div class="tip warn"><span class="i">🗑️</span><p><strong>Delete map</strong> removes the map and every pin in it. It can't be undone.</p></div>
+    </section>
+
+    <section id="pins">
+      <h2><span class="ico">📍</span>Pins</h2>
+      <p class="lede">Open one of your maps and the edit bar appears.</p>
+      <ol class="steps">
+        <li>Click <strong>📍 Add pin</strong>. The cursor turns into a crosshair.</li>
+        <li>Click the spot on the map.</li>
+        <li>Give it a <strong>Name</strong>, pick a <strong>Type</strong> and add any <strong>Notes</strong>.</li>
+        <li>Click <strong>Save</strong>. Done!</li>
+      </ol>
+      <div class="tip good"><span class="i">🥾</span><p><strong>Out in the field?</strong> <strong>📍 Pin my location</strong> opens a new pin right where you're standing. Your browser asks first, and nothing is saved unless you save the pin.</p></div>
+      <h3>✨ Make pins your own</h3>
+      <div class="tiles">
+        <div class="tile"><div class="t">📝 Markdown notes</div><p><code>**bold**</code>, <code>*italic*</code>, <code>- lists</code> and links all display nicely.</p></div>
+        <div class="tile"><div class="t">😀 Emoji</div><p>Use the 😀 button, or <kbd>Win</kbd> + <kbd>.</kbd> on Windows, <kbd>Ctrl</kbd> + <kbd>Cmd</kbd> + <kbd>Space</kbd> on a Mac.</p></div>
+        <div class="tile"><div class="t">🔣 Symbol codes</div><p>Type <code>U+1F3E0</code> and it shows as 🏠.</p></div>
+        <div class="tile"><div class="t">📋 Copy &amp; share</div><p>Each pin card copies the pin as Markdown or as JSON.</p></div>
+      </div>
+      <p>To change or remove a pin, click it, then the ✏️ pencil. Press <kbd>Esc</kbd> to cancel adding a pin.</p>
+    </section>
+
+    <section id="import">
+      <h2><span class="ico">📥</span>Importing data</h2>
+      <p class="lede">Bring places in from elsewhere: open one of your maps and click <strong>Import data</strong>.</p>
+      <div class="chips">
+        <div class="chip"><b>📄 GeoJSON file</b><span>A <code>.geojson</code> or <code>.json</code> file from your computer, up to 50 MB.</span></div>
+        <div class="chip"><b>🔗 GeoJSON link</b><span>A public web address, such as an open-data download.</span></div>
+        <div class="chip"><b>🏛️ ArcGIS layer</b><span>An address ending in <code>FeatureServer/0</code> or <code>MapServer/2</code>, with an optional filter like <code>STATE = 'CO'</code>.</span></div>
+      </div>
+      <p>Under <strong>Options</strong>, choose which fields hold names and categories, and whether to add to the map or replace it. Imports run in the background (up to 20,000 features), and GeoVivé remembers where the data came from.</p>
+    </section>
+
+    <section id="export">
+      <h2><span class="ico">📤</span>Exporting a map</h2>
+      <p class="lede">Take your map anywhere. Under <strong>Dataset</strong>, pick a format and click <strong>Export</strong>.</p>
+      <div class="chips">
+        <div class="chip"><b>🧩 GeoJSON</b><span>For GIS software and map apps. Includes where imported data came from.</span></div>
+        <div class="chip"><b>🌍 KML</b><span>For Google Earth and most mapping apps.</span></div>
+        <div class="chip"><b>🛰️ GPX</b><span>For GPS units and outdoor apps. Pins become waypoints; lines and area edges become tracks.</span></div>
+      </div>
+      <p>You can export public maps and your own maps, at full detail.</p>
+    </section>
+
+    <section id="privacy">
+      <h2><span class="ico">🔒</span>Public &amp; private</h2>
+      <div class="duo">
+        <div><h4>🔒 Private</h4><p>Only you can see it, even if someone has the link. This is the default.</p></div>
+        <div><h4>🌐 Public</h4><p>Anyone can view it, signed in or not. Only you can edit it.</p></div>
+      </div>
+    </section>
+
+    <section id="faq" class="faq">
+      <h2><span class="ico">💬</span>FAQ</h2>
+      <details><summary>How do I switch Google accounts?</summary><div><p>Sign out, click <strong>Sign in</strong>, and pick another account from Google's chooser (or <strong>Use another account</strong>).</p></div></details>
+      <details><summary>I can't see the edit buttons.</summary><div><p>Editing appears only on maps you own, while you're signed in. Other people's public maps are view-only.</p></div></details>
+      <details><summary>Where does GeoVivé's data come from?</summary><div><p>Public datasets name their source; World Capitals, for example, comes from Natural Earth (public domain). AppConnect layers come from the connected app and show its credits. Your maps contain only what you add.</p></div></details>
+      <details><summary>Is my location shared?</summary><div><p>No. The location button and <strong>Pin my location</strong> use your position only in your browser. It's saved only if you save a pin there.</p></div></details>
+      <details><summary>Can my business bring its own layers?</summary><div><p>Yes, with <a href="/docs/developers/appconnect/">AppConnect</a>. You keep your data; GeoVivé shows it to your users. Register on the <a href="/appconnect/">AppConnect page</a>.</p></div></details>
+      <details><summary>How do I report a problem?</summary><div><p>Email <a href="mailto:admin@geovive.link">admin@geovive.link</a>. See <a href="/docs/security/">Trust &amp; Security</a> for how we protect your data.</p></div></details>
+    </section>
+
+    <a class="back" href="#start">↑ Back to top</a>
+
+    <footer>GeoVivé · <a href="/docs/developers/">Developer docs</a> · <a href="/docs/security/">Trust &amp; Security</a></footer>
   </main>
 </body>
 </html>
