@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <!-- Resolve relative asset paths from the site root, also on routes like /open -->
+  <base href="/" />
   <title>GeoVivé – Maps Made For You</title>
   <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
   <link rel="apple-touch-icon" sizes="57x57" href="./assets/apple-icon-57x57.png">
@@ -621,6 +623,20 @@
       color: var(--muted);
     }
   
+    /* ---------- Open-in-GeoVivé banner ---------- */
+    .open-banner {
+      position: fixed; top: 0.75rem; left: 50%; transform: translateX(-50%);
+      z-index: 1100; max-width: min(92vw, 720px);
+      display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; justify-content: center;
+      padding: 0.55rem 0.9rem; border-radius: 0.75rem;
+      background: rgba(2, 6, 23, 0.95); border: 1px solid #facc15;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.5); font-size: 0.85rem; color: var(--text);
+    }
+    .open-banner[hidden] { display: none; }
+    .open-banner-app { color: var(--muted); margin-left: 0.35rem; }
+    .open-banner .btn { padding: 0.3rem 0.8rem; font-size: 0.8rem; }
+    @media (max-width: 850px) { .open-banner { top: auto; bottom: 0.75rem; } }
+
     /* ---------- Dataset view controls ---------- */
     .dataset-actions { display: flex; gap: 0.35rem; margin-top: 0.45rem; }
     .dataset-actions .btn { padding: 0.25rem 0.7rem; font-size: 0.78rem; }
@@ -1052,13 +1068,17 @@
           source: "GeoVivé-points",
           paint: {
             "circle-radius": 7,
+            // A pin's own color (set from its dataset's pin types) wins;
+            // otherwise color by the built-in categories.
             "circle-color": [
-              "match",
-              ["get", "category"],
-              "event", categoryColor.event,
-              "location", categoryColor.location,
-              "alert", categoryColor.alert,
-              "#e5e7eb"
+              "coalesce",
+              ["get", "color"],
+              ["match",
+                ["get", "category"],
+                "event", categoryColor.event,
+                "location", categoryColor.location,
+                "alert", categoryColor.alert,
+                "#e5e7eb"]
             ],
             "circle-stroke-width": 1.5,
             "circle-stroke-color": "#020617",
@@ -1330,6 +1350,7 @@
 <!-- Auth and login modal script -->  
 <script type="module" src="./scripts/main.js"></script>
 <script type="module" src="./scripts/editor.js"></script>
+<script type="module" src="./scripts/open.js"></script>
 
 
 </body>

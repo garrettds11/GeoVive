@@ -163,6 +163,14 @@ async function deleteCurrentMap() {
 
 // ------------------------------------------------------------ pin form popup
 
+// Pin types: the dataset's own (set by a connected app), else the defaults.
+function categoriesFor(ds) {
+  const types = ds?.featureTypes;
+  return Array.isArray(types) && types.length
+    ? types.map(t => ({ value: t.key, label: t.label, color: t.color }))
+    : PIN_CATEGORIES;
+}
+
 function pinFormHtml(props = {}) {
   const cat = props.category || "location";
   return `
@@ -170,7 +178,7 @@ function pinFormHtml(props = {}) {
       <label>Name<input name="name" required maxlength="120" value="${esc(props.name)}"></label>
       <label>Type
         <select name="category">
-          ${PIN_CATEGORIES.map(c => `<option value="${c.value}" ${c.value === cat ? "selected" : ""}>${c.label}</option>`).join("")}
+          ${categoriesFor(currentDataset()).map(c => `<option value="${c.value}" ${c.value === cat ? "selected" : ""}>${c.label}</option>`).join("")}
         </select>
       </label>
       <label>Notes<textarea name="description" rows="3" maxlength="2000">${esc(props.description)}</textarea></label>
@@ -207,6 +215,7 @@ function openPinForm(lngLat, feature) {
       properties: {
         name: fd.get("name").trim(),
         category: fd.get("category"),
+        color: categoriesFor(currentDataset()).find(c => c.value === fd.get("category"))?.color,
         description: fd.get("description").trim()
       }
     };
@@ -280,6 +289,7 @@ async function init() {
   $("delete-map-btn")?.addEventListener("click", deleteCurrentMap);
   $("dataset-select")?.addEventListener("change", () => { closePopup(); setTimeout(updateEditBar, 0); });
   window.addEventListener("geovive:dataset-applied", updateEditBar);
+  window.addEventListener("geovive:datasets-changed", refreshDatasets);
 
   updateEditBar();
 }
