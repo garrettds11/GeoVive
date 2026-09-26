@@ -643,6 +643,9 @@
     .north-lock-btn:not(.is-locked) .shackle { transform: translateY(-2px) rotate(20deg); }
     .north-lock-btn.is-locked { color: #fff; background: #16a34a; }
     .north-lock-btn.is-locked:hover { background: #15803d; }
+    .three-d-btn { font-weight: 700; font-size: 12px; color: #374151; }
+    .three-d-btn.is-on { color: #fff; background: #2563eb; }
+    .three-d-btn.is-on:hover { background: #1d4ed8; }
     /* On phones the tray handle sits over the top of the map */
     @media (max-width: 850px) { .mapboxgl-ctrl-top-left { top: 56px; } }
 
@@ -1366,6 +1369,86 @@
       }
     }
     GeoVivéMap.addControl(new NorthLockControl(), "top-left");
+
+    // 3D view (under the north lock): real terrain relief, 3D buildings where the
+    // style has building data, and an atmosphere. Off by default; remembered per
+    // browser; re-applied after map style changes. Terrain tiles count toward
+    // Mapbox usage.
+    const THREE_D_KEY = "geovive:3d";
+    const DEM_SOURCE = "geovive-dem";
+    const BUILDINGS_LAYER = "geovive-3d-buildings";
+
+    function apply3D(map, on) {
+      if (!map.isStyleLoaded()) return;
+      if (on) {
+        if (!map.getSource(DEM_SOURCE)) {
+          map.addSource(DEM_SOURCE, {
+            type: "raster-dem",
+            url: "mapbox://mapbox.mapbox-terrain-dem-v1",
+            tileSize: 512,
+            maxzoom: 14
+          });
+        }
+        map.setTerrain({ source: DEM_SOURCE, exaggeration: 1.3 });
+        map.setFog({});
+        // Extruded buildings, when the style carries OpenStreetMap building data
+        if (!map.getLayer(BUILDINGS_LAYER) && map.getSource("composite")) {
+          const firstLabel = map.getStyle().layers.find(l => l.type === "symbol" && l.layout?.["text-field"])?.id;
+          map.addLayer({
+            id: BUILDINGS_LAYER, source: "composite", "source-layer": "building",
+            filter: ["==", ["get", "extrude"], "true"], type: "fill-extrusion", minzoom: 14,
+            paint: {
+              "fill-extrusion-color": "#a8b3c2",
+              "fill-extrusion-height": ["interpolate", ["linear"], ["zoom"], 14, 0, 15, ["get", "height"]],
+              "fill-extrusion-base": ["interpolate", ["linear"], ["zoom"], 14, 0, 15, ["get", "min_height"]],
+              "fill-extrusion-opacity": 0.75
+            }
+          }, firstLabel);
+        }
+      } else {
+        map.setTerrain(null);
+        if (map.getLayer(BUILDINGS_LAYER)) map.removeLayer(BUILDINGS_LAYER);
+      }
+    }
+
+    class ThreeDControl {
+      onAdd(map) {
+        this.map = map;
+        this.container = document.createElement("div");
+        this.container.className = "mapboxgl-ctrl mapboxgl-ctrl-group";
+        this.button = document.createElement("button");
+        this.button.type = "button";
+        this.button.className = "three-d-btn";
+        this.button.textContent = "3D";
+        this.button.addEventListener("click", () => this.set(!this.on, { move: true }));
+        this.container.appendChild(this.button);
+        let saved = false;
+        try { saved = localStorage.getItem(THREE_D_KEY) === "1"; } catch { /* ignore */ }
+        this.on = saved;
+        this.render();
+        // Apply once the style is ready, and again after every style switch
+        map.on("style.load", () => apply3D(map, this.on));
+        if (map.isStyleLoaded()) apply3D(map, this.on);
+        return this.container;
+      }
+      onRemove() { this.container.remove(); this.map = undefined; }
+      set(on, { move = false } = {}) {
+        this.on = on;
+        apply3D(this.map, on);
+        // Tilt in to show the relief; flatten when leaving 3D
+        if (move) this.map.easeTo({ pitch: on ? 60 : 0, duration: 800 });
+        this.render();
+        try { localStorage.setItem(THREE_D_KEY, on ? "1" : "0"); } catch { /* ignore */ }
+      }
+      render() {
+        this.button.classList.toggle("is-on", this.on);
+        this.button.setAttribute("aria-pressed", String(this.on));
+        const label = this.on ? "3D on: terrain and buildings (click to turn off)" : "Turn on 3D terrain and buildings";
+        this.button.setAttribute("aria-label", label);
+        this.button.title = label;
+      }
+    }
+    GeoVivéMap.addControl(new ThreeDControl(), "top-left");
 
     // Shared API for module scripts (scripts/editor.js)
     let resolveGeoViveReady;
