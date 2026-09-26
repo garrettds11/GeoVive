@@ -50,8 +50,15 @@ assert.ok(stored.geometryRef && JSON.stringify(stored.geometry).length <= 60000,
 assert.equal(created.body.properties.geometryDetail, "simplified");
 assert.equal(created.body.bbox.length, 4);
 
+await call("POST /v1/datasets/{datasetId}/features", { datasetId: "ds1" },
+  { type: "Feature", geometry: { type: "Point", coordinates: [-105, 39] }, properties: { name: "P1" } });
+await call("POST /v1/datasets/{datasetId}/features", { datasetId: "ds1" },
+  { type: "Feature", geometry: { type: "Point", coordinates: [-104, 38] }, properties: { name: "P2" } });
 const list = await call("GET /v1/datasets/{datasetId}/features", { datasetId: "ds1" });
-assert.equal(list.body.features[0].properties.geometryDetail, "simplified");
+assert.equal(list.body.features.find(f => f.id === id).properties.geometryDetail, "simplified");
+// Every feature in a list keeps its own geometry (regression: map index leaked in as "full")
+list.body.features.forEach(f => assert.ok(Array.isArray(f.geometry?.coordinates), `geometry intact for ${f.properties.name}`));
+assert.equal(list.body.features.length, 3);
 
 const one = await call("GET /v1/datasets/{datasetId}/features/{featureId}", { datasetId: "ds1", featureId: id });
 assert.equal(one.body.properties.geometryDetail, "full");

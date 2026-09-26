@@ -302,7 +302,7 @@ async function listFeatures(event, datasetId) {
     ExpressionAttributeValues: { ":d": datasetId },
     Limit: parseLimit(qs.limit), ExclusiveStartKey: decodeToken(qs.nextToken)
   }));
-  const fc = { type: "FeatureCollection", features: (res.Items || []).map(toFeature) };
+  const fc = { type: "FeatureCollection", features: (res.Items || []).map(item => toFeature(item)) };
   const nextToken = encodeToken(res.LastEvaluatedKey);
   if (nextToken) fc.nextToken = nextToken;
   return fc;
