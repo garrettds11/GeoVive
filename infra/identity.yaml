@@ -234,8 +234,8 @@ Resources:
       - https://geovive.link
       - https://geovive.link/
       - https://www.geovive.link/
-      - https://dev.geovive.link
-      - https://dev.geovive.link/
+      - https://stage.geovive.link
+      - https://stage.geovive.link/
       - https://stage-d24kp6zzj6jjwt.d24kp6zzj6jjwt.amplifyapp.com
       - https://stage-d24kp6zzj6jjwt.d24kp6zzj6jjwt.amplifyapp.com/
       EnablePropagateAdditionalUserContextData: false
@@ -269,8 +269,8 @@ Resources:
       - https://geovive.link/
       - https://us-east-1clqbezjhi.auth.us-east-1.amazoncognito.com/logout
       - https://www.geovive.link/
-      - https://dev.geovive.link
-      - https://dev.geovive.link/
+      - https://stage.geovive.link
+      - https://stage.geovive.link/
       - https://stage-d24kp6zzj6jjwt.d24kp6zzj6jjwt.amplifyapp.com
       - https://stage-d24kp6zzj6jjwt.d24kp6zzj6jjwt.amplifyapp.com/
       AccessTokenValidity: 1

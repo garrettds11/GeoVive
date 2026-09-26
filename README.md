@@ -67,8 +67,8 @@ python -m http.server 8080
 
 **Branches and releases:**
 
-- `dev` deploys to https://dev.geovive.link, which is password-protected (Amplify basic auth; ask the owner for access).
-- `stage-d24kp6zzj6jjwt` deploys to https://stage-d24kp6zzj6jjwt.d24kp6zzj6jjwt.amplifyapp.com (no password; used for automated checks).
+- `dev` deploys to its Amplify address, https://dev.d24kp6zzj6jjwt.amplifyapp.com (no custom domain).
+- `stage-d24kp6zzj6jjwt` deploys to https://stage.geovive.link (password-protected).
 - `main` deploys to https://geovive.link.
 - The release flow: work on `dev`, test on the dev site, then open a pull request from `dev` to `main`.
 
