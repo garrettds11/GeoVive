@@ -722,6 +722,14 @@ export const handler = async (event) => {
         status = 202; break;
       case "GET /v1/appconnect/apps/{appId}/reports/{reportId}":
         result = await appconnect.reportLink(ddb, s3, await getCaller(event, { required: true }), p.appId, p.reportId); break;
+      case "POST /v1/appconnect/apps/{appId}/disconnect":
+        result = await appconnect.requestDisconnect(ddb, s3, await getCaller(event, { required: true }), p.appId, parseBody(event)); break;
+      case "DELETE /v1/appconnect/apps/{appId}/disconnect":
+        result = await appconnect.cancelScheduledDisconnect(ddb, await getCaller(event, { required: true }), p.appId); break;
+      case "POST /v1/appconnect/apps/{appId}/reconnect":
+        result = await appconnect.reconnect(ddb, await getCaller(event, { required: true }), p.appId); break;
+      case "GET /v1/appconnect/apps/{appId}/export":
+        result = await appconnect.exportMine(ddb, await getCaller(event, { required: true }), p.appId); break;
       case "GET /v1/appconnect/review":
         return html(await appconnect.reviewPage(ddb, s3, event.queryStringParameters || {}));
       case "POST /v1/appconnect/review": {

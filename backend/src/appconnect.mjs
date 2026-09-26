@@ -11,8 +11,8 @@
 // and sources, writes a PDF report to S3, emails it, and moves the app to
 // checks_failed or awaiting_payment (with a Stripe payment link).
 
-import { PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
-import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { PutCommand, QueryCommand, UpdateCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
+import { PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 import { randomBytes, createHmac, timingSafeEqual } from "node:crypto";
@@ -21,7 +21,7 @@ import { runChecks, checkLayer, fetchLayerList } from "./appcheck.mjs";
 import { aiReviewLayer } from "./aireview.mjs";
 import { CATEGORIES, categoryOfIssue } from "./findings.mjs";
 import { applyResults, changedLayers, changeKey, decide, signReview, verifyReview, businessDaysBetween, REVIEW_BUSINESS_DAYS } from "./approvals.mjs";
-import { validationReportPdf, liveNoticePdf, fmtDate } from "./report.mjs";
+import { validationReportPdf, liveNoticePdf, offboardingCertificatePdf, fmtDate } from "./report.mjs";
 import { sendMail, emailHtml } from "./mailer.mjs";
 
 export const TERMS_VERSION = "AppConnect Terms v1.0";
@@ -112,6 +112,7 @@ function ownerView(app) {
     paymentUrl: app.status === "awaiting_payment" ? app.paymentUrl : undefined,
     termStartsAt: app.termStartsAt, termEndsAt: app.termEndsAt, termsVersion: app.termsVersion,
     lastReportId: app.lastReportId, lastCheckAt: app.lastCheckAt, createdAt: app.createdAt, updatedAt: app.updatedAt,
+    disconnectAt: app.disconnectAt, disconnectedAt: app.disconnectedAt, closedAt: app.closedAt, purgeAt: app.purgeAt, disconnectReason: app.disconnectReason,
     layers: Object.entries(app.layerState || {}).map(([id, st]) => ({ id, state: st.state, at: st.at, findings: st.findings }))
   };
 }
@@ -137,7 +138,10 @@ export async function signup(ddb, caller, body) {
     termsAcceptedAtSignup: TERMS_VERSION, createdAt: now, updatedAt: now
   };
   try {
-    await ddb.send(new PutCommand({ TableName: APPS_TABLE, Item: item, ConditionExpression: "attribute_not_exists(appId)" }));
+    // A closed record stays reserved for its owner, who may register the same ID again
+    await ddb.send(new PutCommand({ TableName: APPS_TABLE, Item: item,
+      ConditionExpression: "attribute_not_exists(appId) OR (#s = :closed AND ownerId = :me)",
+      ExpressionAttributeNames: { "#s": "status" }, ExpressionAttributeValues: { ":closed": "closed", ":me": caller.sub } }));
   } catch (e) {
     if (e.name === "ConditionalCheckFailedException") throw new AppConnectError(409, "That app ID is taken");
     throw e;
@@ -189,7 +193,7 @@ export async function requestChecks(ddb, caller, appId, invokeWorker) {
 
 export async function reportLink(ddb, s3, caller, appId, reportId) {
   await ownedApp(ddb, appId, caller);
-  if (!/^(VR|LN)-[A-Z0-9-]{6,40}$/.test(reportId)) throw new AppConnectError(400, "Invalid report ID");
+  if (!/^(VR|LN|OB)-[A-Z0-9-]{6,40}$/.test(reportId)) throw new AppConnectError(400, "Invalid report ID");
   const url = await getSignedUrl(s3, new GetObjectCommand({
     Bucket: BUCKET, Key: `appconnect/${appId}/${reportId}.pdf`,
     ResponseContentDisposition: `inline; filename="${reportId}.pdf"`
@@ -364,7 +368,8 @@ function renewalUrl(stripe, app) {
 //   - re-checks sandbox/live apps whose last check is older than a week
 //   - sends renewal reminders 30 and 7 days before the term ends (once per term)
 //   - expires apps whose term has ended
-export async function runDaily(ddb, { now = Date.now(), invokeWorker, net }) {
+export async function runDaily(ddb, { now = Date.now(), invokeWorker, net, s3 }) {
+  const offboarding = s3 ? await runOffboarding(ddb, s3, { now }) : null;
   const stripe = await stripeSettings();
   const apps = [...await listByStatusSafe(ddb, "live"), ...await listByStatusSafe(ddb, "sandbox")].filter(a => a.ownerId);
   const done = { rechecks: [], reminders: [], expired: [], layerChanges: [], reviewReminders: [] };
@@ -428,6 +433,7 @@ export async function runDaily(ddb, { now = Date.now(), invokeWorker, net }) {
   }
   done.reviewReminders = await reviewReminders(ddb, apps.filter(a => !done.expired.includes(a.appId)), now);
   done.weeklyNotices = await sendWeeklyNotices(ddb, apps, new Date(now));
+  if (offboarding) done.offboarding = offboarding;
   return done;
 }
 
@@ -710,4 +716,195 @@ export async function sendWeeklyNotices(ddb, apps, now = new Date()) {
     sent.push(app.appId);
   }
   return sent;
+}
+
+
+// ------------------------------------------------------------------ offboarding
+
+export const DISCONNECT_REASONS = {
+  not_needed: "We no longer need it",
+  cost: "Cost",
+  another_platform: "Moving to another platform",
+  missing_features: "Missing features",
+  business_closed: "Our business or product is closing",
+  other: "Other",
+  expired: "The yearly term ended without renewal",
+  geovive: "Ended by GeoVivé under the terms"
+};
+const RECONNECT_DAYS = 90;
+const EVENTS_KEEP_DAYS = 365;
+
+// Owner asks to disconnect. when: "now" | "term_end". The owner must type the app ID to confirm.
+export async function requestDisconnect(ddb, s3, caller, appId, body = {}) {
+  const app = await ownedApp(ddb, appId, caller);
+  if (["disconnected", "closed"].includes(app.status)) throw new AppConnectError(409, "This app is already disconnected");
+  if (body.confirm !== appId) throw new AppConnectError(400, "Type the app ID to confirm");
+  const reason = DISCONNECT_REASONS[body.reason] && !["expired", "geovive"].includes(body.reason) ? body.reason : "other";
+  const note = typeof body.note === "string" ? body.note.trim().slice(0, 500) : "";
+  const termLeft = app.termEndsAt && Date.parse(app.termEndsAt) > Date.now() && isActive(app.status, app.termEndsAt);
+  if (body.when === "term_end" && termLeft) {
+    await ddb.send(new UpdateCommand({ TableName: APPS_TABLE, Key: { appId, sk: "APP" },
+      UpdateExpression: "SET disconnectAt = :t, disconnectReason = :r, disconnectNote = :n",
+      ExpressionAttributeValues: { ":t": app.termEndsAt, ":r": reason, ":n": note } }));
+    await addEvent(ddb, appId, { type: "disconnect-scheduled", at2: app.termEndsAt, reason });
+    await safeMail(ddb, appId, "disconnect scheduled", {
+      to: app.contactEmail, subject: `${app.name} will disconnect from GeoVivé on ${fmtDate(app.termEndsAt)}`,
+      text: `Your AppConnect connection stays live until ${fmtDate(app.termEndsAt)}, then disconnects automatically. You can cancel this any time before then from your AppConnect page.`,
+      html: emailHtml({ heading: "Disconnection scheduled", paragraphs: [
+        `${app.name} stays live until ${fmtDate(app.termEndsAt)}, then disconnects automatically: your layers stop showing and GeoVivé deletes its copies.`,
+        "Changed your mind? Cancel it any time before then from your AppConnect page."],
+        button: { label: "Open AppConnect", url: `${SITE}/appconnect/?app=${appId}` } })
+    });
+    return { appId, scheduled: app.termEndsAt };
+  }
+  return disconnectApp(ddb, s3, app, { reason, note, by: "App owner" });
+}
+
+export async function cancelScheduledDisconnect(ddb, caller, appId) {
+  const app = await ownedApp(ddb, appId, caller);
+  if (!app.disconnectAt) throw new AppConnectError(409, "No disconnection is scheduled");
+  await ddb.send(new UpdateCommand({ TableName: APPS_TABLE, Key: { appId, sk: "APP" },
+    UpdateExpression: "REMOVE disconnectAt, disconnectReason, disconnectNote" }));
+  await addEvent(ddb, appId, { type: "disconnect-cancelled" });
+  return { appId, cancelled: true };
+}
+
+async function deletePrefix(s3, prefix) {
+  let token, n = 0;
+  do {
+    const res = await s3.send(new ListObjectsV2Command({ Bucket: BUCKET, Prefix: prefix, ContinuationToken: token }));
+    const keys = (res.Contents || []).map(o => ({ Key: o.Key }));
+    if (keys.length) { await s3.send(new DeleteObjectsCommand({ Bucket: BUCKET, Delete: { Objects: keys, Quiet: true } })); n += keys.length; }
+    token = res.IsTruncated ? res.NextContinuationToken : undefined;
+  } while (token);
+  return n;
+}
+
+// The structured disconnect, used for owner requests, scheduled ends, expiry and GeoVivé terminations.
+export async function disconnectApp(ddb, s3, app, { reason = "other", note = "", by = "App owner", now = new Date() } = {}) {
+  const appId = app.appId;
+  await setStatus(ddb, appId, app.status, "disconnected", { reason, by });
+  // 1. Delete display copies and pending review copies (reports and evidence are kept)
+  let approvedLayers = 0;
+  try {
+    const res = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: `appconnect/${appId}/approved.json` }));
+    approvedLayers = Object.keys(JSON.parse(await res.Body.transformToString()).layers || {}).length;
+  } catch { /* none */ }
+  const deleted = {
+    approvedLayers,
+    relayFiles: await deletePrefix(s3, `overlays/v3/${appId}/`),
+    pendingFiles: await deletePrefix(s3, `appconnect-pending/${appId}/`)
+  };
+  await deletePrefix(s3, `appconnect/${appId}/approved.json`);
+  const at = now.toISOString();
+  const purgeAt = new Date(now.getTime() + RECONNECT_DAYS * 86400_000).toISOString();
+  await ddb.send(new UpdateCommand({ TableName: APPS_TABLE, Key: { appId, sk: "APP" },
+    UpdateExpression: "SET disconnectedAt = :at, disconnectReason = :r, disconnectNote = :n, disconnectedBy = :by, purgeAt = :p, layerState = :e, pendingNotices = :l REMOVE disconnectAt, paymentUrl",
+    ExpressionAttributeValues: { ":at": at, ":r": reason, ":n": note, ":by": by, ":p": purgeAt, ":e": {}, ":l": [] } }));
+
+  // 2. Certificate + settings export for the owner
+  const certId = newId("OB");
+  const kept = [
+    { item: "App record, settings and history", until: fmtDate(purgeAt), why: "So you can reconnect without signing up again; then reduced to a minimal closed record" },
+    { item: "Reports and notices (PDF)", until: fmtDate(purgeAt), why: "Your records of checks and payments" },
+    { item: "Payment records", until: "As required by law", why: "Held by Stripe and GeoVivé for tax and accounting" },
+    { item: "Records GeoVivé must keep", until: "Up to 2 years", why: "Only where the terms (section 7) require preserving evidence" }
+  ];
+  const pdf = await offboardingCertificatePdf(app, { certId, at, by, reason: DISCONNECT_REASONS[reason] || reason, termsVersion: TERMS_VERSION, purgeAt, deleted, kept });
+  await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: `appconnect/${appId}/${certId}.pdf`, Body: pdf, ContentType: "application/pdf" }));
+  const exportJson = await buildExport(ddb, appId);
+  await addEvent(ddb, appId, { type: "disconnected", certId, reason, by, deleted });
+
+  const paras = [
+    `${app.name} is now disconnected from GeoVivé. Your layers no longer show, and GeoVivé has deleted its display copies (${deleted.approvedLayers} layers, ${deleted.relayFiles} cached files).`,
+    "Your disconnection certificate and a JSON export of your app's settings and history are attached.",
+    `Changed your mind? You can reconnect until ${fmtDate(purgeAt)} from your AppConnect page.`
+  ];
+  await safeMail(ddb, appId, "disconnection certificate", {
+    to: app.contactEmail, subject: `${app.name} is disconnected from GeoVivé`, text: paras.join("\n\n"),
+    html: emailHtml({ heading: "You're disconnected", paragraphs: paras, button: { label: "Open AppConnect", url: `${SITE}/appconnect/?app=${appId}` } }),
+    attachments: [{ filename: `${certId}.pdf`, content: pdf },
+      { filename: `${appId}-appconnect-export.json`, content: Buffer.from(JSON.stringify(exportJson, null, 2)), contentType: "application/json" }]
+  });
+  // 3. Tell GeoVivé (turnover signal)
+  try {
+    const { reviewerEmail } = await reviewSettings();
+    await sendMail({ to: reviewerEmail, subject: `AppConnect: ${app.name} disconnected (${DISCONNECT_REASONS[reason] || reason})`,
+      text: `${app.name} (${appId}, ${app.domain}) disconnected by ${by}.\nReason: ${DISCONNECT_REASONS[reason] || reason}${note ? `\nNote: ${note}` : ""}\nTerm ended/ends: ${app.termEndsAt || "—"}\nCertificate: ${certId}`,
+      html: emailHtml({ heading: `${app.name} disconnected`, paragraphs: [`App ${appId} (${app.domain}), by ${by}.`, `Reason: ${DISCONNECT_REASONS[reason] || reason}`, ...(note ? [`Note: ${note}`] : []), `Certificate ${certId}. Record closes ${fmtDate(purgeAt)}.`] }) });
+  } catch (e) { console.error("Admin notice failed", e.name); }
+  return { appId, status: "disconnected", certId, deleted, purgeAt };
+}
+
+// Settings and history the owner can keep (no secrets, no evidence).
+export async function buildExport(ddb, appId) {
+  const app = await getAppRecord(ddb, appId, { fresh: true });
+  const events = await listEvents(ddb, appId, 500);
+  return {
+    exportedAt: new Date().toISOString(),
+    app: { appId, name: app.name, domain: app.domain, contactEmail: app.contactEmail, layersUrl: app.layersUrl,
+      returnOrigins: app.returnOrigins, featureTypes: app.featureTypes, status: app.status, createdAt: app.createdAt,
+      termStartsAt: app.termStartsAt, termEndsAt: app.termEndsAt, termsVersion: app.termsVersion },
+    history: events.map(({ checks, ...e }) => e)
+  };
+}
+
+export async function exportMine(ddb, caller, appId) {
+  await ownedApp(ddb, appId, caller);
+  return buildExport(ddb, appId);
+}
+
+// Reconnect inside the 90-day window: back to "registered"; checks and payment start a new term.
+export async function reconnect(ddb, caller, appId) {
+  const app = await ownedApp(ddb, appId, caller);
+  if (app.status !== "disconnected") throw new AppConnectError(409, "Only disconnected apps can reconnect");
+  await setStatus(ddb, appId, "disconnected", "registered", { reason: "reconnect" });
+  await ddb.send(new UpdateCommand({ TableName: APPS_TABLE, Key: { appId, sk: "APP" },
+    UpdateExpression: "REMOVE disconnectedAt, disconnectReason, disconnectNote, disconnectedBy, purgeAt, termEndsAt, termStartsAt, lastCheckAt, layerCheckKey" }));
+  return getMine(ddb, caller, appId);
+}
+
+// After the reconnect window: delete reports and history, keep a minimal closed record so the
+// app ID can't be taken over by someone else (the same owner can register it again).
+export async function closeApp(ddb, s3, app, { now = new Date() } = {}) {
+  const appId = app.appId;
+  await deletePrefix(s3, `appconnect/${appId}/`);
+  const raw = await ddb.send(new QueryCommand({ TableName: APPS_TABLE, KeyConditionExpression: "appId = :a AND begins_with(sk, :e)",
+    ExpressionAttributeValues: { ":a": appId, ":e": "EVENT#" }, ProjectionExpression: "appId, sk" }));
+  for (const k of raw.Items || []) await ddb.send(new DeleteCommand({ TableName: APPS_TABLE, Key: { appId: k.appId, sk: k.sk } }));
+  await ddb.send(new PutCommand({ TableName: APPS_TABLE, Item: {
+    appId, sk: "APP", status: "closed", name: app.name, ownerId: app.ownerId, domain: app.domain,
+    createdAt: app.createdAt, disconnectedAt: app.disconnectedAt, closedAt: now.toISOString(), updatedAt: now.toISOString(),
+    disconnectReason: app.disconnectReason
+  } }));
+  try {
+    await sendMail({ to: app.contactEmail, subject: `${app.name}'s GeoVivé AppConnect record is closed`,
+      text: `The reconnect window for ${app.name} has ended, so GeoVivé has deleted its reports and history. The app ID ${appId} stays reserved for your account if you ever want to connect again.`,
+      html: emailHtml({ heading: "Your AppConnect record is closed", paragraphs: [
+        `The reconnect window for ${app.name} has ended, so GeoVivé has deleted its reports and history.`,
+        `The app ID ${appId} stays reserved for your account if you ever want to connect again.`] }) });
+  } catch (e) { console.error("Closure email failed", e.name); }
+  return { appId, closed: true };
+}
+
+// Daily offboarding duties: scheduled disconnects, passive expiry after the renewal window, closures.
+export async function runOffboarding(ddb, s3, { now = Date.now() } = {}) {
+  const done = { disconnected: [], expiredDisconnected: [], closed: [] };
+  const active = [...await listByStatusSafe(ddb, "live"), ...await listByStatusSafe(ddb, "sandbox")].filter(a => a.ownerId);
+  for (const app of active) {
+    if (app.disconnectAt && Date.parse(app.disconnectAt) <= now) {
+      await disconnectApp(ddb, s3, app, { reason: app.disconnectReason || "other", note: app.disconnectNote || "", by: "Scheduled by app owner", now: new Date(now) });
+      done.disconnected.push(app.appId);
+    }
+  }
+  for (const app of (await listByStatusSafe(ddb, "expired")).filter(a => a.ownerId)) {
+    if (app.disconnectAt || (app.termEndsAt && Date.parse(app.termEndsAt) + RECONNECT_DAYS * 86400_000 <= now)) {
+      await disconnectApp(ddb, s3, app, { reason: app.disconnectReason || "expired", by: app.disconnectAt ? "Scheduled by app owner" : "GeoVivé (not renewed)", now: new Date(now) });
+      done.expiredDisconnected.push(app.appId);
+    }
+  }
+  for (const app of await listByStatusSafe(ddb, "disconnected")) {
+    if (app.purgeAt && Date.parse(app.purgeAt) <= now) { await closeApp(ddb, s3, app, { now: new Date(now) }); done.closed.push(app.appId); }
+  }
+  return done;
 }

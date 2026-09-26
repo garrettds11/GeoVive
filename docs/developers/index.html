@@ -267,8 +267,11 @@ map.getSource("places").setData(collection);</code></pre>
       <tr><td>GET</td><td><code>/v1/appconnect/apps/{appId}</code></td><td>One app with its history</td></tr>
       <tr><td>POST</td><td><code>/v1/appconnect/apps/{appId}/checks</code></td><td>Run the connection checks (<code>202</code>); the report is emailed and listed on the app</td></tr>
       <tr><td>GET</td><td><code>/v1/appconnect/apps/{appId}/reports/{reportId}</code></td><td>A 10-minute link to a report or notice PDF</td></tr>
+      <tr><td>POST</td><td><code>/v1/appconnect/apps/{appId}/disconnect</code></td><td>Disconnect now or at term end (<code>confirm</code> must equal the app ID); <code>DELETE</code> cancels a scheduled one</td></tr>
+      <tr><td>POST</td><td><code>/v1/appconnect/apps/{appId}/reconnect</code></td><td>Reconnect within 90 days</td></tr>
+      <tr><td>GET</td><td><code>/v1/appconnect/apps/{appId}/export</code></td><td>Settings and history as JSON</td></tr>
     </table></div>
-    <p>Stages: registered → checking → checks passed or needs fixes → awaiting payment → live, renewed yearly; plus sandbox, expired and suspended.</p>
+    <p>Stages: registered → checking → checks passed or needs fixes → awaiting payment → live, renewed yearly; plus sandbox, expired, suspended, disconnected (90-day reconnect window) and closed.</p>
 
     <h2 id="connected-apps">Account linking (coming soon)</h2>
     <div class="card">

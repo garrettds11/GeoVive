@@ -11,7 +11,8 @@ const wrap76 = s => s.replace(/.{1,76}/g, "$&\r\n").trimEnd();
 const encHeader = s => (/^[\x20-\x7E]*$/.test(s) ? s : `=?UTF-8?B?${b64(s)}?=`);
 
 // Build a MIME message (text + HTML alternative, plus attachment). Exported for tests.
-export function buildMime({ to, subject, text, html, attachment }) {
+export function buildMime({ to, subject, text, html, attachment, attachments }) {
+  const files = [...(attachments || []), ...(attachment ? [attachment] : [])];
   const mixed = "mixed_" + randomBytes(8).toString("hex"), alt = "alt_" + randomBytes(8).toString("hex");
   const fromName = FROM.match(/^(.*)<(.+)>$/);
   const from = fromName ? `${encHeader(fromName[1].trim())} <${fromName[2]}>` : FROM;
@@ -23,10 +24,10 @@ export function buildMime({ to, subject, text, html, attachment }) {
     `--${alt}`, "Content-Type: text/html; charset=UTF-8", "Content-Transfer-Encoding: base64", "", wrap76(b64(html)),
     `--${alt}--`
   ];
-  if (attachment) {
-    lines.push(`--${mixed}`, `Content-Type: application/pdf; name="${attachment.filename}"`,
-      `Content-Disposition: attachment; filename="${attachment.filename}"`, "Content-Transfer-Encoding: base64", "",
-      wrap76(attachment.content.toString("base64")));
+  for (const f of files) {
+    lines.push(`--${mixed}`, `Content-Type: ${f.contentType || "application/pdf"}; name="${f.filename}"`,
+      `Content-Disposition: attachment; filename="${f.filename}"`, "Content-Transfer-Encoding: base64", "",
+      wrap76(Buffer.from(f.content).toString("base64")));
   }
   lines.push(`--${mixed}--`, "");
   return lines.join("\r\n");

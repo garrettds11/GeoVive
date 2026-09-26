@@ -24,7 +24,9 @@ export const STATUSES = [
   "sandbox",           // links work from the verified domain, limited use
   "live",              // fully connected, until termEndsAt
   "expired",           // the yearly term ran out; renewal payment re-activates it
-  "suspended"          // turned off by GeoVivé or a failed re-check
+  "suspended",         // turned off by GeoVivé or a failed re-check
+  "disconnected",      // offboarded: layers off, data purged; record kept 90 days for reconnecting
+  "closed"             // reduced to a tombstone after the reconnect window
 ];
 
 const NEXT = {
@@ -36,11 +38,13 @@ const NEXT = {
   sandbox: ["live", "verifying", "expired"],
   live: ["verifying", "sandbox", "expired"],
   expired: ["verifying", "awaiting_payment"],
-  suspended: ["verifying"]
+  suspended: ["verifying"],
+  disconnected: ["registered", "closed"]
 };
 
 export function canTransition(from, to) {
-  if (to === "suspended") return from !== "suspended";
+  if (to === "suspended") return !["suspended", "disconnected", "closed"].includes(from);
+  if (to === "disconnected") return !["disconnected", "closed"].includes(from);
   return (NEXT[from] || []).includes(to);
 }
 

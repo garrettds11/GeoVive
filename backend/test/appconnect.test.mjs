@@ -11,7 +11,9 @@ const ddb = { async send(c) {
   const n = c.constructor.name, i = c.input;
   if (n === "GetCommand") return { Item: structuredClone(items.get(key(i.Key.appId, i.Key.sk))) };
   if (n === "PutCommand") {
-    if (i.ConditionExpression && items.has(key(i.Item.appId, i.Item.sk))) { const e = new Error("x"); e.name = "ConditionalCheckFailedException"; throw e; }
+    const ex = items.get(key(i.Item.appId, i.Item.sk));
+    const reclaim = ex && /closed/.test(i.ConditionExpression || "") && ex.status === "closed" && ex.ownerId === i.ExpressionAttributeValues?.[":me"];
+    if (i.ConditionExpression && ex && !reclaim) { const e = new Error("x"); e.name = "ConditionalCheckFailedException"; throw e; }
     items.set(key(i.Item.appId, i.Item.sk), structuredClone(i.Item)); return {};
   }
   if (n === "QueryCommand") {
@@ -22,6 +24,7 @@ const ddb = { async send(c) {
     return i.Select === "COUNT" ? { Count: all.length } : { Items: all.map(x => structuredClone(x)) };
   }
   if (n === "UpdateCommand") { applyUpdate(i); return {}; }
+  if (n === "DeleteCommand") { items.delete(key(i.Key.appId, i.Key.sk)); return {}; }
   if (n === "TransactWriteCommand") {
     for (const t of i.TransactItems) {
       if (t.Update) {
@@ -36,7 +39,10 @@ const ddb = { async send(c) {
 } };
 function applyUpdate(u) {
   const cur = items.get(key(u.Key.appId, u.Key.sk)); const v = u.ExpressionAttributeValues; const names = u.ExpressionAttributeNames || {};
-  for (const part of u.UpdateExpression.replace(/^SET /, "").split(/,\s*(?![^()]*\))/)) {
+  const [setPart, removePart] = u.UpdateExpression.split(/\s*REMOVE\s+/);
+  for (const f of (removePart || "").split(/,\s*/).filter(Boolean)) delete cur[f];
+  if (!/^SET /.test(setPart)) return;
+  for (const part of setPart.replace(/^SET /, "").split(/,\s*(?![^()]*\))/)) {
     const [lhs, rhs] = part.split(/\s*=\s*/); const f = names[lhs] || lhs;
     const m = rhs.match(/^if_not_exists\((\w+), (:\w+)\)$/);
     cur[f] = m ? (cur[m[1]] ?? v[m[2]]) : v[rhs];
@@ -49,6 +55,8 @@ const s3 = { async send(c) {
     const body = s3objs.get(c.input.Key);
     return { Body: { transformToString: async () => Buffer.isBuffer(body) ? body.toString() : String(body) } };
   }
+  if (c.constructor.name === "ListObjectsV2Command") return { Contents: [...s3objs.keys()].filter(k => k.startsWith(c.input.Prefix)).map(Key => ({ Key })) };
+  if (c.constructor.name === "DeleteObjectsCommand") { c.input.Delete.Objects.forEach(o => s3objs.delete(o.Key)); return {}; }
   s3objs.set(c.input.Key, c.input.Body); return {};
 } };
 const mails = [];
@@ -250,4 +258,50 @@ console.log("appconnect tests passed:", mails.length, "emails,", s3objs.size, "P
   assert.match(await ac.reviewDecision(ddb, s3, { ...q, decision: "reject" }), /Already decided/);
   assert.equal(businessDaysBetween("2026-09-25T10:00:00Z", Date.parse("2026-09-29T10:00:00Z")), 2, "Fri to Tue is 2 business days");
   console.log("approved-layer tests passed");
+}
+
+// ---- offboarding: scheduled disconnect, immediate disconnect, reconnect, close, reclaim
+{
+  const store = await import("../src/appstore.mjs");
+  const rec = () => items.get(key("trail-maps", "APP"));
+  assert.equal(rec().status, "live");
+  s3objs.set("overlays/v3/trail-maps/trails-abc.geojson", "x");
+  await assert.rejects(ac.requestDisconnect(ddb, s3, caller, "trail-maps", { confirm: "wrong" }), /Type the app ID/);
+  // schedule at term end, then cancel
+  let r = await ac.requestDisconnect(ddb, s3, caller, "trail-maps", { confirm: "trail-maps", when: "term_end", reason: "cost" });
+  assert.equal(r.scheduled, rec().termEndsAt);
+  assert.equal(rec().status, "live", "still live until the term ends");
+  await ac.cancelScheduledDisconnect(ddb, caller, "trail-maps");
+  assert.equal(rec().disconnectAt, undefined);
+  // schedule again and let the daily job reach the end date
+  await ac.requestDisconnect(ddb, s3, caller, "trail-maps", { confirm: "trail-maps", when: "term_end", reason: "another_platform", note: "moving on" });
+  const before = mails.length;
+  const off = await ac.runOffboarding(ddb, s3, { now: Date.parse(rec().termEndsAt) + 1000 });
+  assert.deepEqual(off.disconnected, ["trail-maps"]);
+  assert.equal(rec().status, "disconnected");
+  assert.equal(await store.getActiveApp(ddb, "trail-maps"), null, "layers off");
+  assert.ok(!s3objs.has("overlays/v3/trail-maps/trails-abc.geojson"), "relay copies deleted");
+  assert.ok(!s3objs.has("appconnect/trail-maps/approved.json"), "approved copies deleted");
+  assert.ok([...s3objs.keys()].some(k => /appconnect\/trail-maps\/OB-/.test(k)), "certificate stored");
+  const sent = mails.slice(before);
+  assert.ok(sent.some(m => m.includes("application/json") && m.includes("application/pdf")), "owner gets certificate + export");
+  assert.ok(sent.some(m => m.includes("reviewer@example.com")), "GeoVivé told");
+  // export and reconnect
+  const exp = await ac.exportMine(ddb, caller, "trail-maps");
+  assert.equal(exp.app.appId, "trail-maps"); assert.ok(exp.history.length);
+  const back = await ac.reconnect(ddb, caller, "trail-maps");
+  assert.equal(back.status, "registered"); assert.equal(rec().purgeAt, undefined);
+  // disconnect now, then close after 90 days
+  r = await ac.requestDisconnect(ddb, s3, caller, "trail-maps", { confirm: "trail-maps", when: "now", reason: "not_needed" });
+  assert.equal(r.status, "disconnected");
+  const off2 = await ac.runOffboarding(ddb, s3, { now: Date.parse(rec().purgeAt) + 1000 });
+  assert.deepEqual(off2.closed, ["trail-maps"]);
+  assert.equal(rec().status, "closed"); assert.equal(rec().contactEmail, undefined, "tombstone only");
+  assert.ok(![...items.keys()].some(k => k.startsWith("trail-maps|EVENT#")), "history deleted");
+  assert.ok(![...s3objs.keys()].some(k => k.startsWith("appconnect/trail-maps/")), "reports deleted");
+  // someone else can't take the ID; the owner can register it again
+  await assert.rejects(ac.signup(ddb, { sub: "intruder" }, good), /taken/);
+  const again = await ac.signup(ddb, caller, good);
+  assert.equal(again.status, "registered");
+  console.log("offboarding tests passed");
 }

@@ -117,6 +117,7 @@ async function appView(appId) {
   let app;
   try { app = await api(`/v1/appconnect/apps/${encodeURIComponent(appId)}`); }
   catch (e) { if (e.status === 404) { root.innerHTML = `<div class="ac-msg err">App not found.</div><p><a href="/appconnect/">Your apps</a></p>`; return; } throw e; }
+  if (app.status === "disconnected" || app.status === "closed") return offboardedView(app);
   const v = app.verification;
   const running = app.status === "verifying";
   root.innerHTML = `
@@ -154,7 +155,43 @@ async function appView(appId) {
     <ul class="ac-hist">${app.layers.sort((a, b) => a.id.localeCompare(b.id)).map(l => `<li><code>${esc(l.id)}</code> · <span class="ac-badge ${l.state === "approved" ? "live" : l.state === "rejected" ? "checks_failed" : "verifying"}">${esc(LAYER_STATE[l.state] || l.state)}</span>${l.findings?.length && l.state !== "approved" ? ` · ${esc(l.findings.join("; "))}` : ""}</li>`).join("")}</ul>` : ""}
 
     <h3>History</h3>
-    <ul class="ac-hist">${(app.history || []).map(h => `<li>${date(h.at)} · ${esc(describe(h))}</li>`).join("")}</ul>`;
+    <ul class="ac-hist">${(app.history || []).map(h => `<li>${date(h.at)} · ${esc(describe(h))}</li>`).join("")}</ul>
+
+    <details class="ac-leave">
+      <summary>Leave AppConnect</summary>
+      ${app.disconnectAt ? `<div class="ac-msg">Disconnection scheduled for ${date(app.disconnectAt)}. Your app stays live until then. <button class="ac-btn secondary" id="ac-cancel-leave">Cancel it</button></div>` : `
+      <p>Disconnecting is clean and immediate: your layers stop showing, GeoVivé deletes its copies, and you get a certificate plus an export of your settings. You can reconnect within 90 days. Nothing is refunded for the rest of a paid term (see the <a href="/docs/terms/appconnect/#t10">terms</a>).</p>
+      <form class="ac-form" id="ac-leave-form">
+        <label class="check"><input type="radio" name="when" value="now" checked> <span>Disconnect now</span></label>
+        ${app.status === "live" && app.termEndsAt ? `<label class="check"><input type="radio" name="when" value="term_end"> <span>Stay live until ${date(app.termEndsAt)}, then disconnect</span></label>` : ""}
+        <label>Why are you leaving? (optional, helps us improve)
+          <select name="reason" style="background:var(--code-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px">
+            <option value="not_needed">We no longer need it</option><option value="cost">Cost</option><option value="another_platform">Moving to another platform</option>
+            <option value="missing_features">Missing features</option><option value="business_closed">Our business or product is closing</option><option value="other" selected>Other</option>
+          </select></label>
+        <label>Anything else? (optional)<textarea name="note" rows="2" maxlength="500"></textarea></label>
+        <label>Type <code>${esc(app.appId)}</code> to confirm<input name="confirm" autocomplete="off" required></label>
+        <div id="ac-leave-msg"></div>
+        <div class="ac-row"><button class="ac-btn danger" type="submit">Disconnect</button> <button class="ac-btn secondary" type="button" id="ac-export">Download settings (JSON)</button></div>
+      </form>`}
+    </details>`;
+
+  document.getElementById("ac-export")?.addEventListener("click", () => downloadExport(appId));
+  document.getElementById("ac-cancel-leave")?.addEventListener("click", async () => {
+    await api(`/v1/appconnect/apps/${encodeURIComponent(appId)}/disconnect`, { method: "DELETE" }); appView(appId);
+  });
+  const leave = document.getElementById("ac-leave-form");
+  if (leave) leave.onsubmit = async (e) => {
+    e.preventDefault();
+    const out = document.getElementById("ac-leave-msg"); msg(out, "");
+    if (leave.confirm.value.trim() !== app.appId) { msg(out, "Type the app ID exactly to confirm."); return; }
+    const btn = leave.querySelector("button[type=submit]"); btn.disabled = true;
+    try {
+      await api(`/v1/appconnect/apps/${encodeURIComponent(appId)}/disconnect`, { method: "POST", body: JSON.stringify({
+        when: leave.when.value, reason: leave.reason.value, note: leave.note.value, confirm: leave.confirm.value.trim() }) });
+      appView(appId);
+    } catch (err) { msg(out, err.message); btn.disabled = false; }
+  };
 
   const run = document.getElementById("ac-run");
   if (run) run.onclick = async () => {
@@ -171,7 +208,52 @@ async function appView(appId) {
   if (running || (params.get("paid") && app.status !== "live")) setTimeout(() => appView(appId), 5000);
 }
 
+async function downloadExport(appId) {
+  const data = await api(`/v1/appconnect/apps/${encodeURIComponent(appId)}/export`);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
+  a.download = `${appId}-appconnect-export.json`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+function offboardedView(app) {
+  const cert = (app.history || []).find(h => h.type === "disconnected")?.certId;
+  if (app.status === "closed") {
+    root.innerHTML = `<p><a href="/appconnect/">← Your apps</a></p><h2>${esc(app.name)}</h2>
+      <div class="ac-msg">This connection was closed on ${date(app.closedAt)}. Its reports and history have been deleted. The app ID <code>${esc(app.appId)}</code> stays reserved for you.</div>
+      <p>To connect again, register it as a new app below.</p><p><a class="ac-btn" href="/appconnect/">Register again</a></p>`;
+    return;
+  }
+  root.innerHTML = `<p><a href="/appconnect/">← Your apps</a></p>
+    <div class="ac-row" style="justify-content:space-between"><h2 style="margin:0">${esc(app.name)}</h2><span class="ac-badge checks_failed">Disconnected</span></div>
+    <div class="card">
+      <p style="margin-top:0"><strong>Disconnected on ${date(app.disconnectedAt)}.</strong> Your layers no longer show, and GeoVivé has deleted its display copies. Your certificate and a settings export were emailed to ${esc(app.contactEmail)}.</p>
+      <p>You can reconnect until <strong>${date(app.purgeAt)}</strong>. After that, reports and history are deleted and the record is closed.</p>
+      <div class="ac-row">
+        <button class="ac-btn" id="ac-reconnect">Reconnect</button>
+        ${cert ? `<button class="ac-btn secondary" id="ac-cert">Certificate (PDF)</button>` : ""}
+        <button class="ac-btn secondary" id="ac-export">Settings (JSON)</button>
+      </div><div id="ac-off-msg"></div>
+    </div>
+    <h3>History</h3>
+    <ul class="ac-hist">${(app.history || []).map(h => `<li>${date(h.at)} · ${esc(describe(h))}</li>`).join("")}</ul>`;
+  document.getElementById("ac-export").onclick = () => downloadExport(app.appId);
+  document.getElementById("ac-reconnect").onclick = async () => {
+    try { await api(`/v1/appconnect/apps/${encodeURIComponent(app.appId)}/reconnect`, { method: "POST" }); appView(app.appId); }
+    catch (e) { msg(document.getElementById("ac-off-msg"), e.message); }
+  };
+  const c = document.getElementById("ac-cert");
+  if (c) c.onclick = async () => {
+    const w = window.open("", "_blank");
+    try { const { url } = await api(`/v1/appconnect/apps/${encodeURIComponent(app.appId)}/reports/${encodeURIComponent(cert)}`); if (w) w.location = url; }
+    catch (e) { if (w) w.close(); msg(document.getElementById("ac-off-msg"), e.message); }
+  };
+}
+
 function describe(h) {
+  if (h.type === "disconnected") return `Disconnected (certificate ${h.certId})`;
+  if (h.type === "disconnect-scheduled") return `Disconnection scheduled for ${date(h.at2)}`;
+  if (h.type === "disconnect-cancelled") return "Scheduled disconnection cancelled";
   if (h.type === "status") return `Stage: ${h.from === "none" ? "" : h.from.replace(/_/g, " ") + " → "}${h.to.replace(/_/g, " ")}`;
   if (h.type === "checks") return `Checks ${h.passed ? "passed" : "failed"} (${h.reportId})`;
   if (h.type === "email") return `Emailed ${h.what}`;

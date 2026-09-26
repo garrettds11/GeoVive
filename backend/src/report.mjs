@@ -15,6 +15,7 @@ const C = {
 const RESULT = {
   pass: { label: "PASS", fg: C.green, bg: C.greenSoft },
   review: { label: "REVIEW", fg: C.blue, bg: C.blueSoft },
+  done: { label: "DONE", fg: C.green, bg: C.greenSoft },
   note: { label: "NOTE", fg: C.amber, bg: C.amberSoft },
   fail: { label: "FAIL", fg: C.red, bg: C.redSoft }
 };
@@ -108,7 +109,7 @@ class Doc {
   ensure(h) { if (this.y - h < 62) this.newPage(); }
 
   h1(t) { this.ensure(40); this.y -= 6; this.text(t, M, this.y - 15, { size: 15, font: this.b }); this.y -= 26; }
-  h2(t) { this.ensure(34); this.y -= 8; this.text(t, M, this.y - 11.5, { size: 11.5, font: this.b, color: C.blue }); this.y -= 20; }
+  h2(t) { this.ensure(80); this.y -= 8; this.text(t, M, this.y - 11.5, { size: 11.5, font: this.b, color: C.blue }); this.y -= 20; }
 
   pill(kind, x, yTop) {
     const r = RESULT[kind]; const w = this.width(r.label, 7.5, this.b) + 12;
@@ -423,4 +424,50 @@ export async function liveNoticePdf(app, ctx) {
   ]);
   d.para("Terms: geovive.link/docs/terms/appconnect  ·  Docs: geovive.link/docs/developers/appconnect", { size: 8, color: C.blue });
   return d.finish("Keep this notice for your records.");
+}
+
+// ------------------------------------------------------------------ offboarding certificate
+
+// ctx: { certId, at, by, reason, termsVersion, purgeAt, deleted: { relayFiles, approvedLayers, pendingFiles }, kept: [..] }
+export async function offboardingCertificatePdf(app, ctx) {
+  const d = await Doc.create({
+    title: `AppConnect disconnection certificate — ${app.name}`, heading: "Disconnection certificate",
+    headerRight: [`Certificate ${ctx.certId}`, fmtDate(ctx.at, true), ctx.termsVersion],
+    short: `${app.name}  ·  ${ctx.certId}`
+  });
+  d.newPage(true);
+  d.callout({ title: `${app.name} is disconnected from GeoVivé`, fg: C.blue, bg: C.blueSoft, bar: C.blue,
+    body: `As of ${fmtDate(ctx.at, true)}, GeoVivé no longer shows ${app.name}'s layers, and the copies GeoVivé held for display have been deleted. This certificate records what was removed and what is kept, and why.` });
+
+  d.h2("Connection");
+  d.kv([
+    ["App", app.name], ["App ID", app.appId], ["Verified domain", app.domain],
+    ["Disconnected", fmtDate(ctx.at)], ["Requested by", ctx.by], ["Reason", ctx.reason || "Not given"]
+  ]);
+
+  d.h2("Removed now");
+  d.table([{ title: "Item", width: 190 }, { title: "Result", width: 55, pill: true }, { title: "Details", width: W - 2 * M - 245 }], [
+    ["Layers shown to users", "done", "Turned off. Links from your site open GeoVivé without your layers."],
+    ["Approved layer copies", "done", `${ctx.deleted.approvedLayers} layer setting${ctx.deleted.approvedLayers === 1 ? "" : "s"} deleted`],
+    ["Relay display copies", "done", `${ctx.deleted.relayFiles} cached file${ctx.deleted.relayFiles === 1 ? "" : "s"} deleted`],
+    ["Layers waiting for review", "done", `${ctx.deleted.pendingFiles} file${ctx.deleted.pendingFiles === 1 ? "" : "s"} deleted`],
+    ["Checks, re-checks and reminders", "done", "Stopped. No further emails except this one and the final closure notice."],
+    ["Renewals", "done", "None. AppConnect never renews automatically; no further payments are due."]
+  ]);
+
+  d.h2("Kept, and for how long");
+  d.table([{ title: "Item", width: 190 }, { title: "Until", width: 110 }, { title: "Why", width: W - 2 * M - 300 }], ctx.kept.map(k => [k.item, k.until, k.why]));
+
+  d.h2("What changes for your users");
+  d.bullets([
+    "Maps your users made through your app belong to them and stay in their GeoVivé accounts. They can keep, export or delete them.",
+    "Open links from your site still open GeoVivé, but without your layers or your pin types.",
+    "Nothing on your own site or in your own data is changed by GeoVivé."
+  ]);
+
+  d.h2("Coming back");
+  d.para(`Until ${fmtDate(ctx.purgeAt)} you can reconnect from your AppConnect page: the checks run again and a new yearly term starts after payment. After that date the record is closed; your app ID stays reserved for your account, and you can register it again as a new connection.`);
+  d.para("Your app's settings and history are attached to the email as JSON.", { size: 8.5, color: C.muted });
+  d.para("Terms: geovive.link/docs/terms/appconnect  ·  Security: geovive.link/docs/security  ·  Questions: admin@geovive.link", { size: 8, color: C.blue });
+  return d.finish("Keep this certificate for your records.");
 }

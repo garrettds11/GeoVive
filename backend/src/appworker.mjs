@@ -16,7 +16,7 @@ const net = { fetch: globalThis.fetch, resolveTxt: dns.resolveTxt, lookup: dns.l
 export const handler = async (event) => {
   // Daily schedule: re-checks, renewal reminders, expiry
   if (event?.source === "aws.scheduler" || event?.task === "daily") {
-    const out = await runDaily(ddb, { net, invokeWorker: payload => lambda.send(new InvokeCommand({
+    const out = await runDaily(ddb, { net, s3, invokeWorker: payload => lambda.send(new InvokeCommand({
       FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME, InvocationType: "Event", Payload: Buffer.from(JSON.stringify(payload)) })) });
     console.log("AppConnect daily", JSON.stringify(out));
     return out;
