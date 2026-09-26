@@ -23,6 +23,9 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { originAllowed } from "./apps.mjs";
 import { getActiveApp } from "./appstore.mjs";
 import * as appconnect from "./appconnect.mjs";
+import { fetchLayerList, layerHash } from "./appcheck.mjs";
+import { loadApproved, visibleLayers } from "./approvals.mjs";
+import { promises as dns } from "node:dns";
 import { FORMATS, render as renderExport, fileName as exportFileName } from "./export.mjs";
 import { validateLayerList, publicLayer, buildLayer, LayerListError } from "./overlays.mjs";
 import {
@@ -593,6 +596,7 @@ export async function loadAppLayers(appId) {
   if (!app.layers && !app.layersUrl) return { title: undefined, layers: [] };
   const hit = layerLists.get(appId);
   if (hit && Date.now() - hit.at < LAYER_LIST_TTL_MS) return hit.list;
+  if (app.ownerId) return loadApprovedLayers(app, hit);
   let json = app.layers;
   if (!json) {
     // The list must live on the app's own site
@@ -618,6 +622,25 @@ export async function loadAppLayers(appId) {
   return list;
 }
 
+// Self-service apps: users see only approved layer versions. A new or changed
+// layer in the app's list is checked automatically before it's shown.
+async function loadApprovedLayers(app, hit) {
+  let list = null;
+  try {
+    list = await fetchLayerList(app, { fetch, lookup: dns.lookup });
+  } catch (e) { console.warn("Layer list unavailable; serving approved layers", app.appId, e.message); }
+  const approved = await loadApproved(s3, app.appId);
+  const out = { title: list?.title, layers: visibleLayers(approved, list) };
+  if (list) {
+    try {
+      await appconnect.detectChanges(ddb, app, list, payload => lambda.send(new InvokeCommand({
+        FunctionName: APPCHECK_FUNCTION, InvocationType: "Event", Payload: Buffer.from(JSON.stringify(payload)) })));
+    } catch (e) { console.error("Change detection failed", app.appId, e); }
+  }
+  layerLists.set(app.appId, { at: Date.now(), list: out });
+  return out;
+}
+
 async function getAppLayers(appId) {
   const app = await getActiveApp(ddb, appId);
   const list = await loadAppLayers(appId);
@@ -629,7 +652,7 @@ async function relayLayer(appId, layerId) {
   const layer = list.layers.find(l => l.id === layerId);
   if (!layer) throw new HttpError(404, "Unknown layer");
   if (layer.delivery !== "relay") throw new HttpError(400, "This layer loads directly from its source");
-  const key = `overlays/v3/${appId}/${layerId}.geojson`;
+  const key = `overlays/v3/${appId}/${layerId}-${layerHash(layer)}.geojson`;   // a new approved version gets a new cache
   let fetchedAt, count;
   try {
     const head = await s3.send(new HeadObjectCommand({ Bucket: GEOMETRY_BUCKET, Key: key }));
@@ -648,6 +671,9 @@ async function relayLayer(appId, layerId) {
   const url = await getSignedUrl(s3, new GetObjectCommand({ Bucket: GEOMETRY_BUCKET, Key: key }), { expiresIn: 3600 });
   return { appId, layerId, url, fetchedAt, count };
 }
+
+const html = body => ({ statusCode: 200, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store",
+  "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action https://api.geovive.link", "X-Frame-Options": "DENY" }, body });
 
 // ------------------------------------------------------------------ router
 
@@ -695,6 +721,12 @@ export const handler = async (event) => {
         status = 202; break;
       case "GET /v1/appconnect/apps/{appId}/reports/{reportId}":
         result = await appconnect.reportLink(ddb, s3, await getCaller(event, { required: true }), p.appId, p.reportId); break;
+      case "GET /v1/appconnect/review":
+        return html(await appconnect.reviewPage(ddb, s3, event.queryStringParameters || {}));
+      case "POST /v1/appconnect/review": {
+        const raw = event.isBase64Encoded ? Buffer.from(event.body || "", "base64").toString("utf8") : (event.body || "");
+        return html(await appconnect.reviewDecision(ddb, s3, Object.fromEntries(new URLSearchParams(raw))));
+      }
       case "POST /v1/appconnect/stripe/webhook": {
         const raw = event.isBase64Encoded ? Buffer.from(event.body || "", "base64").toString("utf8") : (event.body || "");
         result = await appconnect.stripeWebhook(ddb, s3, raw, event.headers?.["stripe-signature"] || event.headers?.["Stripe-Signature"]);

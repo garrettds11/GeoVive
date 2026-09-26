@@ -267,7 +267,9 @@ Resources:
         - Statement:
             - Effect: Allow
               Action: secretsmanager:GetSecretValue
-              Resource: !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:geovive/stripe-*
+              Resource:
+                - !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:geovive/stripe-*
+                - !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:geovive/appconnect-*
             - Effect: Allow
               Action: [ses:SendEmail, ses:SendRawEmail]
               Resource: "*"
@@ -297,6 +299,8 @@ Resources:
         AppConnectGet:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/appconnect/apps/{appId}" } }
         AppConnectChecks: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/appconnect/apps/{appId}/checks" } }
         AppConnectReport: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/appconnect/apps/{appId}/reports/{reportId}" } }
+        ReviewPage:       { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /v1/appconnect/review, Auth: { Authorizer: NONE } } }
+        ReviewDecision:   { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: /v1/appconnect/review, Auth: { Authorizer: NONE } } }
         StripeWebhook:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: /v1/appconnect/stripe/webhook, Auth: { Authorizer: NONE } } }
         DeleteFeature:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: DELETE, Path: "/v1/datasets/{datasetId}/features/{featureId}" } }
 
@@ -330,7 +334,9 @@ Resources:
         - Statement:
             - Effect: Allow
               Action: secretsmanager:GetSecretValue
-              Resource: !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:geovive/stripe-*
+              Resource:
+                - !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:geovive/stripe-*
+                - !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:geovive/appconnect-*
             - Effect: Allow
               Action: [ses:SendEmail, ses:SendRawEmail]
               Resource: "*"

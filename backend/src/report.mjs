@@ -14,6 +14,7 @@ const C = {
 };
 const RESULT = {
   pass: { label: "PASS", fg: C.green, bg: C.greenSoft },
+  review: { label: "REVIEW", fg: C.blue, bg: C.blueSoft },
   note: { label: "NOTE", fg: C.amber, bg: C.amberSoft },
   fail: { label: "FAIL", fg: C.red, bg: C.redSoft }
 };
@@ -261,7 +262,11 @@ export async function validationReportPdf(app, checks, ctx) {
   const noteCount = checks.checks.filter(c => c.result === "note").length + checks.layers.filter(l => l.result === "note").length;
   const failed = checks.checks.filter(c => c.result === "fail");
   const failedLayers = checks.layers.filter(l => l.result === "fail");
-  if (checks.passed) {
+  if (ctx.mode === "layers") {
+    const o = ctx.outcome;
+    d.callout({ title: "Layer update checked", fg: o.rejected.length ? C.amber : C.green, bg: o.rejected.length ? C.amberSoft : C.greenSoft,
+      body: `${o.approved.length} approved and showing, ${o.review.length} waiting for a GeoVivé reviewer (up to 5 business days), ${o.rejected.length} not approved. Earlier approved versions keep showing until a change is approved.` });
+  } else if (checks.passed) {
     d.callout({ title: "All required checks passed", fg: C.green, bg: C.greenSoft,
       body: `${app.name} is ready to connect. ${n} of ${n} layers validated${noteCount ? `, with ${noteCount} note${noteCount > 1 ? "s" : ""} worth fixing (they don't block the connection)` : ""}. ` +
         (ctx.paymentUrl ? "Complete payment to start your one-year term." : "Your connection will be approved shortly.") });
@@ -297,7 +302,7 @@ export async function validationReportPdf(app, checks, ctx) {
     d.newPage();
     d.h1("Layer results");
     d.para("Each source was fetched from GeoVivé's servers from a public address. Feature counts are shapes with a label after simplification; time is the full fetch.", { size: 8, color: C.muted });
-    const rowBg = r => ({ note: C.amberSoft, fail: C.redSoft })[checks.layers[r].result];
+    const rowBg = r => ({ note: C.amberSoft, review: C.blueSoft, fail: C.redSoft })[checks.layers[r].result];
     d.table([
       { title: "Layer ID", width: 82, mono: true }, { title: "Name", width: 118 }, { title: "Group", width: 80 },
       { title: "Source", width: 48 }, { title: "Delivery", width: 48 }, { title: "Features", width: 48 },
@@ -319,6 +324,18 @@ export async function validationReportPdf(app, checks, ctx) {
   if (ctx.previewUrl && checks.passed) {
     d.h2("Preview");
     d.para(`See your layers exactly as your users will, in the AppConnect section of the Layers panel: ${ctx.previewUrl}`, { color: C.blue });
+  }
+
+  if (ctx.mode === "layers") {
+    d.h2("What happens next");
+    d.bullets([
+      "Approved layers are showing now in the AppConnect section for your users.",
+      "Layers marked REVIEW are shown after a GeoVivé reviewer approves them, within 5 business days. You'll get an email either way.",
+      "Layers marked FAIL aren't shown. Fix the issues listed above and republish your layer list; the change is checked automatically.",
+      "Until a change is approved, the previously approved version of that layer keeps showing."
+    ], { numbered: true });
+    d.para("Terms: geovive.link/docs/terms/appconnect  ·  Requirements: geovive.link/docs/developers/appconnect", { size: 8, color: C.blue });
+    return d.finish("This report reflects checks at the time shown. Your app's data remains yours.");
   }
 
   d.h2("Where your connection stands");

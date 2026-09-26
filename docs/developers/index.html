@@ -221,7 +221,7 @@ map.getSource("places").setData(collection);</code></pre>
           <li><code>direct</code>: the browser loads the source itself. Use it when the data's terms don't allow a cached copy; the source must allow browser (CORS) requests.</li>
         </ul>
       </li>
-      <li>GeoVivé re-reads the list every few minutes, and re-runs the connection checks weekly or whenever you ask. Changes on the app's site show up without anything changing in GeoVivé.</li>
+      <li>GeoVivé re-reads the list every few minutes and shows only <strong>approved</strong> layer versions. New or changed layers are checked automatically: passing ones show within minutes, ones a person must review within 5 business days. Checks also re-run weekly or whenever you ask.</li>
     </ul>
     <div class="table-wrap"><table>
       <tr><th>Method</th><th>Path</th><th>Description</th></tr>

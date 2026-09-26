@@ -17,7 +17,8 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 import { randomBytes, createHmac, timingSafeEqual } from "node:crypto";
 import { getAppRecord, setStatus, addEvent, listEvents, startTerm, isActive } from "./appstore.mjs";
-import { runChecks } from "./appcheck.mjs";
+import { runChecks, checkLayer, fetchLayerList } from "./appcheck.mjs";
+import { applyResults, changedLayers, changeKey, decide, signReview, verifyReview, businessDaysBetween, REVIEW_BUSINESS_DAYS } from "./approvals.mjs";
 import { validationReportPdf, liveNoticePdf, fmtDate } from "./report.mjs";
 import { sendMail, emailHtml } from "./mailer.mjs";
 
@@ -49,6 +50,17 @@ export async function stripeSettings() {
   return stripeCfg;
 }
 export function _setStripeSettings(v) { stripeCfg = v; }   // tests
+
+// Reviewer settings: { reviewKey, reviewerEmail }
+let reviewCfg;
+export async function reviewSettings() {
+  if (reviewCfg) return reviewCfg;
+  const res = await secrets.send(new GetSecretValueCommand({ SecretId: process.env.APPCONNECT_SECRET_ID || "geovive/appconnect" }));
+  reviewCfg = JSON.parse(res.SecretString);
+  return reviewCfg;
+}
+export function _setReviewSettings(v) { reviewCfg = v; }   // tests
+const API_BASE = process.env.API_BASE || "https://api.geovive.link";
 
 // ------------------------------------------------------------------ validation
 
@@ -201,6 +213,14 @@ export async function runAppChecks(ddb, s3, { appId, reportId }, net) {
       checks: [{ key: "internal", name: "Checks", result: "fail", detail: "GeoVivé couldn't finish the checks. Try again shortly." }] };
   }
 
+  let layerOutcome = { approved: [], review: [], rejected: [] };
+  if (checks.list) {
+    layerOutcome = await applyResults(ddb, s3, app, checks.layers, checks.list);
+    await ddb.send(new UpdateCommand({ TableName: APPS_TABLE, Key: { appId, sk: "APP" },
+      UpdateExpression: "SET layerCheckKey = :k", ExpressionAttributeValues: { ":k": changeKey(checks.list.layers) } }));
+    if (layerOutcome.review.length) await emailReviewer(ddb, app, checks.layers.filter(l => l.result === "review"));
+  }
+
   const stripe = await stripeSettings();
   let status = app.status, paymentUrl;
   if (wasActive) {
@@ -232,7 +252,7 @@ export async function runAppChecks(ddb, s3, { appId, reportId }, net) {
       : "SET lastReportId = :r, lastCheckAt = :t, lastChecksPassed = :p",
     ExpressionAttributeValues: { ":r": reportId, ":t": checks.at, ":p": checks.passed, ...(paymentUrl ? { ":u": paymentUrl } : {}) }
   }));
-  await addEvent(ddb, appId, { type: "checks", reportId, passed: checks.passed, summary,
+  await addEvent(ddb, appId, { type: "checks", reportId, passed: checks.passed, summary, layerOutcome,
     layers: checks.layers.length, failedLayers: checks.layers.filter(l => l.result === "fail").map(l => l.id) });
 
   const subject = checks.passed
@@ -340,10 +360,10 @@ function renewalUrl(stripe, app) {
 //   - re-checks sandbox/live apps whose last check is older than a week
 //   - sends renewal reminders 30 and 7 days before the term ends (once per term)
 //   - expires apps whose term has ended
-export async function runDaily(ddb, { now = Date.now(), invokeWorker }) {
+export async function runDaily(ddb, { now = Date.now(), invokeWorker, net }) {
   const stripe = await stripeSettings();
   const apps = [...await listByStatusSafe(ddb, "live"), ...await listByStatusSafe(ddb, "sandbox")].filter(a => a.ownerId);
-  const done = { rechecks: [], reminders: [], expired: [] };
+  const done = { rechecks: [], reminders: [], expired: [], layerChanges: [], reviewReminders: [] };
   for (const app of apps) {
     const ends = app.termEndsAt ? Date.parse(app.termEndsAt) : null;
 
@@ -386,6 +406,15 @@ export async function runDaily(ddb, { now = Date.now(), invokeWorker }) {
       }
     }
 
+    // New or changed layers on the app's site, even when nobody opened the map today
+    if (net) {
+      try {
+        const list = await fetchLayerList(app, net);
+        const d = await detectChanges(ddb, app, list, invokeWorker);
+        if (d) done.layerChanges.push(app.appId);
+      } catch (e) { console.warn("Daily list read failed", app.appId, e.message); }
+    }
+
     if (!app.lastCheckAt || now - Date.parse(app.lastCheckAt) >= RECHECK_DAYS * DAY) {
       const reportId = newId("VR");
       await addEvent(ddb, app.appId, { type: "scheduled-check", reportId });
@@ -393,6 +422,7 @@ export async function runDaily(ddb, { now = Date.now(), invokeWorker }) {
       done.rechecks.push(app.appId);
     }
   }
+  done.reviewReminders = await reviewReminders(ddb, apps.filter(a => !done.expired.includes(a.appId)), now);
   return done;
 }
 
@@ -407,4 +437,155 @@ async function listByStatusSafe(ddb, status) {
 async function safeMail(ddb, appId, what, msg) {
   try { await sendMail(msg); await addEvent(ddb, appId, { type: "email", what, to: msg.to }); }
   catch (e) { console.error("Email failed", appId, what, e); await addEvent(ddb, appId, { type: "email-failed", what, error: e.message }); }
+}
+
+
+// ------------------------------------------------------------------ layer changes and review
+
+// Called when an app's live list is read: queue checks for new or changed layers (once per change).
+export async function detectChanges(ddb, app, list, invokeWorker) {
+  const changed = changedLayers(app, list);
+  if (!changed.length) return null;
+  const key = changeKey(changed);
+  if (app.layerCheckKey === key) return null;
+  try {
+    await ddb.send(new UpdateCommand({ TableName: APPS_TABLE, Key: { appId: app.appId, sk: "APP" },
+      UpdateExpression: "SET layerCheckKey = :k", ConditionExpression: "attribute_not_exists(layerCheckKey) OR layerCheckKey <> :k",
+      ExpressionAttributeValues: { ":k": key } }));
+  } catch (e) { if (e.name === "ConditionalCheckFailedException") return null; throw e; }
+  const reportId = newId("VR");
+  await addEvent(ddb, app.appId, { type: "layer-change", reportId, layers: changed.map(l => l.id) });
+  await invokeWorker({ appId: app.appId, reportId, mode: "layers" });
+  return { reportId, layers: changed.map(l => l.id) };
+}
+
+// Worker: check only the new or changed layers, approve / send to review / reject, report to the owner.
+export async function runLayerReview(ddb, s3, { appId, reportId }, net) {
+  const app = await getAppRecord(ddb, appId, { fresh: true });
+  if (!app) return;
+  let list;
+  try { list = await fetchLayerList(app, net); }
+  catch (e) { await addEvent(ddb, appId, { type: "layer-review-skipped", reportId, error: e.message }); return { skipped: e.message }; }
+  const changed = changedLayers(app, list);
+  if (!changed.length) return { nothing: true };
+  const rows = [];
+  for (const l of changed) rows.push(await checkLayer(l, l, net));
+  const outcome = await applyResults(ddb, s3, app, rows, list);
+  if (outcome.review.length) await emailReviewer(ddb, app, rows.filter(r => r.result === "review"));
+
+  const at = new Date().toISOString();
+  const checks = { at, version: "AppConnect checks 1.0", passed: !outcome.rejected.length, layers: rows, notes: [], checks: [
+    { key: "approved", name: "Approved", result: "pass", detail: outcome.approved.length ? `Now showing: ${outcome.approved.join(", ")}` : "None in this update" },
+    { key: "review", name: "Human review", result: outcome.review.length ? "note" : "pass",
+      detail: outcome.review.length ? `Waiting for a GeoVivé reviewer (up to ${REVIEW_BUSINESS_DAYS} business days): ${outcome.review.join(", ")}` : "None needed" },
+    { key: "rejected", name: "Not approved", result: outcome.rejected.length ? "fail" : "pass",
+      detail: outcome.rejected.length ? `Fix and republish: ${outcome.rejected.join(", ")}. Earlier approved versions keep showing.` : "None" }
+  ] };
+  const pdf = await validationReportPdf(app, checks, { reportId, termsVersion: TERMS_VERSION, status: app.status,
+    statusLabel: STATUS_LABELS[app.status], mode: "layers", outcome });
+  await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: `appconnect/${appId}/${reportId}.pdf`, Body: pdf, ContentType: "application/pdf" }));
+  await ddb.send(new UpdateCommand({ TableName: APPS_TABLE, Key: { appId, sk: "APP" },
+    UpdateExpression: "SET lastReportId = :r", ExpressionAttributeValues: { ":r": reportId } }));
+  await addEvent(ddb, appId, { type: "layer-review", reportId, ...outcome });
+  const paras = [
+    `GeoVivé checked ${rows.length} new or changed layer${rows.length > 1 ? "s" : ""} from ${app.name}.`,
+    outcome.approved.length ? `Approved and now showing: ${outcome.approved.join(", ")}.` : "",
+    outcome.review.length ? `Waiting for a GeoVivé reviewer, up to ${REVIEW_BUSINESS_DAYS} business days: ${outcome.review.join(", ")}. Earlier approved versions keep showing meanwhile.` : "",
+    outcome.rejected.length ? `Not approved: ${outcome.rejected.join(", ")}. The attached report says why; fix them and republish your list.` : ""
+  ].filter(Boolean);
+  try {
+    await sendMail({ to: app.contactEmail, subject: `Layer update for ${app.name}: ${outcome.approved.length} approved, ${outcome.review.length} in review, ${outcome.rejected.length} not approved`,
+      text: paras.join("\n\n"), html: emailHtml({ heading: "Your layer update was checked", paragraphs: paras,
+        button: { label: "Open AppConnect", url: `${SITE}/appconnect/?app=${appId}` } }),
+      attachment: { filename: `${reportId}.pdf`, content: pdf } });
+  } catch (e) { console.error("Layer review email failed", e); }
+  return outcome;
+}
+
+async function reviewLink(app, row, exp) {
+  const { reviewKey } = await reviewSettings();
+  const q = { appId: app.appId, layerId: row.id, hash: row.hash, exp: String(exp) };
+  q.sig = signReview(reviewKey, q);
+  return `${API_BASE}/v1/appconnect/review?${new URLSearchParams(q)}`;
+}
+
+export async function emailReviewer(ddb, app, rows, { reminder = false } = {}) {
+  const { reviewerEmail } = await reviewSettings();
+  const exp = Math.floor(Date.now() / 1000) + 30 * 86400;
+  const items = [];
+  for (const r of rows) items.push({ r, url: await reviewLink(app, r, exp) });
+  const heading = `${reminder ? "Reminder: " : ""}${rows.length} layer${rows.length > 1 ? "s" : ""} from ${app.name} need${rows.length > 1 ? "" : "s"} review`;
+  const html = emailHtml({ heading,
+    paragraphs: [`App ${app.appId} (${app.domain}), contact ${app.contactEmail}. The owner was told review takes up to ${REVIEW_BUSINESS_DAYS} business days.`,
+      ...items.map(({ r }) => `${r.id} — ${r.name}: ${r.issues.join("; ")}`)],
+    button: items.length === 1 ? { label: "Review layer", url: items[0].url } : undefined })
+    .replace("</h1>", `</h1>${items.length > 1 ? items.map(({ r, url }) => `<p><a href="${url}">Review ${r.id}</a></p>`).join("") : ""}`);
+  try {
+    await sendMail({ to: reviewerEmail, subject: `${reminder ? "Reminder: " : ""}AppConnect review needed — ${app.name} (${rows.length})`,
+      text: items.map(({ r, url }) => `${r.id} (${r.name}): ${r.issues.join("; ")}\nReview: ${url}`).join("\n\n"), html });
+    await addEvent(ddb, app.appId, { type: "email", what: reminder ? "review reminder" : "review request", to: "reviewer", layers: rows.map(r => r.id) });
+  } catch (e) { console.error("Reviewer email failed", e); }
+}
+
+const page = (title, body) => `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escHtml(title)}</title>
+<style>body{font-family:system-ui,sans-serif;background:#020617;color:#e5e7eb;max-width:720px;margin:40px auto;padding:0 16px}h1{font-size:20px}
+.card{border:1px solid #1f2937;border-radius:8px;padding:14px;margin:12px 0}button{font:inherit;padding:9px 14px;border-radius:6px;border:0;margin-right:8px;cursor:pointer}
+.ok{background:#22c55e;color:#02130a}.no{background:#ef4444;color:#fff}code{background:#0f172a;padding:1px 4px;border-radius:4px}li{margin:4px 0}</style></head><body>${body}</body></html>`;
+function escHtml(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]); }
+
+// GET: show the pending layer and its findings with Approve / Reject buttons.
+export async function reviewPage(ddb, s3, q) {
+  const { reviewKey } = await reviewSettings();
+  if (!verifyReview(reviewKey, q)) return page("Link expired", "<h1>This review link is invalid or expired</h1>");
+  const app = await getAppRecord(ddb, q.appId, { fresh: true });
+  const st = app?.layerState?.[q.layerId];
+  if (!st || st.hash !== q.hash || st.state !== "review") return page("Already decided", `<h1>Nothing to review</h1><p>This layer version is ${escHtml(st?.state || "no longer listed")}.</p>`);
+  const res = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: `appconnect/${q.appId}/pending/${q.layerId}-${q.hash}.json` }));
+  const pending = JSON.parse(await res.Body.transformToString());
+  const L = pending.layer;
+  const hidden = ["appId", "layerId", "hash", "exp", "sig"].map(k => `<input type="hidden" name="${k}" value="${escHtml(q[k])}">`).join("");
+  return page(`Review ${q.layerId}`, `<h1>Review layer <code>${escHtml(q.layerId)}</code> from ${escHtml(app.name)}</h1>
+<div class="card"><p><strong>${escHtml(L.name)}</strong> · ${escHtml(L.group || "")}</p><p>${escHtml(L.description || "")}</p>
+<ul><li>Source: <code>${escHtml(L.source.url)}</code> (${escHtml(L.source.type)}, ${escHtml(L.delivery)})</li><li>Label: <code>${escHtml(L.label)}</code></li>
+<li>Shown fields: ${escHtml(Object.entries(L.fields || {}).map(([k, v]) => `${k} → ${v}`).join(", ") || "none")}</li>
+<li>Attribution: ${escHtml(L.attribution)} · License: ${escHtml(L.license)}</li><li>Shapes: ${escHtml(pending.features)}</li></ul></div>
+<div class="card"><strong>Findings</strong><ul>${pending.findings.map(f => `<li>${escHtml(f)}</li>`).join("")}</ul></div>
+<p>App ${escHtml(app.appId)} · ${escHtml(app.domain)} · contact ${escHtml(app.contactEmail)} · waiting ${businessDaysBetween(st.at)} business day(s)</p>
+<form method="post" action="${API_BASE}/v1/appconnect/review">${hidden}
+<button class="ok" name="decision" value="approve">Approve and show</button><button class="no" name="decision" value="reject">Reject</button></form>`);
+}
+
+// POST: record the decision and tell the owner.
+export async function reviewDecision(ddb, s3, form) {
+  const { reviewKey } = await reviewSettings();
+  if (!verifyReview(reviewKey, form) || !["approve", "reject"].includes(form.decision)) return page("Invalid", "<h1>This review link is invalid or expired</h1>");
+  const app = await getAppRecord(ddb, form.appId, { fresh: true });
+  const r = await decide(ddb, s3, app, form.layerId, form.hash, form.decision, "GeoVivé reviewer");
+  if (r.stale) return page("Already decided", `<h1>Already decided</h1><p>This layer version is ${escHtml(r.state || "no longer listed")}.</p>`);
+  await addEvent(ddb, app.appId, { type: "layer-decision", layerId: form.layerId, decision: form.decision });
+  const approved = form.decision === "approve";
+  const text = approved ? `A GeoVivé reviewer approved ${form.layerId}. It's now showing for your users.`
+    : `A GeoVivé reviewer didn't approve ${form.layerId}. Check the findings in your last report, fix the layer and republish your list; the change will be checked again. Any earlier approved version keeps showing.`;
+  try {
+    await sendMail({ to: app.contactEmail, subject: `Layer ${form.layerId} ${approved ? "approved" : "not approved"} for ${app.name}`, text,
+      html: emailHtml({ heading: `Layer ${form.layerId} ${approved ? "approved" : "not approved"}`, paragraphs: [text],
+        button: { label: "Open AppConnect", url: `${SITE}/appconnect/?app=${app.appId}` } }) });
+  } catch (e) { console.error("Decision email failed", e); }
+  return page("Done", `<h1>${approved ? "Approved" : "Rejected"}: <code>${escHtml(form.layerId)}</code></h1><p>The owner has been emailed.</p>`);
+}
+
+// Daily: remind the reviewer about reviews waiting 3+ business days (once per layer version).
+export async function reviewReminders(ddb, apps, now = Date.now()) {
+  const sent = [];
+  for (const app of apps) {
+    const waiting = Object.entries(app.layerState || {}).filter(([, st]) => st.state === "review" && !st.reminded && businessDaysBetween(st.at, now) >= 3);
+    if (!waiting.length) continue;
+    await emailReviewer(ddb, app, waiting.map(([id, st]) => ({ id, name: id, hash: st.hash, issues: st.findings || [] })), { reminder: true });
+    const state = { ...app.layerState };
+    waiting.forEach(([id]) => { state[id] = { ...state[id], reminded: true }; });
+    await ddb.send(new UpdateCommand({ TableName: APPS_TABLE, Key: { appId: app.appId, sk: "APP" },
+      UpdateExpression: "SET layerState = :s", ExpressionAttributeValues: { ":s": state } }));
+    sent.push(app.appId);
+  }
+  return sent;
 }

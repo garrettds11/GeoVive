@@ -11,6 +11,7 @@
 // Network access is injected (fetch, resolveTxt, lookup) so tests can run offline.
 
 import { validateLayerList, buildLayer, LayerListError } from "./overlays.mjs";
+import { createHash } from "node:crypto";
 
 export const CHECKS_VERSION = "AppConnect checks 1.0";
 const SLOW_MS = 5000;
@@ -56,13 +57,91 @@ async function pool(items, n, fn) {
   return out;
 }
 
+// Patterns for personal information inside values (not just field names)
+const VALUE_PII = [
+  ["email address", /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i],
+  ["phone number", /(?:\+?1[\s.-]?)?\(?\b\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}\b/],
+  ["street address", /\b\d{1,6}\s+(?:[NSEW]\.?\s+)?[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\s(?:St|Street|Ave|Avenue|Rd|Road|Dr|Drive|Ln|Lane|Ct|Court|Blvd|Way|Pl|Place)\b/]
+];
+const MAX_FEATURES = 50_000;
+
+function coordsOk(geom) {
+  let ok = true;
+  const walk = c => { if (typeof c[0] === "number") { if (!(c[0] >= -180 && c[0] <= 180 && c[1] >= -90 && c[1] <= 90)) ok = false; } else c.forEach(walk); };
+  if (geom?.coordinates) walk(geom.coordinates);
+  (geom?.geometries || []).forEach(g => { if (!coordsOk(g)) ok = false; });
+  return ok;
+}
+
+// Check one layer. Results: pass, note (fine, with advice), review (a person must
+// look before it's shown), fail (can't be shown).
+export async function checkLayer(layer, rawLayer, net) {
+  const { fetch, lookup } = net;
+  const row = { id: layer.id, name: layer.name, group: layer.group, type: layer.source.type, delivery: layer.delivery, result: "pass", issues: [] };
+  const worse = r => { const order = { pass: 0, note: 1, review: 2, fail: 3 }; if (order[r] > order[row.result]) row.result = r; };
+  const run = await timed(async () => {
+    await publicHost(hostOf(layer.source.url), lookup);
+    return buildLayer(layer);
+  });
+  row.ms = run.ms;
+  if (run.error) { worse("fail"); row.issues.push(`Source didn't respond with shapes (${run.error.message})`); return row; }
+  const feats = run.value.features;
+  row.features = feats.length;
+  if (!row.features) { worse("fail"); row.issues.push("No shapes returned, or the label didn't fill in on any feature"); }
+  if (row.features > MAX_FEATURES) { worse("fail"); row.issues.push(`${row.features.toLocaleString("en-US")} shapes is over the ${MAX_FEATURES.toLocaleString("en-US")} limit; split the layer`); }
+  if (feats.some(f => !coordsOk(f.geometry))) { worse("fail"); row.issues.push("Some coordinates are outside valid longitude/latitude ranges"); }
+  if (run.ms > SLOW_MS) { worse("note"); row.issues.push(`Source took ${(run.ms / 1000).toFixed(1)} s${layer.delivery === "relay" ? "; relay caching hides this from users" : ""}`); }
+  if (layer.delivery === "direct") {
+    try {
+      const probe = layer.source.type === "arcgis" ? `${layer.source.url}?f=json` : layer.source.url;
+      const res = await fetch(probe, { headers: { Origin: "https://geovive.link" }, signal: AbortSignal.timeout(10_000) });
+      const acao = res.headers.get("access-control-allow-origin");
+      row.cors = acao === "*" || acao === "https://geovive.link";
+      if (!row.cors) { worse("fail"); row.issues.push("Direct layer's source doesn't allow browser requests from geovive.link (CORS)"); }
+    } catch (e) { worse("fail"); row.issues.push(`CORS check failed (${e.message})`); }
+  }
+  const pii = Object.keys(layer.fields || {}).filter(f => PII.test(f));
+  if (pii.length) { worse("fail"); row.issues.push(`Shown fields look like personal information: ${pii.join(", ")}`); }
+  // Values people will see: labels and shown fields, on up to 500 features
+  const found = new Map();
+  for (const f of feats.slice(0, 500)) {
+    for (const [k, v] of Object.entries(f.properties || {})) {
+      if (typeof v !== "string") continue;
+      for (const [what, re] of VALUE_PII) if (re.test(v) && !found.has(what)) found.set(what, k === "_label" ? "labels" : k);
+    }
+  }
+  if (found.size) { worse("review"); row.issues.push(`Values may contain personal information (${[...found].map(([w, k]) => `${w} in ${k}`).join(", ")}); a GeoVivé reviewer will look before it's shown`); }
+  if (GENERIC_LICENSE.test((rawLayer.license || "").trim())) {
+    worse("note");
+    row.issues.push(`License text “${rawLayer.license}” is generic; name the source's terms or link to them`);
+  }
+  row.hash = layerHash(layer);
+  return row;
+}
+
+// Fingerprint of a validated layer: any change to its settings is a new version.
+export function layerHash(layer) {
+  return createHash("sha256").update(JSON.stringify(layer)).digest("hex").slice(0, 16);
+}
+
+// Fetch and validate an app's layer list from its verified domain.
+export async function fetchLayerList(app, net) {
+  const host = hostOf(app.layersUrl);
+  if (!app.layersUrl?.startsWith("https://") || !onDomain(host, app.domain)) throw new Error(`The layer list must be served over HTTPS from ${app.domain}`);
+  await publicHost(host, net.lookup);
+  const res = await net.fetch(app.layersUrl, { redirect: "error", signal: AbortSignal.timeout(15_000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return validateLayerList(await res.json());
+}
+
 export async function runChecks(app, net) {
   const { fetch, resolveTxt, lookup } = net;
   const checks = [], layers = [], notes = [];
+  let list;
   const at = new Date().toISOString();
   const done = () => {
     const failed = checks.some(c => c.result === "fail") || layers.some(l => l.result === "fail");
-    return { at, version: CHECKS_VERSION, passed: !failed, checks, layers, notes };
+    return { at, version: CHECKS_VERSION, passed: !failed, checks, layers, notes, list };
   };
 
   // 1. Domain ownership
@@ -89,7 +168,7 @@ export async function runChecks(app, net) {
     checks.push(check("list", "Layer list", "fail", `The layer list must be served over HTTPS from ${app.domain}`));
     return done();
   }
-  let raw, list;
+  let raw;
   const got = await timed(async () => {
     await publicHost(listHost, lookup);
     const res = await fetch(app.layersUrl, { redirect: "error", signal: AbortSignal.timeout(15_000) });
@@ -122,35 +201,7 @@ export async function runChecks(app, net) {
       : "Every layer has a name, group, label, attribution and license"));
 
   // 3–5. Each source
-  const results = await pool(list.layers, 4, async layer => {
-    const row = { id: layer.id, name: layer.name, group: layer.group, type: layer.source.type, delivery: layer.delivery, result: "pass", issues: [] };
-    const run = await timed(async () => {
-      await publicHost(hostOf(layer.source.url), lookup);
-      return buildLayer(layer);
-    });
-    row.ms = run.ms;
-    if (run.error) { row.result = "fail"; row.issues.push(`Source didn't respond with shapes (${run.error.message})`); return row; }
-    row.features = run.value.features.length;
-    if (!row.features) { row.result = "fail"; row.issues.push("No shapes returned, or the label didn't fill in on any feature"); }
-    if (run.ms > SLOW_MS) { row.result = row.result === "fail" ? "fail" : "note"; row.issues.push(`Source took ${(run.ms / 1000).toFixed(1)} s${layer.delivery === "relay" ? "; relay caching hides this from users" : ""}`); }
-    if (layer.delivery === "direct") {
-      try {
-        const probe = layer.source.type === "arcgis" ? `${layer.source.url}?f=json` : layer.source.url;
-        const res = await fetch(probe, { headers: { Origin: "https://geovive.link" }, signal: AbortSignal.timeout(10_000) });
-        const acao = res.headers.get("access-control-allow-origin");
-        row.cors = acao === "*" || acao === "https://geovive.link";
-        if (!row.cors) { row.result = "fail"; row.issues.push("Direct layer's source doesn't allow browser requests from geovive.link (CORS)"); }
-      } catch (e) { row.result = "fail"; row.issues.push(`CORS check failed (${e.message})`); }
-    }
-    const pii = Object.keys(layer.fields || {}).filter(f => PII.test(f));
-    if (pii.length) { row.result = "fail"; row.issues.push(`Shown fields look like personal information: ${pii.join(", ")}`); }
-    const rawLayer = raw.layers.find(l => l.id === layer.id) || {};
-    if (GENERIC_LICENSE.test((rawLayer.license || "").trim())) {
-      if (row.result === "pass") row.result = "note";
-      row.issues.push(`License text “${rawLayer.license}” is generic; name the source's terms or link to them`);
-    }
-    return row;
-  });
+  const results = await pool(list.layers, 4, layer => checkLayer(layer, raw.layers.find(l => l.id === layer.id) || {}, net));
   layers.push(...results);
 
   const n = layers.length, ok = layers.filter(l => l.features > 0).length;
@@ -163,6 +214,11 @@ export async function runChecks(app, net) {
   const piiRows = layers.filter(l => l.issues.some(i => i.startsWith("Shown fields")));
   checks.push(check("pii", "Personal information", piiRows.length ? "fail" : "pass",
     piiRows.length ? `${piiRows.length} layer(s) show fields that look like personal information` : "No shown field looks like names, emails, phone numbers or addresses"));
+
+  const reviews = layers.filter(l => l.result === "review");
+  checks.push(check("review", "Human review", reviews.length ? "note" : "pass",
+    reviews.length ? `${reviews.length} layer(s) will be shown after a GeoVivé reviewer looks at them (up to 5 business days)`
+      : "No layer needs a person's review"));
 
   // Return addresses
   const bad = (app.returnOrigins || []).filter(o => { const h = hostOf(o); return !(o.startsWith("https://") && onDomain(h, app.domain)) && !/^http:\/\/localhost(:\d+)?$/.test(o); });

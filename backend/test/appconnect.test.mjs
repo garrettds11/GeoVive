@@ -43,13 +43,21 @@ function applyUpdate(u) {
   }
 }
 const s3objs = new Map();
-const s3 = { async send(c) { s3objs.set(c.input.Key, c.input.Body); return {}; } };
+const s3 = { async send(c) {
+  if (c.constructor.name === "GetObjectCommand") {
+    if (!s3objs.has(c.input.Key)) { const e = new Error("no"); e.name = "NoSuchKey"; throw e; }
+    const body = s3objs.get(c.input.Key);
+    return { Body: { transformToString: async () => Buffer.isBuffer(body) ? body.toString() : String(body) } };
+  }
+  s3objs.set(c.input.Key, c.input.Body); return {};
+} };
 const mails = [];
 const { SESv2Client } = await import("@aws-sdk/client-sesv2");
 SESv2Client.prototype.send = async c => { mails.push(Buffer.from(c.input.Content.Raw.Data).toString()); return { MessageId: "m" + mails.length }; };
 
 const ac = await import("../src/appconnect.mjs");
 const { runChecks, isPrivateAddress } = await import("../src/appcheck.mjs");
+ac._setReviewSettings({ reviewKey: "rk", reviewerEmail: "reviewer@example.com" });
 ac._setStripeSettings({ webhookSecret: "whsec_test", paymentLinkId: "plink_1", paymentLinkUrl: "https://buy.stripe.com/test_abc", feeDisplay: "$499.00 per year" });
 
 // ---- validation
@@ -158,7 +166,7 @@ console.log("appconnect tests passed:", mails.length, "emails,", s3objs.size, "P
   // 31 days before the end, last check recent: nothing to do
   rec.lastCheckAt = new Date(endMs - 37 * 86400000).toISOString();
   let d = await ac.runDaily(ddb, { now: endMs - 31 * 86400000, invokeWorker: inv });
-  assert.deepEqual(d, { rechecks: [], reminders: [], expired: [] });
+  assert.deepEqual(d, { rechecks: [], reminders: [], expired: [], layerChanges: [], reviewReminders: [] });
   // 29 days before: 30-day reminder, and a re-check (last check > 7 days ago)
   d = await ac.runDaily(ddb, { now: endMs - 29 * 86400000, invokeWorker: inv });
   assert.deepEqual(d.reminders, ["trail-maps:30"]); assert.deepEqual(d.rechecks, ["trail-maps"]);
@@ -184,4 +192,62 @@ console.log("appconnect tests passed:", mails.length, "emails,", s3objs.size, "P
   assert.equal(r2.status, "live");
   assert.ok(Date.parse(items.get(key("trail-maps", "APP")).termEndsAt) > endMs);
   console.log("daily upkeep tests passed");
+}
+
+// ---- approved layers: new and changed layers are checked before they show
+{
+  const { loadApproved, visibleLayers, verifyReview, businessDaysBetween } = await import("../src/approvals.mjs");
+  const { validateLayerList } = await import("../src/overlays.mjs");
+  let approved = await loadApproved(s3, "trail-maps", { fresh: true });
+  assert.deepEqual(Object.keys(approved.layers).sort(), ["owners", "trails"], "full checks approved passing layers");
+
+  // The owner publishes a new layer whose values contain an email address, and edits an existing one
+  list.layers.push({ id: "contacts", name: "Trail stewards", group: "Parks", attribution: "Example Parks", license: "CC BY 4.0",
+    source: { type: "geojson", url: "https://data.example.org/stewards.geojson" }, label: "{NAME}", fields: { NOTE: "Note" } });
+  list.layers[0].name = "Trails (2027)";
+  const stewards = { type: "FeatureCollection", features: [{ type: "Feature", properties: { NAME: "Ridge", NOTE: "call jo@example.com" },
+    geometry: { type: "Point", coordinates: [-105, 39] } }] };
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async (url, o) => String(url).includes("stewards") ? json(stewards) : prevFetch(url, o);
+
+  let app2 = await (await import("../src/appstore.mjs")).getAppRecord(ddb, "trail-maps", { fresh: true });
+  const vlist = validateLayerList(list);
+  const queued = [];
+  const d1 = await ac.detectChanges(ddb, app2, vlist, async p => queued.push(p));
+  assert.deepEqual(d1.layers.sort(), ["contacts", "trails"]);
+  app2 = await (await import("../src/appstore.mjs")).getAppRecord(ddb, "trail-maps", { fresh: true });
+  assert.equal(await ac.detectChanges(ddb, app2, vlist, async p => queued.push(p)), null, "same change queued once");
+  assert.equal(queued[0].mode, "layers");
+
+  // Until checks run, users still see the approved copies (old trails name, no contacts)
+  approved = await loadApproved(s3, "trail-maps", { fresh: true });
+  let vis = visibleLayers(approved, vlist);
+  assert.deepEqual(vis.map(l => l.name), ["Trails", "Owners"]);
+
+  const before = mails.length;
+  const outcome = await ac.runLayerReview(ddb, s3, queued[0], net);
+  assert.deepEqual(outcome, { approved: ["trails"], review: ["contacts"], rejected: [] });
+  approved = await loadApproved(s3, "trail-maps", { fresh: true });
+  vis = visibleLayers(approved, vlist);
+  assert.deepEqual(vis.map(l => l.name), ["Trails (2027)", "Owners"], "changed layer approved; flagged layer held");
+  const sent = mails.slice(before);
+  assert.ok(sent.some(m => m.includes("reviewer@example.com")), "reviewer emailed");
+  assert.ok(sent.some(m => m.includes("ops@example.com") && m.includes("application/pdf")), "owner gets the report");
+
+  // Reviewer opens the signed link and approves
+  const rev = sent.find(m => m.includes("reviewer@example.com"));
+  const plain = Buffer.from(rev.split("text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n")[1].split("\r\n--")[0].replace(/\r\n/g, ""), "base64").toString();
+  const link = new URL(plain.match(/Review: (\S+)/)[1]);
+  const q = Object.fromEntries(link.searchParams);
+  assert.ok(verifyReview("rk", q));
+  assert.ok(!verifyReview("rk", { ...q, layerId: "trails" }), "signature covers the layer");
+  const pageHtml = await ac.reviewPage(ddb, s3, q);
+  assert.match(pageHtml, /Approve and show/); assert.match(pageHtml, /email address in Note/i);
+  const done = await ac.reviewDecision(ddb, s3, { ...q, decision: "approve" });
+  assert.match(done, /Approved/);
+  approved = await loadApproved(s3, "trail-maps", { fresh: true });
+  assert.ok(approved.layers.contacts, "approved after review");
+  assert.match(await ac.reviewDecision(ddb, s3, { ...q, decision: "reject" }), /Already decided/);
+  assert.equal(businessDaysBetween("2026-09-25T10:00:00Z", Date.parse("2026-09-29T10:00:00Z")), 2, "Fri to Tue is 2 business days");
+  console.log("approved-layer tests passed");
 }
