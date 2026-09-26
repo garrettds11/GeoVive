@@ -118,6 +118,11 @@ function simplifyWith(g, tol) {
   }
 }
 
+// Simplify with a fixed tolerance (degrees); keeps the original if the shape would collapse.
+export function simplifyGeometry(g, tol) {
+  return simplifyWith(g, tol) || g;
+}
+
 // Simplify until the geometry fits in `target` bytes. Falls back to the bbox outline.
 export function simplifyToFit(g, target = PREVIEW_TARGET) {
   const [w, s, e, n] = bboxOf(g);

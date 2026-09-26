@@ -18,6 +18,7 @@ tags:
   - name: Features
   - name: Imports
   - name: Exports
+  - name: Overlays
 
 paths:
   /v1/datasets:
@@ -200,6 +201,36 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/relay/{sourceId}:
+    parameters:
+      - name: sourceId
+        in: path
+        required: true
+        schema: { type: string }
+        example: co-gmu
+    get:
+      tags: [Overlays]
+      summary: Relay an official overlay layer (hunting units and zones)
+      description: |
+        Returns a one-hour link to a cached, simplified GeoJSON file of an allow-listed
+        agency layer (refreshed daily). Each feature has properties._label plus readable fields.
+      security: [{}]
+      responses:
+        "200":
+          description: Link to the layer file
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  url: { type: string, format: uri }
+                  fetchedAt: { type: string, format: date-time }
+                  count: { type: integer, description: Present when the layer was just refreshed }
+                  source: { type: string, format: uri }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502": { description: The agency's service didn't respond }
 
   /v1/datasets/{datasetId}/exports:
     parameters:

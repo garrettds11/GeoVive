@@ -32,6 +32,7 @@
       <a href="#examples">Examples</a>
       <a href="#imports">Imports</a>
       <a href="#exports">Exports</a>
+      <a href="#relay">Overlay relay</a>
       <a href="#open-links">Open links</a>
       <a href="#connected-apps">Connected apps</a>
     </nav>
@@ -185,6 +186,9 @@ map.getSource("places").setData(collection);</code></pre>
       <li>KML keeps pin colors and puts properties in <code>ExtendedData</code>.</li>
       <li>GPX: points become waypoints and lines become tracks. Areas become tracks along their outer boundaries, since GPX has no areas.</li>
     </ul>
+
+    <h2 id="relay">Overlay relay</h2>
+    <p><code>GET /v1/relay/{sourceId}</code> (no sign-in) returns <code>{ id, url, fetchedAt, source }</code>. The <code>url</code> is a link, valid for an hour, to a compressed GeoJSON file of an official agency layer. The layer is simplified for display, has one readable <code>_label</code> per feature and readable field names, and is refreshed daily. Only sources on GeoVivé's list can be relayed: hunting units and zones for 16 US states and Canadian provinces (for example <code>co-gmu</code>, <code>id-gmu</code>, <code>ab-wmu</code>, <code>bc-wmu</code>). The full list is in <code>backend/src/overlays.mjs</code>.</p>
 
     <h2 id="open-links">Open in GeoVivé links</h2>
     <p>A registered app can send its signed-in users to their own GeoVivé map for one item in the app (for example, a hunt plan), then bring them back.</p>

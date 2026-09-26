@@ -12,15 +12,17 @@ import {
   QueryCommand, BatchWriteCommand, UpdateCommand
 } from "@aws-sdk/lib-dynamodb";
 import {
-  S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand,
+  S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand,
   ListObjectsV2Command, DeleteObjectsCommand
 } from "@aws-sdk/client-s3";
 import { CognitoJwtVerifier } from "aws-jwt-verify";
 import { randomUUID } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { getApp, originAllowed } from "./apps.mjs";
 import { FORMATS, render as renderExport, fileName as exportFileName } from "./export.mjs";
+import { SOURCES as OVERLAY_SOURCES, CACHE_MS as OVERLAY_CACHE_MS, buildOverlay } from "./overlays.mjs";
 import {
   GeometryError, validateGeometry, bboxOf, byteSize, simplifyToFit,
   INLINE_LIMIT, MAX_GEOMETRY
@@ -573,6 +575,33 @@ async function exportDataset(event, datasetId) {
   };
 }
 
+// ------------------------------------------------------------------ relay
+// Official overlay sources, fetched and simplified by the server, cached a day
+// in S3 (overlays/<id>.geojson). Returns a short-lived link to the cached file.
+
+async function relayOverlay(id) {
+  if (!Object.prototype.hasOwnProperty.call(OVERLAY_SOURCES, id)) throw new HttpError(404, "Unknown overlay");
+  const key = `overlays/v2/${id}.geojson`;   // bump the version to invalidate the cache
+  let fetchedAt;
+  try {
+    const head = await s3.send(new HeadObjectCommand({ Bucket: GEOMETRY_BUCKET, Key: key }));
+    if (Date.now() - head.LastModified.getTime() < OVERLAY_CACHE_MS) fetchedAt = head.LastModified.toISOString();
+  } catch { /* not cached yet */ }
+  let count;
+  if (!fetchedAt) {
+    let fc;
+    try { fc = await buildOverlay(id); }
+    catch (e) { console.error("Relay failed", id, e); throw new HttpError(502, `The source for this layer isn't responding (${e.message})`); }
+    await s3.send(new PutObjectCommand({
+      Bucket: GEOMETRY_BUCKET, Key: key, Body: gzipSync(JSON.stringify(fc)), ContentType: "application/geo+json",
+      ContentEncoding: "gzip", CacheControl: "public, max-age=3600"
+    }));
+    fetchedAt = fc.geovive.fetchedAt; count = fc.features.length;
+  }
+  const url = await getSignedUrl(s3, new GetObjectCommand({ Bucket: GEOMETRY_BUCKET, Key: key }), { expiresIn: 3600 });
+  return { id, url, fetchedAt, count, source: OVERLAY_SOURCES[id].url };
+}
+
 // ------------------------------------------------------------------ router
 
 export const handler = async (event) => {
@@ -596,6 +625,7 @@ export const handler = async (event) => {
       case "GET /v1/datasets/{datasetId}/features/{featureId}": result = await getFeature(event, p.datasetId, p.featureId); break;
       case "PUT /v1/datasets/{datasetId}/features/{featureId}": result = await updateFeature(event, p.datasetId, p.featureId); break;
       case "DELETE /v1/datasets/{datasetId}/features/{featureId}": result = await deleteFeature(event, p.datasetId, p.featureId); status = 204; break;
+      case "GET /v1/relay/{sourceId}": result = await relayOverlay(p.sourceId); break;
       case "POST /v1/datasets/{datasetId}/exports": result = await exportDataset(event, p.datasetId); break;
       case "POST /v1/datasets/{datasetId}/imports/upload-url": result = await createUploadUrl(event, p.datasetId); break;
       case "POST /v1/datasets/{datasetId}/imports": result = await startImport(event, p.datasetId); status = 202; break;

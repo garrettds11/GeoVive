@@ -696,6 +696,25 @@
 
     /* ---------- Layers panel ---------- */
     .layer-group-title { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0.6rem 0 0.3rem; }
+    details.layer-group > summary.layer-group-title { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 0.35rem; }
+    details.layer-group > summary.layer-group-title::-webkit-details-marker { display: none; }
+    details.layer-group > summary.layer-group-title::before {
+      content: ""; width: 0.35rem; height: 0.35rem; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
+      transform: rotate(-45deg); transition: transform 0.15s ease; flex: none;
+    }
+    details.layer-group[open] > summary.layer-group-title::before { transform: rotate(45deg); }
+    details.layer-group > summary .legend-count { text-transform: none; letter-spacing: 0; color: var(--accent1); }
+    .layer-actions { display: flex; align-items: center; gap: 0.5rem; font-size: 0.72rem; margin-top: 0.15rem; }
+    .layer-status { color: var(--muted); }
+    .layer-status[data-kind=error] { color: #f87171; }
+    .layer-toggle .legend-swatch { margin-right: 0.3rem; }
+    /* Overlay popups (scripts/vector-overlays.js) */
+    .ov-table { border-collapse: collapse; margin-top: 0.35rem; font-size: 0.75rem; width: 100%; }
+    .ov-table th { text-align: left; font-weight: 600; padding: 0.1rem 0.5rem 0.1rem 0; vertical-align: top; white-space: nowrap; opacity: 0.75; }
+    .ov-table td { padding: 0.1rem 0; vertical-align: top; overflow-wrap: anywhere; }
+    .ov-table details summary { cursor: pointer; }
+    .ov-table a { color: var(--accent1); }
+    .ov-source { margin-top: 0.45rem; font-size: 0.68rem; opacity: 0.65; }
     .layer-row { border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.35rem 0.5rem; margin-bottom: 0.35rem; }
     .layer-row label.layer-toggle { display: flex; align-items: center; gap: 0.4rem; font-size: 0.83rem; cursor: pointer; }
     .layer-meta { font-size: 0.72rem; color: var(--muted); margin: 0.2rem 0 0 1.35rem; }
