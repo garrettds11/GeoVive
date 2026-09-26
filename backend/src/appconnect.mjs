@@ -205,6 +205,7 @@ export async function runAppChecks(ddb, s3, { appId, reportId }, net) {
   let status = app.status, paymentUrl;
   if (wasActive) {
     if (!checks.passed && app.status === "live") { await setStatus(ddb, appId, "live", "sandbox", { reportId, reason: "re-check failed" }); status = "sandbox"; }
+    else if (checks.passed && app.status === "sandbox" && app.termEndsAt) { await setStatus(ddb, appId, "sandbox", "live", { reportId, reason: "re-check passed" }); status = "live"; }
   } else if (checks.passed) {
     await setStatus(ddb, appId, "verifying", "checks_passed", { reportId });
     const u = new URL(stripe.paymentLinkUrl);
@@ -320,4 +321,90 @@ export async function stripeWebhook(ddb, s3, raw, signature) {
     });
   } catch (e) { console.error("Live email failed", e); }
   return { appId, status: app2.status, termEndsAt: ends };
+}
+
+// ------------------------------------------------------------------ daily upkeep
+
+const RECHECK_DAYS = 7;
+const DAY = 86400_000;
+const REMINDERS = [30, 7];
+
+function renewalUrl(stripe, app) {
+  const u = new URL(stripe.paymentLinkUrl);
+  u.searchParams.set("client_reference_id", app.appId);
+  u.searchParams.set("prefilled_email", app.contactEmail);
+  return u.toString();
+}
+
+// Runs once a day (EventBridge schedule):
+//   - re-checks sandbox/live apps whose last check is older than a week
+//   - sends renewal reminders 30 and 7 days before the term ends (once per term)
+//   - expires apps whose term has ended
+export async function runDaily(ddb, { now = Date.now(), invokeWorker }) {
+  const stripe = await stripeSettings();
+  const apps = [...await listByStatusSafe(ddb, "live"), ...await listByStatusSafe(ddb, "sandbox")].filter(a => a.ownerId);
+  const done = { rechecks: [], reminders: [], expired: [] };
+  for (const app of apps) {
+    const ends = app.termEndsAt ? Date.parse(app.termEndsAt) : null;
+
+    if (ends && ends <= now) {
+      await setStatus(ddb, app.appId, app.status, "expired", { reason: "term ended" });
+      const url = renewalUrl(stripe, app);
+      await safeMail(ddb, app.appId, "expiry notice", {
+        to: app.contactEmail, subject: `${app.name}'s GeoVivé connection has expired`,
+        text: `Your AppConnect term ended on ${fmtDate(app.termEndsAt)}, so your layers no longer show in GeoVivé.\n\nRenew to reconnect: ${url}`,
+        html: emailHtml({ heading: "Your connection has expired", paragraphs: [
+          `${app.name}'s AppConnect term ended on ${fmtDate(app.termEndsAt)}, so your layers no longer show in GeoVivé.`,
+          `Renew (${stripe.feeDisplay}) to reconnect. Your app record is kept for 90 days, so you won't need to sign up again.`
+        ], button: { label: "Renew now", url } })
+      });
+      done.expired.push(app.appId);
+      continue;
+    }
+
+    if (ends) {
+      const daysLeft = Math.ceil((ends - now) / DAY);
+      for (const d of REMINDERS) {
+        const flag = `reminded${d}`;
+        if (daysLeft <= d && app[flag] !== app.termEndsAt && !(d === 30 && daysLeft <= 7)) {
+          const url = renewalUrl(stripe, app);
+          await safeMail(ddb, app.appId, `${d}-day renewal reminder`, {
+            to: app.contactEmail, subject: `Renew ${app.name} on GeoVivé — ${daysLeft} day${daysLeft === 1 ? "" : "s"} left`,
+            text: `Your AppConnect connection for ${app.name} ends on ${fmtDate(app.termEndsAt)}.\n\nRenew (${stripe.feeDisplay}) to keep your layers showing; renewing early adds a year to your current end date.\n\n${url}`,
+            html: emailHtml({ heading: `${daysLeft} day${daysLeft === 1 ? "" : "s"} left on your connection`, paragraphs: [
+              `Your AppConnect connection for ${app.name} ends on ${fmtDate(app.termEndsAt)}.`,
+              `Renew (${stripe.feeDisplay}) and accept the current ${TERMS_VERSION} to keep your layers showing. Renewing early adds a year to your current end date.`
+            ], button: { label: "Renew now", url } })
+          });
+          await ddb.send(new UpdateCommand({ TableName: APPS_TABLE, Key: { appId: app.appId, sk: "APP" },
+            UpdateExpression: `SET ${flag} = :e`, ExpressionAttributeValues: { ":e": app.termEndsAt } }));
+          if (d === 7) await ddb.send(new UpdateCommand({ TableName: APPS_TABLE, Key: { appId: app.appId, sk: "APP" },
+            UpdateExpression: "SET reminded30 = :e", ExpressionAttributeValues: { ":e": app.termEndsAt } }));
+          done.reminders.push(`${app.appId}:${d}`);
+          break;
+        }
+      }
+    }
+
+    if (!app.lastCheckAt || now - Date.parse(app.lastCheckAt) >= RECHECK_DAYS * DAY) {
+      const reportId = newId("VR");
+      await addEvent(ddb, app.appId, { type: "scheduled-check", reportId });
+      await invokeWorker({ appId: app.appId, reportId });
+      done.rechecks.push(app.appId);
+    }
+  }
+  return done;
+}
+
+async function listByStatusSafe(ddb, status) {
+  const res = await ddb.send(new QueryCommand({
+    TableName: APPS_TABLE, IndexName: "byStatus", KeyConditionExpression: "#s = :s",
+    ExpressionAttributeNames: { "#s": "status" }, ExpressionAttributeValues: { ":s": status }
+  }));
+  return (res.Items || []).filter(i => i.sk === "APP");
+}
+
+async function safeMail(ddb, appId, what, msg) {
+  try { await sendMail(msg); await addEvent(ddb, appId, { type: "email", what, to: msg.to }); }
+  catch (e) { console.error("Email failed", appId, what, e); await addEvent(ddb, appId, { type: "email-failed", what, error: e.message }); }
 }

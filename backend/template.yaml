@@ -310,6 +310,13 @@ Resources:
       Handler: appworker.handler
       MemorySize: 2048
       Timeout: 900
+      Events:
+        Daily:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: cron(0 15 * * ? *)
+            Input: '{"task":"daily"}'
+            Description: AppConnect re-checks, renewal reminders and expiry
       Environment:
         Variables:
           APPS_TABLE: !Ref AppsTable
@@ -319,6 +326,7 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref AppsTable }
         - S3CrudPolicy: { BucketName: !Ref GeometryBucket }
+        - LambdaInvokePolicy: { FunctionName: !Sub "geovive-${Env}-appcheck" }
         - Statement:
             - Effect: Allow
               Action: secretsmanager:GetSecretValue

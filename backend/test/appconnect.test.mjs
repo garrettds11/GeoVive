@@ -17,6 +17,7 @@ const ddb = { async send(c) {
   if (n === "QueryCommand") {
     const v = i.ExpressionAttributeValues; let all = [...items.values()];
     if (i.IndexName === "byOwner") all = all.filter(x => x.ownerId === v[":o"]);
+    else if (i.IndexName === "byStatus") all = all.filter(x => x.sk === "APP" && x.status === v[":s"]);
     else all = all.filter(x => x.appId === v[":a"] && x.sk.startsWith(v[":e"])).sort((a, b) => b.sk.localeCompare(a.sk));
     return i.Select === "COUNT" ? { Count: all.length } : { Items: all.map(x => structuredClone(x)) };
   }
@@ -146,3 +147,41 @@ const sig2 = `t=${t},v1=${createHmac("sha256", "whsec_test").update(`${t}.${othe
 assert.ok((await ac.stripeWebhook(ddb, s3, other, sig2)).ignored);
 
 console.log("appconnect tests passed:", mails.length, "emails,", s3objs.size, "PDFs");
+
+// ---- daily upkeep: reminders, re-checks, expiry
+{
+  const rec = items.get(key("trail-maps", "APP"));
+  const endMs = Date.parse(rec.termEndsAt);
+  const invoked2 = [];
+  const inv = async p => invoked2.push(p);
+  const before = mails.length;
+  // 31 days before the end, last check recent: nothing to do
+  rec.lastCheckAt = new Date(endMs - 37 * 86400000).toISOString();
+  let d = await ac.runDaily(ddb, { now: endMs - 31 * 86400000, invokeWorker: inv });
+  assert.deepEqual(d, { rechecks: [], reminders: [], expired: [] });
+  // 29 days before: 30-day reminder, and a re-check (last check > 7 days ago)
+  d = await ac.runDaily(ddb, { now: endMs - 29 * 86400000, invokeWorker: inv });
+  assert.deepEqual(d.reminders, ["trail-maps:30"]); assert.deepEqual(d.rechecks, ["trail-maps"]);
+  const plain = Buffer.from(mails.at(-1).split("text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n")[1].split("\r\n--")[0].replace(/\r\n/g, ""), "base64").toString();
+  assert.match(plain, /client_reference_id=trail-maps/);
+  // next day: no duplicate reminder
+  d = await ac.runDaily(ddb, { now: endMs - 28 * 86400000, invokeWorker: inv });
+  assert.deepEqual(d.reminders, []);
+  // 6 days before: 7-day reminder once
+  d = await ac.runDaily(ddb, { now: endMs - 6 * 86400000, invokeWorker: inv });
+  assert.deepEqual(d.reminders, ["trail-maps:7"]);
+  d = await ac.runDaily(ddb, { now: endMs - 5 * 86400000, invokeWorker: inv });
+  assert.deepEqual(d.reminders, []);
+  // after the end: expired, layers stop
+  d = await ac.runDaily(ddb, { now: endMs + 1000, invokeWorker: inv });
+  assert.deepEqual(d.expired, ["trail-maps"]);
+  assert.equal(items.get(key("trail-maps", "APP")).status, "expired");
+  assert.equal(mails.length - before, 3, "30-day, 7-day and expiry emails");
+  // renewal payment brings it back live with a new year
+  const b2 = JSON.stringify({ type: "checkout.session.completed", data: { object: { ...session, id: "cs_renew" } } });
+  const s2 = `t=${t},v1=${createHmac("sha256", "whsec_test").update(`${t}.${b2}`).digest("hex")}`;
+  const r2 = await ac.stripeWebhook(ddb, s3, b2, s2);
+  assert.equal(r2.status, "live");
+  assert.ok(Date.parse(items.get(key("trail-maps", "APP")).termEndsAt) > endMs);
+  console.log("daily upkeep tests passed");
+}
