@@ -83,3 +83,6 @@ amplifyconfiguration*
 config.js
 # internal docs
 internal-doc_*
+
+# Local working files from Claude sessions
+Claude outputs/
