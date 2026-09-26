@@ -1,0 +1,10 @@
+version = 0.1
+
+[dev.deploy.parameters]
+stack_name = "geovive-dev-backend"
+region = "us-east-1"
+s3_bucket = "geovive-deploy-666993265047-us-east-1"
+s3_prefix = "backend/dev"
+capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND"
+parameter_overrides = "Env=dev"
+tags = "project=geovive env=dev"

@@ -1,0 +1,186 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: GeoVive backend — datasets + features API (HTTP API, Lambda, DynamoDB)
+
+Parameters:
+  Env:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+  UserPoolId:
+    Type: String
+    Default: us-east-1_cLqbEZJhi
+  UserPoolClientId:
+    Type: String
+    Default: hfchi8fm98nberrcj43ge2ipu
+  AllowedOrigins:
+    Type: CommaDelimitedList
+    Default: https://geovive.link,https://www.geovive.link,https://dev.geovive.link,https://dev.d24kp6zzj6jjwt.amplifyapp.com,http://localhost:8080
+  ApiDomainName:
+    Type: String
+    Default: api.geovive.link
+  CertificateArn:
+    Type: String
+    Default: arn:aws:acm:us-east-1:666993265047:certificate/053f3d9a-dec0-4d35-b5f6-51b530fcd9ac
+  HostedZoneId:
+    Type: String
+    Default: Z0318749XVX1CEI14FGK
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures: [arm64]
+    MemorySize: 256
+    Timeout: 10
+    Tags:
+      project: geovive
+      env: !Ref Env
+
+Resources:
+  DatasetsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub geovive-${Env}-datasets
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: datasetId, AttributeType: S }
+        - { AttributeName: visibility, AttributeType: S }
+        - { AttributeName: ownerId, AttributeType: S }
+      KeySchema:
+        - { AttributeName: datasetId, KeyType: HASH }
+      GlobalSecondaryIndexes:
+        - IndexName: byVisibility
+          KeySchema: [{ AttributeName: visibility, KeyType: HASH }]
+          Projection: { ProjectionType: ALL }
+        - IndexName: byOwner
+          KeySchema: [{ AttributeName: ownerId, KeyType: HASH }]
+          Projection: { ProjectionType: ALL }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      Tags:
+        - { Key: project, Value: geovive }
+        - { Key: env, Value: !Ref Env }
+
+  FeaturesTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub geovive-${Env}-features
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: datasetId, AttributeType: S }
+        - { AttributeName: featureId, AttributeType: S }
+      KeySchema:
+        - { AttributeName: datasetId, KeyType: HASH }
+        - { AttributeName: featureId, KeyType: RANGE }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      Tags:
+        - { Key: project, Value: geovive }
+        - { Key: env, Value: !Ref Env }
+
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref Env
+      Tags:
+        project: geovive
+        env: !Ref Env
+      Domain:
+        DomainName: !Ref ApiDomainName
+        CertificateArn: !Ref CertificateArn
+        EndpointConfiguration: REGIONAL
+        Route53:
+          HostedZoneId: !Ref HostedZoneId
+      CorsConfiguration:
+        AllowOrigins: !Ref AllowedOrigins
+        AllowHeaders: [authorization, content-type]
+        AllowMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+        MaxAge: 600
+      Auth:
+        DefaultAuthorizer: CognitoJwt
+        Authorizers:
+          CognitoJwt:
+            IdentitySource: $request.header.Authorization
+            JwtConfiguration:
+              issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPoolId}
+              audience: [!Ref UserPoolClientId]
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub geovive-${Env}-api
+      CodeUri: dist/
+      Handler: index.handler
+      Environment:
+        Variables:
+          DATASETS_TABLE: !Ref DatasetsTable
+          FEATURES_TABLE: !Ref FeaturesTable
+          USER_POOL_ID: !Ref UserPoolId
+          USER_POOL_CLIENT_ID: !Ref UserPoolClientId
+          ALLOWED_ORIGINS: !Join [",", !Ref AllowedOrigins]
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref DatasetsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref FeaturesTable }
+      Events:
+        # Public reads (visibility enforced in the handler)
+        ListDatasets:     { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /v1/datasets, Auth: { Authorizer: NONE } } }
+        GetDataset:       { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/datasets/{datasetId}", Auth: { Authorizer: NONE } } }
+        ListFeatures:     { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/datasets/{datasetId}/features", Auth: { Authorizer: NONE } } }
+        GetFeature:       { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/datasets/{datasetId}/features/{featureId}", Auth: { Authorizer: NONE } } }
+        # Authenticated writes (ownership enforced in the handler)
+        CreateDataset:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: /v1/datasets } }
+        UpdateDataset:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: PATCH, Path: "/v1/datasets/{datasetId}" } }
+        DeleteDataset:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: DELETE, Path: "/v1/datasets/{datasetId}" } }
+        CreateFeature:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/datasets/{datasetId}/features" } }
+        UpdateFeature:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: PUT, Path: "/v1/datasets/{datasetId}/features/{featureId}" } }
+        DeleteFeature:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: DELETE, Path: "/v1/datasets/{datasetId}/features/{featureId}" } }
+
+  PreSignUpFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub geovive-${Env}-presignup
+      Description: Cognito pre sign-up trigger that links sign-in methods sharing an email
+      CodeUri: dist/
+      Handler: presignup.handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cognito-idp:ListUsers
+                - cognito-idp:AdminLinkProviderForUser
+                - cognito-idp:AdminDeleteUser
+              Resource: !Sub arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}
+
+  PreSignUpPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt PreSignUpFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: cognito-idp.amazonaws.com
+      SourceArn: !Sub arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}
+
+  PreSignUpLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/geovive-${Env}-presignup
+      RetentionInDays: 30
+
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/geovive-${Env}-api
+      RetentionInDays: 30
+
+Outputs:
+  ApiCustomUrl:
+    Value: !Sub https://${ApiDomainName}
+  ApiUrl:
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${Env}
+  DatasetsTableName:
+    Value: !Ref DatasetsTable
+  FeaturesTableName:
+    Value: !Ref FeaturesTable
+  PreSignUpFunctionArn:
+    Value: !GetAtt PreSignUpFunction.Arn

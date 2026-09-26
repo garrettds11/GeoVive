@@ -1,0 +1,17 @@
+version: 1
+frontend:
+  phases:
+    build:
+      commands:
+        - npm run build
+  artifacts:
+    baseDirectory: .
+    files:
+      - index.html
+      - config.js
+      - manifest.json
+      - browserconfig.xml
+      - "CSS template.css"
+      - assets/**/*
+      - scripts/**/*
+      - docs/**/*

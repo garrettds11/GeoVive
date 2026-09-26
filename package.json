@@ -1,0 +1,7 @@
+{
+  "name": "geovive",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build-config.mjs"
+  }
+}

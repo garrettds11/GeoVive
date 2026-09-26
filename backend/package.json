@@ -1,0 +1,17 @@
+{
+  "name": "geovive-backend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/handler.mjs --bundle --platform=node --target=node22 --format=esm --external:@aws-sdk/* --outfile=dist/index.mjs && cp src/presignup.mjs dist/presignup.mjs"
+  },
+  "dependencies": {
+    "aws-jwt-verify": "^5.1.0"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.1141.0",
+    "@aws-sdk/client-dynamodb": "^3.700.0",
+    "@aws-sdk/lib-dynamodb": "^3.700.0",
+    "esbuild": "^0.25.0"
+  }
+}

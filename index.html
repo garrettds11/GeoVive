@@ -1,0 +1,1257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>GeoVivé – Maps Made For You</title>
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <link rel="apple-touch-icon" sizes="57x57" href="./assets/apple-icon-57x57.png">
+  <link rel="apple-touch-icon" sizes="60x60" href="./assets/apple-icon-60x60.png">
+  <link rel="apple-touch-icon" sizes="72x72" href="./assets/apple-icon-72x72.png">
+  <link rel="apple-touch-icon" sizes="76x76" href="./assets/apple-icon-76x76.png">
+  <link rel="apple-touch-icon" sizes="114x114" href="./assets/apple-icon-114x114.png">
+  <link rel="apple-touch-icon" sizes="120x120" href="./assets/apple-icon-120x120.png">
+  <link rel="apple-touch-icon" sizes="144x144" href="./assets/apple-icon-144x144.png">
+  <link rel="apple-touch-icon" sizes="152x152" href="./assets/apple-icon-152x152.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="./assets/apple-icon-180x180.png">
+  <link rel="icon" type="image/png" sizes="192x192"  href="./assets/android-icon-192x192.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="./assets/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="96x96" href="./assets/favicon-96x96.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="./assets/favicon-16x16.png">
+  <!--link rel="manifest" href="./assets/manifest.json"-->
+  <meta name="msapplication-TileColor" content="#ffffff">
+  <meta name="msapplication-TileImage" content="./assets/ms-icon-144x144.png">
+  <meta name="theme-color" content="#ffffff">
+  <!--link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌎</text></svg>"-->
+
+  <script src="./config.js"></script>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "oidc-client-ts": "https://cdn.jsdelivr.net/npm/oidc-client-ts@3.4.1/+esm"
+      }
+    }
+  </script>
+
+  <!-- Mapbox GL JS CSS & GEOCODER assets -->
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.17.0-beta.1/mapbox-gl.css" rel="stylesheet" />
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.17.0-beta.1/mapbox-gl.js"></script>
+  <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.min.js"></script>
+  <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.css" />
+
+  <style>
+    :root {
+      --bg: #0f172a;
+      --bg-alt: #020617;
+      --panel-bg: #020617;
+      --accent1: #22c55e;
+      --accent2: #e9da0e;
+      --accent3: #2284c58e;
+      --accent4: #144d78;
+      --accent-soft: rgba(34, 197, 94, 0.12);
+      --accent-strong: rgba(34, 197, 94, 0.329);
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --border: #1f2937;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+    }
+    
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow: auto;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr); /* tray | map */
+      min-height: 100vh;
+    }
+
+    body {
+      background: radial-gradient(circle at top left, #1e293b 0, #020617 40%, #000 100%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 0.75rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: linear-gradient(90deg, #020617, #030712);
+      flex: 0 0 auto;
+      flex-direction: column;
+    }
+
+    header h1 {
+      font-size: 1.5rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    header span {
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    .header-items {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    #title {
+      padding: 0.25em 0.25em 1em 0.25em;
+    }
+
+    .badge {
+      padding: 0.2rem 0.75rem;
+      border-radius: 999px;
+      border: 1px solid var(--accent-soft);
+      background: rgba(15, 23, 42, 0.9);
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    main {
+      flex: 1 1 auto;
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr); /* sidebar | map */
+      min-height: 0;
+    }
+
+    .auth-controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .auth-status {
+      font-size: 0.85rem;
+      opacity: 0.8;
+    }
+
+    /* Buttons */
+    .btn {
+      background: var(--accent3);
+      color: #e5e7eb;
+      padding: 4px 10px;
+      border: 1px solid #334155;
+      border-radius: 5px;
+      font-size: 0.8rem;
+      text-decoration: none;
+      transition: all 0.15s ease;
+    }
+
+    .btn.primary {
+      background: var(--accent1);
+      color: #111;
+    }
+
+    .btn-auth.ghost {
+      background: transparent;
+      border: 1px solid #555;
+      color: #f5f5f5;
+    }
+
+    .btn:hover, .btn.primary:hover {
+      background: var(--accent2);
+      color: #000;
+      border-color: #475569;
+    }
+
+    /* Modal */
+    .login-modal.hidden {
+      display: none;
+    }
+
+    .login-modal {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+    }
+
+    .login-modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+    }
+
+    .login-modal-content {
+      position: relative;
+      background: #1c1c1c;
+      border-radius: 12px;
+      padding: 20px 24px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+      color: #f5f5f5;
+      max-width: 360px;
+      width: 90%;
+    }
+
+    .login-modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    @media (max-width: 850px) {
+      main {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto minmax(0, 1fr);
+      }
+
+      header {
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+
+      .header-items {
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+
+      .mapboxgl-canvas {
+        position: relative !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+      }
+    }
+    
+    /* Desktop / default: header behaves normally */
+    #top-tray {
+      width: 100%;
+    }
+
+    /* Tray container on Desktop */
+    @media (min-width: 851px) {
+      .top-tray-container {
+        position: relative;
+        top: auto;
+        left: auto;
+        width: 100%;
+        transform: none !important;
+        box-shadow: none;
+        border-bottom: none;
+        border-right: 1px solid rgba(255,255,255,0.1);
+        background-color: #050814; /* your dark sidebar color */
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .tray-handle {
+        display: none; /* no handle on desktop */
+      }
+
+      .tray-content {
+        padding: 0.75rem 1rem 1rem;
+        overflow-y: auto;
+        height: 100%;
+      }
+    }
+
+    /* Mobile: turn header into a slide-down tray */
+    @media (max-width: 850px) {
+      .layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(0, 1fr); /* map spans */
+      }
+
+      .top-tray-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+
+        background-color: #050814;
+        border-bottom: 1px solid rgba(255,255,255,0.12);
+        box-shadow: 0 2px 5px rgba(0,0,0,0.6);
+
+        transform: translateY(0); /* open by default */
+        transition: transform 0.3s ease-in-out;
+        z-index: 1000;
+
+        max-height: 80vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* collapsed state: only handle visible */
+      .top-tray-container:not(.is-active) {
+        transform: translateY(calc(-100% + 52px)); /* 52px handle height */
+      }
+
+      .tray-handle {
+        height: 52px;
+        flex-shrink: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        cursor: pointer;
+        background-color: rgba(15,76,129,0.95);
+        border-bottom: 1px solid rgba(255,255,255,0.15);
+      }
+
+      /* Arrow points where the tray will move when tapped:
+         up while open (tap to close), down while closed (tap to open) */
+      .tray-arrow {
+        width: 28px;
+        height: 28px;
+        color: #fff;
+        transform: rotate(0deg);          /* points down: tray closed */
+        transition: transform 0.3s ease-in-out;
+      }
+      .top-tray-container.is-active .tray-arrow {
+        transform: rotate(180deg);        /* points up: tray open */
+      }
+      .tray-handle:focus-visible {
+        outline: 2px solid var(--accent1);
+        outline-offset: -4px;
+      }
+
+      .tray-content {
+        padding: 0.75rem 1rem 1rem;
+        overflow-y: auto;
+      }
+
+      /* Map fills behind the tray */
+      .map-wrapper {
+        grid-column: 1 / -1;
+        grid-row: 1;
+        min-height: 100vh;
+      }
+    }
+
+    /* Sidebar */
+    .sidebar {
+      background: radial-gradient(circle at top, #020617 0, #020617 40%, #000 100%);
+      border-right: 1px solid var(--border);
+      padding: 1rem 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    @media (max-width: 850px) {
+      .sidebar {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+    }
+
+    .sidebar h2 {
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+    }
+
+    .sidebar .hint {
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .filter-group {
+      border-radius: 0.75rem;
+      border: 1px solid var(--border);
+      background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), #020617);
+      padding: 0.75rem 0.75rem 0.5rem;
+    }
+
+    .filter-group h3 {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+    }
+
+    .filter-option {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      margin-bottom: 0.4rem;
+    }
+
+    .filter-option input {
+      accent-color: var(--accent3);
+    }
+
+    .filter-option label {
+      font-size: 0.85rem;
+      color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      cursor: pointer;
+    }
+
+    .legend {
+      margin-top: 0.35rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      margin-right: 0.6rem;
+    }
+
+    .legend-swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      display: inline-block;
+    }
+
+    .legend-swatch.events { background: #22c55e; }
+    .legend-swatch.locations { background: #3b82f6; }
+    .legend-swatch.alerts { background: #f97316; }
+
+    /*.feature-list {
+      flex: 1;
+      overflow-y: auto;
+      margin-top: 0.25rem;
+      max-height: 320px;
+      position: relative;
+    }
+
+    .feature-list::after {
+      content: "";
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 2em;
+      pointer-events: none;
+      background: linear-gradient(to bottom, var(--bg-alt), var(--bg), var(--accent3));
+      border-bottom-left-radius: 8px;
+      border-bottom-right-radius: 8px;
+    }*/
+
+    .feature-items-scroll {
+      max-height: 250px;        /* leaves room for the <summary> area */
+      overflow-y: auto;         /* scroll instead of growing forever */
+  
+      /* Hide scrollbar (Chrome, Edge, Safari) */
+      scrollbar-width: none;   /* Firefox */
+      -ms-overflow-style: none; /* IE/Edge Legacy */
+      margin-bottom: 2em;    /* space for the fade effect */
+    }
+
+    .feature-items-scroll::-webkit-scrollbar {
+      display: none; /* Chrome/Safari/Edge */
+    }
+
+    .feature-list-item {
+      padding: 0.55rem 0.55rem;
+      margin-bottom: 0.4rem;
+      border-radius: 0.6rem;
+      border: 1px solid rgba(31, 41, 55, 0.9);
+      background: radial-gradient(circle at top left, #020617 0, #020617 50%, #020617 100%);
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 0.1rem;
+      transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+    }
+
+    .feature-list-item:hover {
+      border-color: var(--accent-strong);
+      background: radial-gradient(circle at top left, #044939 0, #020617 60%, #020617 100%);
+      transform: translateY(-1px);
+    }
+
+    .feature-name {
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .feature-meta {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    summary {
+      padding-bottom: 1em;
+    }
+
+    /* Map container */
+    /* Map fills its wrapper */
+    #map {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      min-height: 320px;   /* floor height (esp. on mobile) */
+    }
+
+    .map-wrapper {
+      position: relative;
+      min-height: 0;
+    }
+
+    /* Map overlay / status */
+    .map-status {
+      position: absolute;
+      top: 0.75rem;
+      right: 0.75rem;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      align-items: flex-end;
+    }
+
+    .mapboxgl-canvas {
+      position: relative !important;
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    @media (max-width: 850px) {
+      /* The tray covers the top of the map on small screens, so show the
+         status pills at the bottom-right instead */
+      .map-status {
+        top: auto;
+        bottom: 2.25rem;
+      }
+      .map-wrapper {
+        min-height: 70vh;  /* keep at least half the screen for the map */
+      }
+    }
+
+    .status-pill {
+      padding: 0.25rem 0.7rem;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      font-size: 0.75rem;
+      color: var(--muted);
+      backdrop-filter: blur(5px);
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .status-dot {
+      width: 0px;
+      height: 0px;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 0 0 4px 4px rgba(34, 197, 94, 0.80);
+      padding-right: 1px;
+      margin-right: 5px;
+    }
+
+    .status-pill.ok {
+      color: inherit; /* #bbf7d0; light green text */
+      border-color: rgba(34, 197, 94, 0.4);
+    }
+
+    .status-pill.error {
+      color: #f8ce73; /* light red text */
+      border-color: rgba(248, 172, 73, 0.8);
+    }
+
+    .status-pill.error .status-dot {
+      background: #ef4444;
+      box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
+    }
+
+    .mapboxgl-popup {
+      max-width: 240px;
+      font-size: 0.8rem;
+    }
+
+    .mapboxgl-popup-content {
+      border-radius: 0.75rem;
+      padding: 0.75rem 0.9rem;
+      background: rgba(15, 23, 42, 0.98);
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      color: var(--text);
+      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6);
+    }
+
+    .popup-title {
+      font-weight: 600;
+      margin-bottom: 0.2rem;
+    }
+
+    .popup-category {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+    }
+
+    .popup-desc {
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+  
+    /* ---------- My maps + pin editing ---------- */
+    #my-maps[hidden], #edit-bar[hidden] { display: none; }
+    .my-maps-list { display: flex; flex-direction: column; gap: 0.35rem; margin: 0.4rem 0; }
+    .my-map-item { display: flex; flex-direction: column; align-items: flex-start; width: 100%; text-align: left;
+      background: var(--bg-alt); color: var(--text); border: 1px solid var(--border); border-radius: 0.5rem;
+      padding: 0.4rem 0.6rem; cursor: pointer; font: inherit; }
+    .my-map-item:hover, .my-map-item.active { border-color: var(--accent1); background: var(--accent-soft); }
+    .my-map-name { font-size: 0.85rem; font-weight: 600; }
+    .my-map-meta { font-size: 0.72rem; color: var(--muted); }
+    .new-map-row { display: flex; gap: 0.35rem; margin-top: 0.4rem; }
+    .new-map-row input[type=text], .pin-form input, .pin-form select, .pin-form textarea {
+      width: 100%; background: var(--bg-alt); color: var(--text); border: 1px solid var(--border);
+      border-radius: 0.4rem; padding: 0.35rem 0.5rem; font: inherit; font-size: 0.82rem; }
+    .new-map-public { font-size: 0.75rem; color: var(--muted); display: flex; gap: 0.3rem; align-items: center; margin-top: 0.3rem; }
+    #edit-bar { border: 1px solid var(--accent-strong); border-radius: 0.6rem; padding: 0.5rem 0.6rem; margin-top: 0.5rem; }
+    #edit-bar .edit-title { font-size: 0.8rem; color: var(--muted); margin-bottom: 0.4rem; }
+    #edit-bar .edit-title strong { color: var(--text); }
+    .edit-actions { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+    #add-pin-btn.active { background: var(--accent1); color: #020617; }
+    .btn.danger { background: #7f1d1d; border-color: #991b1b; }
+    #editor-status { font-size: 0.75rem; margin-top: 0.35rem; min-height: 1em; }
+    .pin-form { display: flex; flex-direction: column; gap: 0.45rem; color: #111827; }
+    .pin-form label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.75rem; font-weight: 600; }
+    .pin-form input, .pin-form select, .pin-form textarea { background: #fff; color: #111827; border-color: #d1d5db; }
+    .pin-form-actions { display: flex; gap: 0.35rem; justify-content: flex-end; }
+    .pin-form-actions .btn { padding: 0.25rem 0.6rem; font-size: 0.78rem; }
+    .pin-form-error { color: #b91c1c; font-size: 0.75rem; }
+  </style>
+</head>
+<body>
+
+  <main class="layout">
+    <!-- CONTROL TRAY: header + sidebar live in here -->
+    <section class="top-tray-container is-active" id="topTrayContainer">
+      <div class="tray-content">
+
+        <!-- Header -->
+        <header>
+          <img style="height: 8rem;" type="image/png" src="./assets/android-chrome-192x192.png">
+          <!-- GeoVivé title, docs button, style select, etc. -->
+          <h1 id="title">
+            <span>GEO<strong>VIVÉ</strong></span>
+          </h1>
+          <div class="header-items">
+            <!-- Auth controls -->
+            <div class="auth-controls">
+              <span id="auth-status" class="auth-status">Not signed in</span>
+              <button id="signIn" class="btn primary">Sign in</button>
+              <button id="signOut" class="btn ghost" style="display: none;">Sign out</button>
+            </div>
+            <!-- documenation button -->
+            <a 
+              href="/docs/" 
+              target="_blank"
+              class="btn"
+            >
+              Documentation
+            </a>
+          </div>
+        </header>        
+
+        <!-- Login prompt (appears when user tries a privileged action) -->
+        <div id="login-modal" class="login-modal hidden">
+          <div class="login-modal-backdrop"></div>
+          <div class="login-modal-content">
+            <h2>Let's get you signed in!</h2>
+            <p>Please log in to access this feature.</p>
+            <div class="login-modal-actions">
+              <button id="cancelSignIn" class="btn ghost">Nevermind</button>
+              <button id="modalSignIn" class="btn primary">Sign In</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sidebar -->
+        <aside class="sidebar">
+          <!-- dataset selector, feature list, filters, etc. -->
+          <div>
+            <h2>Layers & Filters</h2>
+            <p class="hint">
+              Pan around the map, click points to inspect them, or select an item in this list to fly to it.
+            </p>
+          </div>
+          <!-- style selector menu-->
+          <label style="font-size:0.8rem; color:#9ca3af;">
+            Map Style: 
+            <select id="style-select" style="background:var(--accent4); color:#e5e7eb; border:1px solid #1f2937; border-radius:999px; padding:0.15rem 0.5rem; font-size:0.8rem;">
+                <option value="streets">Streets</option>
+                <option value="outdoors">Outdoors</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+                <option value="satellite">Satellite</option>
+            </select>
+          </label>
+          <!-- Category filters -->
+          <div class="filter-group">
+            <h3>Show categories</h3>
+            <div class="filter-option">
+              <input type="checkbox" id="filter-events" value="event" checked />
+              <label for="filter-events"><span class="legend-swatch events"></span>Events</label>
+            </div>
+            <div class="filter-option">
+              <input type="checkbox" id="filter-locations" value="location" checked />
+              <label for="filter-locations"><span class="legend-swatch locations"></span>Locations</label>
+            </div>
+            <div class="filter-option">
+              <input type="checkbox" id="filter-alerts" value="alert" checked />
+              <label for="filter-alerts"><span class="legend-swatch alerts"></span>Alerts</label>
+            </div>
+          </div>
+          
+          <!-- My maps (signed-in users) -->
+          <div id="my-maps" class="filter-group" hidden>
+            <h3>My maps</h3>
+            <div id="my-maps-list" class="my-maps-list"></div>
+            <div class="new-map-row">
+              <input type="text" id="new-map-name" placeholder="New map name" maxlength="120" />
+              <button type="button" id="create-map-btn" class="btn primary">Create</button>
+            </div>
+            <label class="new-map-public"><input type="checkbox" id="new-map-public" /> Public (anyone can view)</label>
+            <div id="edit-bar" hidden>
+              <div class="edit-title">Editing <strong id="edit-bar-title"></strong></div>
+              <div class="edit-actions">
+                <button type="button" id="add-pin-btn" class="btn primary">+ Add pin</button>
+                <button type="button" id="delete-map-btn" class="btn danger">Delete map</button>
+              </div>
+              <p class="hint" style="margin-top:0.35rem;">Click a pin to edit or delete it.</p>
+            </div>
+            <div id="editor-status"></div>
+          </div>
+
+          <!-- Dataset selector -->
+          <div class="filter-group" style="margin-top: 0.5rem;">
+            <h3>Dataset</h3>
+            <select id="dataset-select" style="width:100%; background:#020617; color:#e5e7eb; border:1px solid #1f2937; border-radius:0.5rem; padding:0.35rem 0.5rem; font-size:0.85rem;">
+                <option value="">Loading…</option>
+            </select>
+            <p class="hint" style="margin-top:0.4rem;">
+                Choose which dataset GeoVivé displays.
+            </p>
+            <br>
+
+            <!-- Feature list -->
+            <div id="feature-list" class="feature-list">
+              <details id="feature-details">
+                <summary>Features</summary>
+                <div id="feature-items" class="feature-items-scroll">
+                  <!-- Populated by JS -->
+                </div>
+              </details>
+            </div>
+          </div>
+        </aside>
+      </div>
+      <div class="tray-handle" id="trayHandle" role="button" tabindex="0"
+           aria-controls="topTrayContainer" aria-expanded="true" aria-label="Hide panel">
+        <svg class="tray-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </div>
+    </section>
+
+    <!-- Map -->
+    <section class="map-wrapper">
+      <div id="map"></div>
+      <div class="map-status">
+        <!-- map connection status indicator-->
+        <div class="status-pill">
+          <span class="status-dot"></span>
+          <span>Mapbox connected</span>
+        </div>
+        <!-- zoom level indicator -->
+        <div class="status-pill" id="status-zoom">
+          Zoom: <span id="zoom-value">–</span>
+        </div>
+        <div class="badge">v0.1 · beta</div>
+      </div>
+    </section>
+  </main>
+
+  
+  <script>
+    // 0. Tray toggle for mobile and filter initialization
+    document.addEventListener("DOMContentLoaded", () => {
+      const trayHandle = document.getElementById("trayHandle");
+      const topTrayContainer = document.getElementById("topTrayContainer");
+
+      if (!trayHandle || !topTrayContainer) return;
+
+      // START FIX: Set default state to 'is-active' (extended) on mobile too.
+      // This ensures it is extended by default on ALL screen sizes.
+      topTrayContainer.classList.add("is-active"); 
+
+      // Function to check and possibly collapse on resize for mobile
+      function setInitialTrayState() {
+        if (window.innerWidth > 850) {
+          topTrayContainer.classList.add("is-active"); // Always open on desktop
+        } 
+        // NOTE: On mobile (<850px), we leave it as 'is-active' by default
+        // until the user clicks the handle.
+      }
+
+      setInitialTrayState();
+
+      function syncTrayHandle() {
+        const open = topTrayContainer.classList.contains("is-active");
+        trayHandle.setAttribute("aria-expanded", String(open));
+        trayHandle.setAttribute("aria-label", open ? "Hide panel" : "Show panel");
+      }
+
+      function toggleTray() {
+        topTrayContainer.classList.toggle("is-active");
+        syncTrayHandle();
+      }
+
+      trayHandle.addEventListener("click", toggleTray);
+      trayHandle.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleTray(); }
+      });
+      syncTrayHandle();
+
+      // Optional: adjust on resize (e.g., rotate phone)
+      window.addEventListener("resize", () => {
+        setInitialTrayState();
+      });
+
+      // END FIX: Manually run setupCategoryFilters() to apply initial visibility
+      // to the feature list items, preventing them from being hidden due to 
+      // the map load delay/issue.
+      setupCategoryFilters(); 
+    });
+
+    // 1. Mapbox token
+    const mapboxToken = window.GEOVIVE_CONFIG?.MAPBOX_ACCESS_TOKEN;
+
+    if (!mapboxToken) {
+      throw new Error("Missing MAPBOX_ACCESS_TOKEN runtime config.");
+    }
+
+    mapboxgl.accessToken = mapboxToken;
+
+    // 2. Map styles
+    const MAP_STYLES = {
+      streets: "mapbox://styles/mapbox/streets-v12",
+      outdoors: "mapbox://styles/mapbox/outdoors-v12",
+      light: "mapbox://styles/mapbox/light-v11",
+      dark: "mapbox://styles/mapbox/dark-v11",
+      satellite: "mapbox://styles/mapbox/satellite-streets-v12"
+    };
+
+    // 3. Empty collection shown when no dataset is available
+    const EMPTY_FC = { type: "FeatureCollection", features: [] };
+
+    // Category → color
+    const categoryColor = {
+      event: "#22c55e",
+      location: "#3b82f6",
+      alert: "#f97316"
+    };
+
+    // Global cache of current dataset
+    let currentDataset = "";
+
+    // API address comes from config.js (generated by scripts/build-config.mjs)
+    const GEO_VIVE_API_BASE = window.GEOVIVE_CONFIG?.API_BASE;
+
+    // Default dataset shown on load (falls back to the first available dataset)
+    const DEFAULT_DATASET_ID = "world-capitals";
+
+    // Escape text before inserting into HTML (popups, list items)
+    function escapeHtml(v) {
+      return String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    // Send the signed-in user's token when available (needed for private datasets)
+    async function authHeaders() {
+      const headers = { "Accept": "application/json" };
+      try {
+        const user = await window.userManager?.getUser?.();
+        if (user && user.access_token && !user.expired) {
+          headers["Authorization"] = `Bearer ${user.access_token}`;
+        }
+      } catch (e) {
+        console.warn("Could not read signed-in user", e);
+      }
+      return headers;
+    }
+
+    async function apiGet(path) {
+      const res = await fetch(`${GEO_VIVE_API_BASE}${path}`, { headers: await authHeaders() });
+      if (!res.ok) throw new Error(`GeoVivé API ${path} failed: ${res.status}`);
+      return res.json();
+    }
+
+    // Populate the dataset dropdown from the API (public + the user's private datasets)
+    async function refreshDatasetOptions() {
+      const select = document.getElementById("dataset-select");
+      try {
+        const { datasets } = await apiGet("/v1/datasets");
+        const current = select.value;
+        select.innerHTML = "";
+        datasets.forEach(d => {
+          const opt = document.createElement("option");
+          opt.value = `api:${d.datasetId}`;
+          opt.textContent = `${d.name}${d.visibility === "private" ? " (private)" : ""}`;
+          select.appendChild(opt);
+        });
+        if ([...select.options].some(o => o.value === current)) select.value = current;
+        return datasets;
+      } catch (e) {
+        console.warn("Dataset list unavailable", e);
+        select.innerHTML = '<option value="">No datasets available</option>';
+        return [];
+      }
+    }
+
+    async function loadDataset(key) {
+      currentDataset = key;
+
+      if (!key) {
+        return EMPTY_FC;
+      }
+
+      if (key.startsWith("api:")) {
+        const id = encodeURIComponent(key.slice(4));
+        const features = [];
+        let nextToken;
+        do {
+          const qs = nextToken ? `?nextToken=${encodeURIComponent(nextToken)}` : "";
+          const page = await apiGet(`/v1/datasets/${id}/features${qs}`);
+          features.push(...page.features);
+          nextToken = page.nextToken;
+        } while (nextToken);
+        return { type: "FeatureCollection", features };
+      }
+
+      throw new Error(`Unknown dataset key: ${key}`);
+    }
+
+    // 5. Map init
+    // Zoom level used when jumping to a single pin (15 ≈ neighborhood/street level)
+    const PIN_ZOOM = 15;
+
+    const GeoVivéMap = new mapboxgl.Map({
+      container: "map",
+      style: MAP_STYLES.outdoors,
+      center: [-96.5730, 39.1794],
+      zoom: 3.0
+    });
+
+    // Map status indicator
+    const statusPill = document.querySelector(".status-pill");
+    const statusText = statusPill?.querySelector("span:last-child");
+
+    // default: pending
+    if (statusPill) {
+      statusText.textContent = "Connecting…";
+    }
+
+    // on successful style load
+    GeoVivéMap.on("load", () => {
+      if (!statusPill) return;
+      statusPill.classList.remove("error");
+      statusPill.classList.add("ok");
+      statusText.textContent = "Mapbox connected";
+    });
+
+    // on any map error
+    GeoVivéMap.on("error", (e) => {
+      console.error("Mapbox error", e);
+      if (!statusPill) return;
+      statusPill.classList.remove("ok");
+      statusPill.classList.add("error");
+      statusText.textContent = "Mapbox error";
+    });
+
+    // Zoom overlay
+    const zoomValueEl = document.getElementById("zoom-value");
+    GeoVivéMap.on("zoom", () => {
+      zoomValueEl.textContent = GeoVivéMap.getZoom().toFixed(2);
+    });
+    GeoVivéMap.on("load", () => {
+      zoomValueEl.textContent = GeoVivéMap.getZoom().toFixed(2);
+    });
+
+    // Helper to ensure our layer exists (used both on first load + style changes)
+    function ensurePointLayer() {
+      if (!GeoVivéMap.getLayer("GeoVivé-layer")) {
+        GeoVivéMap.addLayer({
+          id: "GeoVivé-layer",
+          type: "circle",
+          source: "GeoVivé-points",
+          paint: {
+            "circle-radius": 7,
+            "circle-color": [
+              "match",
+              ["get", "category"],
+              "event", categoryColor.event,
+              "location", categoryColor.location,
+              "alert", categoryColor.alert,
+              "#e5e7eb"
+            ],
+            "circle-stroke-width": 1.5,
+            "circle-stroke-color": "#020617",
+            "circle-opacity": 0.9
+          }
+        });
+      }
+    }
+
+    async function applyDataset(key, opts = {}) {
+      const geojson = await loadDataset(key);
+
+      if (!GeoVivéMap.getSource("GeoVivé-points")) {
+        GeoVivéMap.addSource("GeoVivé-points", {
+          type: "geojson",
+          data: geojson
+        });
+      } else {
+        GeoVivéMap.getSource("GeoVivé-points").setData(geojson);
+      }
+
+      buildFeatureList(geojson.features);
+
+      window.dispatchEvent(new CustomEvent("geovive:dataset-applied", { detail: { key } }));
+
+      if (geojson.features.length > 0 && !opts.keepView) {
+        const bounds = new mapboxgl.LngLatBounds();
+        geojson.features.forEach(f => {
+          const [lng, lat] = f.geometry.coordinates;
+          bounds.extend([lng, lat]);
+        });
+        GeoVivéMap.fitBounds(bounds, { padding: 60, maxZoom: PIN_ZOOM });
+      }
+    }
+
+    // Build sidebar feature list
+    function buildFeatureList(features) {
+      const itemsContainer = document.getElementById("feature-items");
+      const detailsEl = document.getElementById("feature-details");
+
+      if (!itemsContainer || !detailsEl) return;
+
+      // Clear existing items but KEEP <details>/<summary>
+      itemsContainer.innerHTML = "";
+
+      if (!features || !features.length) {
+        // No features: optionally collapse the section
+        detailsEl.open = false;
+        return;
+      }
+
+      // Ensure it's expanded when we actually have data
+      detailsEl.open = true;
+
+      features.forEach((feature) => {
+        const props = feature.properties || {};
+        const id = props.id || (crypto.randomUUID?.() ?? String(Math.random()));
+        const name = escapeHtml(props.name || "Untitled");
+        const category = escapeHtml(props.category || "location");
+        const description = escapeHtml(props.description || props.country || "");
+
+        const item = document.createElement("div");
+        item.className = "feature-list-item";
+        item.dataset.featureId = id;
+        item.dataset.category = category;
+
+        item.innerHTML = `
+          <div class="feature-name">${name}</div>
+          <div class="feature-meta">
+            ${category.toUpperCase()}
+            ${description ? " · " + description : ""}
+          </div>
+        `;
+
+        item.addEventListener("click", () => {
+          const coords = feature.geometry?.coordinates;
+          if (!coords || coords.length < 2) return;
+
+          const [lng, lat] = coords;
+
+          // Zoom in to the pin, never out from the current view
+          GeoVivéMap.flyTo({ center: [lng, lat], zoom: Math.max(GeoVivéMap.getZoom(), PIN_ZOOM), essential: true });
+
+          new mapboxgl.Popup({ closeOnMove: true })
+            .setLngLat([lng, lat])
+            .setHTML(`
+              <div class="popup-title">${name}</div>
+              <div class="popup-category">${category.toUpperCase()}</div>
+              <div class="popup-desc">${description}</div>
+            `)
+            .addTo(GeoVivéMap);
+        });
+
+        itemsContainer.appendChild(item);
+      });
+    }
+
+    // Category checkbox wiring
+    function setupCategoryFilters() {
+      const eventsCheckbox = document.getElementById("filter-events");
+      const locationsCheckbox = document.getElementById("filter-locations");
+      const alertsCheckbox = document.getElementById("filter-alerts");
+
+      const entries = [
+        { el: eventsCheckbox, value: "event" },
+        { el: locationsCheckbox, value: "location" },
+        { el: alertsCheckbox, value: "alert" }
+      ];
+
+      function applyFilters() {
+        const activeCategories = entries
+          .filter(e => e.el && e.el.checked)
+          .map(e => e.value);
+
+        // Map layer filter
+        if (GeoVivéMap.getLayer("GeoVivé-layer")) {
+          if (activeCategories.length === 0) {
+            GeoVivéMap.setFilter("GeoVivé-layer", ["==", ["get", "category"], "__none__"]);
+          } else {
+            GeoVivéMap.setFilter(
+              "GeoVivé-layer",
+              ["in", ["get", "category"], ["literal", activeCategories]]
+            );
+          }
+        }
+
+        // Sidebar filter
+        document.querySelectorAll(".feature-list-item").forEach((item) => {
+          const cat = item.dataset.category;
+          item.style.display = activeCategories.includes(cat) ? "flex" : "none";
+        });
+      }
+
+      entries.forEach(e => {
+        if (e.el) e.el.addEventListener("change", applyFilters);
+      });
+
+      applyFilters();
+    }
+
+    // Initial load
+    GeoVivéMap.on("load", async () => {
+      const datasets = await refreshDatasetOptions();
+      const initialKey = datasets.some(d => d.datasetId === DEFAULT_DATASET_ID)
+        ? `api:${DEFAULT_DATASET_ID}`
+        : (datasets[0] ? `api:${datasets[0].datasetId}` : "");
+      document.getElementById("dataset-select").value = initialKey;
+      try {
+        await applyDataset(initialKey);
+      } catch (e) {
+        console.error(e);
+        await applyDataset("");
+      }
+      ensurePointLayer();
+        GeoVivéMap.on("mouseenter", "GeoVivé-layer", () => {
+          GeoVivéMap.getCanvas().style.cursor = "pointer";
+        });
+
+        GeoVivéMap.on("mouseleave", "GeoVivé-layer", () => {
+          GeoVivéMap.getCanvas().style.cursor = "";
+        });
+
+        GeoVivéMap.on("click", "GeoVivé-layer", (e) => {
+          const feature = e.features && e.features[0];
+          if (!feature) return;
+          if (window.GeoViveEditor?.onFeatureClick?.(feature, e)) return;
+
+          const [lng, lat] = feature.geometry.coordinates;
+          const props = feature.properties || {};
+          const name = escapeHtml(props.name || "Untitled");
+          const category = escapeHtml(props.category || "location");
+          const description = escapeHtml(props.description || props.country || "");
+
+          new mapboxgl.Popup({ closeOnMove: true })
+            .setLngLat([lng, lat])
+            .setHTML(`
+              <div class="popup-title">${name}</div>
+              <div class="popup-category">${category.toUpperCase()}</div>
+              <div class="popup-desc">${description}</div>
+            `)
+            .addTo(GeoVivéMap);
+        });
+      setupCategoryFilters();
+      resolveGeoViveReady();
+    });
+
+    // Map scale (bottom-left): miles/feet and kilometers/meters
+    GeoVivéMap.addControl(new mapboxgl.ScaleControl({ maxWidth: 120, unit: "imperial" }), "bottom-left");
+    GeoVivéMap.addControl(new mapboxgl.ScaleControl({ maxWidth: 120, unit: "metric" }), "bottom-left");
+
+    // Shared API for module scripts (scripts/editor.js)
+    let resolveGeoViveReady;
+    window.GeoVive = {
+      map: GeoVivéMap,
+      apiBase: GEO_VIVE_API_BASE,
+      authHeaders,
+      applyDataset,
+      refreshDatasetOptions,
+      get currentDataset() { return currentDataset; },
+      ready: new Promise(r => (resolveGeoViveReady = r))
+    };
+
+    // 6. Style selector
+    const styleSelect = document.getElementById("style-select");
+    styleSelect.addEventListener("change", () => {
+      const styleKey = styleSelect.value;
+      const styleUrl = MAP_STYLES[styleKey] || MAP_STYLES.streets;
+
+      GeoVivéMap.setStyle(styleUrl);
+
+      GeoVivéMap.once("style.load", async () => {
+        await applyDataset(currentDataset); // reload whatever dataset is active
+        ensurePointLayer();                 // re-add the layer on the new style
+      });
+    });
+
+    // 7. Dataset selector
+    const datasetSelect = document.getElementById("dataset-select");
+    datasetSelect.addEventListener("change", async () => {
+      const key = datasetSelect.value;
+      try {
+        await applyDataset(key);
+      } catch (e) {
+        console.error(e);
+        const hint = datasetSelect.parentElement.querySelector(".hint");
+        if (hint) hint.textContent = `Could not load dataset: ${e.message}`;
+      }
+    });
+    
+  </script>
+
+
+<!-- Auth and login modal script -->  
+<script type="module" src="./scripts/main.js"></script>
+<script type="module" src="./scripts/editor.js"></script>
+
+
+</body>
+</html>
