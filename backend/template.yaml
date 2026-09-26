@@ -242,7 +242,8 @@ Resources:
         DeleteDataset:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: DELETE, Path: "/v1/datasets/{datasetId}" } }
         CreateFeature:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/datasets/{datasetId}/features" } }
         UpdateFeature:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: PUT, Path: "/v1/datasets/{datasetId}/features/{featureId}" } }
-        RelayOverlay:     { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/relay/{sourceId}", Auth: { Authorizer: NONE } } }
+        GetAppLayers:     { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/apps/{appId}/layers", Auth: { Authorizer: NONE } } }
+        RelayLayer:       { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/relay/{appId}/{layerId}", Auth: { Authorizer: NONE } } }
         ExportDataset:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/datasets/{datasetId}/exports", Auth: { Authorizer: NONE } } }
         ImportUploadUrl:  { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/datasets/{datasetId}/imports/upload-url" } }
         StartImport:      { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/datasets/{datasetId}/imports" } }

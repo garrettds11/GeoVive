@@ -1,15 +1,18 @@
-// vector-overlays.js — clickable overlays drawn from official agency data
-// (hunting units, zones, public lands), delivered through GeoVivé's relay.
+// vector-overlays.js — clickable layers that connected apps bring to GeoVivé.
 //
-// The relay (GET /v1/relay/{id}) returns a link to a cached, simplified GeoJSON
-// file with a `_label` per feature and readable field names. Each overlay is
-// drawn as a fill, an outline and labels; clicking a unit shows its details.
+// Each layer comes from the app's layer list (scripts/app-layers.js):
+//   relay   GET /v1/relay/{appId}/{layerId} returns a link to a cached,
+//           simplified GeoJSON file with a `_label` per feature and readable fields
+//   direct  the browser loads the source itself and shapes it the same way
+// Each layer is drawn as a fill, an outline and labels; clicking a feature
+// shows its details.
 
 const cache = new Map();        // id -> Promise<FeatureCollection>
 const active = new Map();       // id -> entry (currently shown)
 let clickWired = false;
 
 const ids = (id) => ({ fill: `ov-${id}-fill`, line: `ov-${id}-line`, label: `ov-${id}-label`, source: `ov-${id}` });
+const FOCUS = "ov-focus";
 
 function esc(v) {
   return String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -17,31 +20,42 @@ function esc(v) {
 
 // ------------------------------------------------------------ data
 
-// Direct mode: fetch the agency's ArcGIS layer from the browser (for sources whose
-// terms don't allow GeoVivé to keep a copy) and shape it like relay output.
+// Direct layers: the browser fetches the source (for sources whose terms don't
+// allow GeoVivé to keep a copy) and shapes it like relay output.
+const clean = (v) => (v === null || v === undefined || String(v).trim() === "" || /^<?null>?$/i.test(String(v).trim()) ? undefined : v);
+const getField = (p, k) => (k in p ? p[k] : p[Object.keys(p).find(x => x.toLowerCase() === k.toLowerCase())]);
+
 async function loadDirect(entry) {
   const d = entry.direct;
   const fields = [...new Set([...d.label.matchAll(/\{(\w+)\}/g)].map(m => m[1]).concat(Object.keys(d.fields || {})))];
-  const url = `${d.url}/query?where=1%3D1&outFields=${encodeURIComponent(fields.join(","))}&returnGeometry=true` +
-    `&outSR=4326&maxAllowableOffset=${d.tolerance || 0.001}&geometryPrecision=5&f=geojson`;
+  let url = d.source.url;
+  if (d.source.type === "arcgis") {
+    url += `/query?where=${encodeURIComponent(d.source.where || "1=1")}&outFields=${encodeURIComponent(fields.join(","))}` +
+      `&returnGeometry=true&outSR=4326&maxAllowableOffset=${d.tolerance || 0.001}&geometryPrecision=5&f=geojson`;
+  } else if (d.source.type === "wfs") {
+    url += `${url.includes("?") ? "&" : "?"}service=WFS&version=2.0.0&request=GetFeature&typeNames=${encodeURIComponent(d.source.typeName)}` +
+      `&outputFormat=application/json&srsName=EPSG:4326`;
+  }
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Layer unavailable (${res.status})`);
   const fc = await res.json();
   if (fc.error) throw new Error(fc.error.message || "Layer unavailable");
-  const clean = (v) => (v === null || v === undefined || String(v).trim() === "" ? undefined : v);
-  fc.features = (fc.features || []).filter(f => f.geometry).map(f => {
-    const p = f.properties || {};
-    const props = { _label: d.label.replace(/\{(\w+)\}/g, (_, k) => clean(p[k]) ?? "").trim() };
-    Object.entries(d.fields || {}).forEach(([k, title]) => { if (clean(p[k]) !== undefined) props[title] = p[k]; });
-    return { type: "Feature", geometry: f.geometry, properties: props };
-  });
-  return fc;
+  const features = fc.type === "Feature" ? [fc] : (fc.features || []);
+  return {
+    type: "FeatureCollection",
+    features: features.filter(f => f.geometry).map(f => {
+      const p = f.properties || {};
+      const props = { _label: d.label.replace(/\{(\w+)\}/g, (_, k) => clean(getField(p, k)) ?? "").replace(/\s+/g, " ").trim() };
+      Object.entries(d.fields || {}).forEach(([k, title]) => { const v = clean(getField(p, k)); if (v !== undefined) props[title] = v; });
+      return { type: "Feature", geometry: f.geometry, properties: props };
+    }).filter(f => f.properties._label)
+  };
 }
 
 export function loadVector(entry) {
   if (!cache.has(entry.id)) {
     const p = entry.direct ? loadDirect(entry) : (async () => {
-      const res = await fetch(`${window.GeoVive.apiBase}/v1/relay/${encodeURIComponent(entry.relay || entry.id)}`);
+      const res = await fetch(`${window.GeoVive.apiBase}/v1/relay/${encodeURIComponent(entry.appId)}/${encodeURIComponent(entry.layerId)}`);
       const info = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(info.message || `Layer unavailable (${res.status})`);
       const data = await fetch(info.url);
@@ -139,4 +153,24 @@ function wireClicks(map) {
     if (over) map.getCanvas().style.cursor = "pointer";
     else if (map.getCanvas().style.cursor === "pointer" && !map.queryRenderedFeatures(e.point).some(f => f.layer.id.startsWith("GeoVivé"))) map.getCanvas().style.cursor = "";
   });
+}
+
+// ------------------------------------------------------------ focus
+
+// Zoom to a feature of a layer by its label (e.g. "GMU 61") and outline it.
+export async function focusFeature(map, entry, text) {
+  const fc = await loadVector(entry);
+  const want = String(text).trim().toLowerCase();
+  const f = fc.features.find(x => String(x.properties._label).toLowerCase() === want)
+    || fc.features.find(x => String(x.properties._label).toLowerCase().includes(want));
+  if (!f) return false;
+  const one = { type: "FeatureCollection", features: [f] };
+  if (map.getSource(FOCUS)) map.getSource(FOCUS).setData(one);
+  else {
+    map.addSource(FOCUS, { type: "geojson", data: one });
+    map.addLayer({ id: FOCUS, type: "line", source: FOCUS, paint: { "line-color": "#facc15", "line-width": 3 } });
+  }
+  const b = boundsOf(one);
+  if (!b.isEmpty()) map.fitBounds(b, { padding: 60, maxZoom: 12 });
+  return true;
 }

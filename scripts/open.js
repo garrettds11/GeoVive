@@ -2,10 +2,14 @@
 //
 // A connected app sends the user to:
 //   https://geovive.link/open?app=<appId>&ref=<itemId>&title=<text>&area=<geojson url>&return=<url>
+//                             &layers=<layerId,…>&focus=<layerId>:<label>
 //
-// GeoVivé signs the user in if needed, finds or creates their map for that item,
-// draws the app's reference area, and shows a banner with a Done button that
-// returns to the app with ?geovive_map=<datasetId>.
+// With ref: GeoVivé signs the user in if needed, finds or creates their map for
+// that item, draws the app's reference area, and shows a banner with a Done
+// button that returns to the app with ?geovive_map=<datasetId>.
+// Without ref (view link): no sign-in and no map; GeoVivé just shows the app's
+// layers (layers=…), optionally zoomed to one feature (focus=…).
+// Either way the app's own layers appear under its name (scripts/app-layers.js).
 
 import { getCurrentUser, login } from "./auth.js";
 
@@ -104,8 +108,16 @@ async function loadReferenceArea(url, { fit }) {
 
 function returnUrlFor(session) {
   const u = new URL(session.returnUrl);
-  u.searchParams.set("geovive_map", session.datasetId);
+  if (session.datasetId) u.searchParams.set("geovive_map", session.datasetId);
   return u.toString();
+}
+
+const splitList = (v) => (v || "").split(",").map(x => x.trim()).filter(Boolean).slice(0, 50);
+
+function announceApp(session) {
+  window.dispatchEvent(new CustomEvent("geovive:app-context", {
+    detail: session ? { appId: session.appId, layers: session.layers || [], focus: session.focus } : null
+  }));
 }
 
 function showSessionBanner(session) {
@@ -118,6 +130,7 @@ function showSessionBanner(session) {
     <button type="button" class="link-btn" data-action="close" title="Stay in GeoVivé">Stay here</button>`);
   el.querySelector("[data-action=done]").addEventListener("click", () => {
     writeJson(sessionStorage, SESSION_KEY, null);
+    announceApp(null);
     window.location.assign(returnUrlFor(session));
   });
   el.querySelector("[data-action=close]").addEventListener("click", () => {
@@ -152,15 +165,41 @@ async function startSession(pending) {
   const session = {
     datasetId: data.datasetId,
     title: data.name,
+    appId: pending.app,
     appName: app.name,
     returnUrl: pending.returnUrl,
-    area: data.referenceArea
+    area: data.referenceArea,
+    layers: pending.layers,
+    focus: pending.focus
   };
   if (session.returnUrl) writeJson(sessionStorage, SESSION_KEY, session);
   return session;
 }
 
+// View link: show the app's layers only (no sign-in, no map created)
+async function startView(pending) {
+  const appRes = await fetch(`${window.GeoVive.apiBase}/v1/apps/${encodeURIComponent(pending.app)}`);
+  if (!appRes.ok) throw new Error("This link comes from an app GeoVivé doesn't recognize.");
+  const app = await appRes.json();
+  if (pending.returnUrl && !originAllowed(pending.returnUrl, app.returnOrigins)) {
+    throw new Error("This link's return address isn't allowed for this app.");
+  }
+  const session = {
+    view: true, appId: pending.app, appName: app.name, title: pending.title || `${app.name} layers`,
+    returnUrl: pending.returnUrl, layers: pending.layers, focus: pending.focus
+  };
+  writeJson(sessionStorage, SESSION_KEY, session);
+  return session;
+}
+
 async function enterSession(session, { fit }) {
+  if (session.view) {
+    announceApp(session);
+    if (session.returnUrl) showSessionBanner(session);
+    session.focus = null;
+    writeJson(sessionStorage, SESSION_KEY, session);   // focus only once
+    return;
+  }
   await window.GeoVive.refreshDatasetOptions();
   const key = `api:${session.datasetId}`;
   const select = $("dataset-select");
@@ -168,7 +207,9 @@ async function enterSession(session, { fit }) {
   await window.GeoVive.applyDataset(key);
   window.dispatchEvent(new CustomEvent("geovive:datasets-changed"));
   await loadReferenceArea(session.area, { fit });
+  announceApp(session);
   if (session.returnUrl) showSessionBanner(session);
+  if (session.focus) { session.focus = null; if (session.returnUrl) writeJson(sessionStorage, SESSION_KEY, session); }
 }
 
 // ------------------------------------------------------------ init
@@ -179,11 +220,12 @@ async function init() {
     const q = new URLSearchParams(window.location.search);
     const pending = {
       app: q.get("app"), ref: q.get("ref"), title: q.get("title"),
-      area: q.get("area"), returnUrl: q.get("return")
+      area: q.get("area"), returnUrl: q.get("return"),
+      layers: splitList(q.get("layers")), focus: q.get("focus") || undefined
     };
     writeJson(sessionStorage, SESSION_KEY, null);
-    if (pending.app && pending.ref) writeJson(sessionStorage, PENDING_KEY, pending);
-    else showError("This GeoVivé link is missing information (app and ref are required).");
+    if (pending.app && (pending.ref || pending.layers.length)) writeJson(sessionStorage, PENDING_KEY, pending);
+    else showError("This GeoVivé link is missing information (it needs app, plus ref or layers).");
     history.replaceState(null, "", "/");
   }
 
@@ -196,6 +238,13 @@ async function init() {
   const pending = readJson(sessionStorage, PENDING_KEY);
   const user = await getCurrentUser();
   const signedIn = user && !user.expired;
+
+  if (pending && !pending.ref) {
+    writeJson(sessionStorage, PENDING_KEY, null);
+    try { await enterSession(await startView(pending), { fit: true }); }
+    catch (e) { console.error(e); showError(e.message); }
+    return;
+  }
 
   if (pending) {
     if (!signedIn) {
@@ -223,7 +272,7 @@ async function init() {
 
   // 2. Reload during an active session: restore banner and outline, keep the view.
   const session = readJson(sessionStorage, SESSION_KEY);
-  if (session && signedIn) {
+  if (session && (signedIn || session.view)) {
     try { await enterSession(session, { fit: false }); }
     catch (e) { console.error(e); writeJson(sessionStorage, SESSION_KEY, null); }
   }

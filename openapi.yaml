@@ -202,19 +202,50 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
-  /v1/relay/{sourceId}:
+  /v1/apps/{appId}/layers:
     parameters:
-      - name: sourceId
+      - name: appId
         in: path
         required: true
         schema: { type: string }
-        example: co-gmu
     get:
       tags: [Overlays]
-      summary: Relay an official overlay layer (hunting units and zones)
+      summary: A connected app's layers
       description: |
-        Returns a one-hour link to a cached, simplified GeoJSON file of an allow-listed
-        agency layer (refreshed daily). Each feature has properties._label plus readable fields.
+        Layers the app brings to GeoVivé, from its registered layer list. Display settings
+        for every layer; source details only for layers with delivery "direct".
+      security: [{}]
+      responses:
+        "200":
+          description: The app's layers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  appId: { type: string }
+                  appName: { type: string }
+                  title: { type: string }
+                  layers: { type: array, items: { type: object } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502": { description: The app's layer list couldn't be loaded or is invalid }
+
+  /v1/relay/{appId}/{layerId}:
+    parameters:
+      - name: appId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: layerId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Overlays]
+      summary: Relay one of an app's layers
+      description: |
+        Returns a one-hour link to a cached, simplified GeoJSON copy of the layer (each feature has
+        properties._label plus the listed fields). Only layers with delivery "relay" in the app's list.
       security: [{}]
       responses:
         "200":
@@ -224,13 +255,14 @@ paths:
               schema:
                 type: object
                 properties:
-                  id: { type: string }
+                  appId: { type: string }
+                  layerId: { type: string }
                   url: { type: string, format: uri }
                   fetchedAt: { type: string, format: date-time }
                   count: { type: integer, description: Present when the layer was just refreshed }
-                  source: { type: string, format: uri }
+        "400": { description: The layer loads directly from its source }
         "404": { $ref: "#/components/responses/NotFound" }
-        "502": { description: The agency's service didn't respond }
+        "502": { description: The source didn't respond }
 
   /v1/datasets/{datasetId}/exports:
     parameters:

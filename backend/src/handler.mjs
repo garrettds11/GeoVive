@@ -22,7 +22,7 @@ import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { getApp, originAllowed } from "./apps.mjs";
 import { FORMATS, render as renderExport, fileName as exportFileName } from "./export.mjs";
-import { SOURCES as OVERLAY_SOURCES, CACHE_MS as OVERLAY_CACHE_MS, buildOverlay } from "./overlays.mjs";
+import { validateLayerList, publicLayer, buildLayer, LayerListError } from "./overlays.mjs";
 import {
   GeometryError, validateGeometry, bboxOf, byteSize, simplifyToFit,
   INLINE_LIMIT, MAX_GEOMETRY
@@ -384,7 +384,8 @@ function publicAppView(appId, app) {
   return {
     appId, name: app.name,
     returnOrigins: app.returnOrigins, areaOrigins: app.areaOrigins,
-    featureTypes: app.featureTypes
+    featureTypes: app.featureTypes,
+    hasLayers: !!(app.layers || app.layersUrl)
   };
 }
 
@@ -575,23 +576,66 @@ async function exportDataset(event, datasetId) {
   };
 }
 
-// ------------------------------------------------------------------ relay
-// Official overlay sources, fetched and simplified by the server, cached a day
-// in S3 (overlays/<id>.geojson). Returns a short-lived link to the cached file.
+// ------------------------------------------------------------------ app layers + relay
+// Connected apps bring their own layers (see overlays.mjs). GeoVivé reads the
+// app's layer list, shows those layers for the app's users, and relays the
+// ones marked "relay" through a cached, simplified copy.
 
-async function relayOverlay(id) {
-  if (!Object.prototype.hasOwnProperty.call(OVERLAY_SOURCES, id)) throw new HttpError(404, "Unknown overlay");
-  const key = `overlays/v2/${id}.geojson`;   // bump the version to invalidate the cache
-  let fetchedAt;
+const LAYER_LIST_TTL_MS = 5 * 60 * 1000;
+const layerLists = new Map();   // appId -> { at, list }
+
+export async function loadAppLayers(appId) {
+  const app = getApp(appId);
+  if (!app) throw new HttpError(404, "Unknown app");
+  if (!app.layers && !app.layersUrl) return { title: undefined, layers: [] };
+  const hit = layerLists.get(appId);
+  if (hit && Date.now() - hit.at < LAYER_LIST_TTL_MS) return hit.list;
+  let json = app.layers;
+  if (!json) {
+    // The list must live on the app's own site
+    if (!originAllowed(app.layersUrl, app.returnOrigins) || !app.layersUrl.startsWith("https://")) {
+      throw new HttpError(500, "App layer list address is not on the app's site");
+    }
+    try {
+      const res = await fetch(app.layersUrl, { signal: AbortSignal.timeout(10_000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      json = await res.json();
+    } catch (e) {
+      if (hit) return hit.list;   // keep serving the last good list
+      throw new HttpError(502, `${app.name}'s layer list couldn't be loaded (${e.message})`);
+    }
+  }
+  let list;
+  try { list = validateLayerList(json); }
+  catch (e) {
+    if (e instanceof LayerListError) throw new HttpError(502, `${app.name}'s layer list is invalid: ${e.message}`);
+    throw e;
+  }
+  layerLists.set(appId, { at: Date.now(), list });
+  return list;
+}
+
+async function getAppLayers(appId) {
+  const app = getApp(appId);
+  const list = await loadAppLayers(appId);
+  return { appId, appName: app.name, title: list.title, layers: list.layers.map(publicLayer) };
+}
+
+async function relayLayer(appId, layerId) {
+  const list = await loadAppLayers(appId);
+  const layer = list.layers.find(l => l.id === layerId);
+  if (!layer) throw new HttpError(404, "Unknown layer");
+  if (layer.delivery !== "relay") throw new HttpError(400, "This layer loads directly from its source");
+  const key = `overlays/v3/${appId}/${layerId}.geojson`;
+  let fetchedAt, count;
   try {
     const head = await s3.send(new HeadObjectCommand({ Bucket: GEOMETRY_BUCKET, Key: key }));
-    if (Date.now() - head.LastModified.getTime() < OVERLAY_CACHE_MS) fetchedAt = head.LastModified.toISOString();
+    if (Date.now() - head.LastModified.getTime() < layer.cacheHours * 3600_000) fetchedAt = head.LastModified.toISOString();
   } catch { /* not cached yet */ }
-  let count;
   if (!fetchedAt) {
     let fc;
-    try { fc = await buildOverlay(id); }
-    catch (e) { console.error("Relay failed", id, e); throw new HttpError(502, `The source for this layer isn't responding (${e.message})`); }
+    try { fc = await buildLayer(layer); }
+    catch (e) { console.error("Relay failed", appId, layerId, e); throw new HttpError(502, `The source for this layer isn't responding (${e.message})`); }
     await s3.send(new PutObjectCommand({
       Bucket: GEOMETRY_BUCKET, Key: key, Body: gzipSync(JSON.stringify(fc)), ContentType: "application/geo+json",
       ContentEncoding: "gzip", CacheControl: "public, max-age=3600"
@@ -599,7 +643,7 @@ async function relayOverlay(id) {
     fetchedAt = fc.geovive.fetchedAt; count = fc.features.length;
   }
   const url = await getSignedUrl(s3, new GetObjectCommand({ Bucket: GEOMETRY_BUCKET, Key: key }), { expiresIn: 3600 });
-  return { id, url, fetchedAt, count, source: OVERLAY_SOURCES[id].url };
+  return { appId, layerId, url, fetchedAt, count };
 }
 
 // ------------------------------------------------------------------ router
@@ -625,7 +669,8 @@ export const handler = async (event) => {
       case "GET /v1/datasets/{datasetId}/features/{featureId}": result = await getFeature(event, p.datasetId, p.featureId); break;
       case "PUT /v1/datasets/{datasetId}/features/{featureId}": result = await updateFeature(event, p.datasetId, p.featureId); break;
       case "DELETE /v1/datasets/{datasetId}/features/{featureId}": result = await deleteFeature(event, p.datasetId, p.featureId); status = 204; break;
-      case "GET /v1/relay/{sourceId}": result = await relayOverlay(p.sourceId); break;
+      case "GET /v1/apps/{appId}/layers": result = await getAppLayers(p.appId); break;
+      case "GET /v1/relay/{appId}/{layerId}": result = await relayLayer(p.appId, p.layerId); break;
       case "POST /v1/datasets/{datasetId}/exports": result = await exportDataset(event, p.datasetId); break;
       case "POST /v1/datasets/{datasetId}/imports/upload-url": result = await createUploadUrl(event, p.datasetId); break;
       case "POST /v1/datasets/{datasetId}/imports": result = await startImport(event, p.datasetId); status = 202; break;

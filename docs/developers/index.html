@@ -32,7 +32,7 @@
       <a href="#examples">Examples</a>
       <a href="#imports">Imports</a>
       <a href="#exports">Exports</a>
-      <a href="#relay">Overlay relay</a>
+      <a href="#layer-lists">Layer lists</a>
       <a href="#open-links">Open links</a>
       <a href="#connected-apps">Connected apps</a>
     </nav>
@@ -187,8 +187,44 @@ map.getSource("places").setData(collection);</code></pre>
       <li>GPX: points become waypoints and lines become tracks. Areas become tracks along their outer boundaries, since GPX has no areas.</li>
     </ul>
 
-    <h2 id="relay">Overlay relay</h2>
-    <p><code>GET /v1/relay/{sourceId}</code> (no sign-in) returns <code>{ id, url, fetchedAt, source }</code>. The <code>url</code> is a link, valid for an hour, to a compressed GeoJSON file of an official agency layer. The layer is simplified for display, has one readable <code>_label</code> per feature and readable field names, and is refreshed daily. Only sources on GeoVivé's list can be relayed: hunting units and zones for 16 US states and Canadian provinces (for example <code>co-gmu</code>, <code>id-gmu</code>, <code>ab-wmu</code>, <code>bc-wmu</code>). The full list is in <code>backend/src/overlays.mjs</code>.</p>
+    <h2 id="layer-lists">Layer lists (connected apps)</h2>
+    <p>GeoVivé keeps no subject-matter layers of its own. A connected app brings its layers by publishing a <strong>layer list</strong>, a JSON file on the app's own site whose address is registered with GeoVivé (for example <code>https://hunt.example.com/geovive-layers.json</code>). GeoVivé shows those layers only to people working with that app: users who arrived through the app's open link, or who open a map the app created.</p>
+<pre><code>{
+  "version": 1,
+  "title": "Example layers",
+  "layers": [
+    {
+      "id": "co-gmu",                       // letters, numbers, - or _
+      "name": "GMUs (big game)",
+      "group": "Colorado",                  // heading in the Layers panel
+      "color": "#f59e0b",
+      "description": "Big game units with DAUs.",
+      "attribution": "Colorado Parks and Wildlife",
+      "license": "Official agency data",
+      "source": { "type": "arcgis", "url": "https://…/FeatureServer/6", "where": "1=1" },
+      "label": "GMU {GMUID}",               // shown on the map; {FIELD} from the source
+      "fields": { "COUNTY": "County", "ELKDAU": "Elk DAU" },   // shown when clicked
+      "delivery": "relay",                  // or "direct"
+      "cacheHours": 24,                     // relay only (1–168)
+      "tolerance": 0.0005                   // simplification in degrees (optional)
+    }
+  ]
+}</code></pre>
+    <ul>
+      <li><strong>Sources:</strong> <code>arcgis</code> (a FeatureServer or MapServer layer), <code>wfs</code> (OGC WFS 2.0; add <code>typeName</code> and optionally <code>geometryField</code>) or <code>geojson</code> (a GeoJSON file, including one the app hosts). HTTPS only.</li>
+      <li><strong>Delivery:</strong>
+        <ul>
+          <li><code>relay</code>: GeoVivé's server fetches the source, simplifies it for display, keeps only the listed fields with readable names, and caches a compressed copy. Relayed source addresses aren't shown to browsers.</li>
+          <li><code>direct</code>: the browser loads the source itself. Use it when the data's terms don't allow a cached copy; the source must allow browser (CORS) requests.</li>
+        </ul>
+      </li>
+      <li>GeoVivé re-reads the list every few minutes. Changes on the app's site show up without anything changing in GeoVivé.</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+      <tr><td>GET</td><td><code>/v1/apps/{appId}/layers</code></td><td>The app's layers as GeoVivé shows them (display settings; sources only for direct layers)</td></tr>
+      <tr><td>GET</td><td><code>/v1/relay/{appId}/{layerId}</code></td><td>A one-hour link to the relayed layer file (GeoJSON, each feature with <code>_label</code> and the listed fields)</td></tr>
+    </table></div>
 
     <h2 id="open-links">Open in GeoVivé links</h2>
     <p>A registered app can send its signed-in users to their own GeoVivé map for one item in the app (for example, a hunt plan), then bring them back.</p>
@@ -206,6 +242,10 @@ map.getSource("places").setData(collection);</code></pre>
     </table></div>
     <p>GeoVivé signs the user in if needed, finds or creates their private map, applies your pin types, and shows a banner. <strong>Done</strong> returns them to <code>return</code> with <code>?geovive_map=&lt;datasetId&gt;</code> added. Only the ID travels in the URL.</p>
     <p>The map belongs to the user. Until connected apps ship (below), your app can't read it with its own credentials; the user sees it in GeoVivé under <strong>My maps</strong>.</p>
+    <h3>Showing the app's layers</h3>
+    <p>Add <code>layers=&lt;layerId,…&gt;</code> to turn on layers from your layer list, and <code>focus=&lt;layerId&gt;:&lt;label&gt;</code> to zoom to and outline one feature, for example <code>focus=co-gmu:GMU 61</code>. Without <code>ref</code>, the link is a <strong>view link</strong>: no sign-in and no map is created; GeoVivé just shows your layers, with a Done button back to <code>return</code>.</p>
+<pre><code>https://geovive.link/open?app=&lt;appId&gt;&amp;layers=co-gmu,co-sheep&amp;focus=co-gmu:GMU%2061&amp;return=https%3A%2F%2Fhunt.example.com%2Funits%2F61</code></pre>
+
     <h3>API used by the link</h3>
     <div class="table-wrap"><table>
       <tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr>
