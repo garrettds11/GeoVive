@@ -15,7 +15,16 @@ Parameters:
     Default: hfchi8fm98nberrcj43ge2ipu
   AllowedOrigins:
     Type: CommaDelimitedList
-    Default: https://dev.d24kp6zzj6jjwt.amplifyapp.com,http://localhost:8080
+    Default: https://geovive.link,https://www.geovive.link,https://dev.d24kp6zzj6jjwt.amplifyapp.com,http://localhost:8080
+  ApiDomainName:
+    Type: String
+    Default: api.geovive.link
+  CertificateArn:
+    Type: String
+    Default: arn:aws:acm:us-east-1:666993265047:certificate/053f3d9a-dec0-4d35-b5f6-51b530fcd9ac
+  HostedZoneId:
+    Type: String
+    Default: Z0318749XVX1CEI14FGK
 
 Globals:
   Function:
@@ -78,6 +87,12 @@ Resources:
       Tags:
         project: geovive
         env: !Ref Env
+      Domain:
+        DomainName: !Ref ApiDomainName
+        CertificateArn: !Ref CertificateArn
+        EndpointConfiguration: REGIONAL
+        Route53:
+          HostedZoneId: !Ref HostedZoneId
       CorsConfiguration:
         AllowOrigins: !Ref AllowedOrigins
         AllowHeaders: [authorization, content-type]
@@ -129,6 +144,8 @@ Resources:
       RetentionInDays: 30
 
 Outputs:
+  ApiCustomUrl:
+    Value: !Sub https://${ApiDomainName}
   ApiUrl:
     Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${Env}
   DatasetsTableName:

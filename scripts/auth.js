@@ -1,6 +1,13 @@
 // auth.js
 import { UserManager, WebStorageStateStore } from "oidc-client-ts";
 
+// Sign-in returns to whichever GeoVive address the user is on
+// (must be listed in the Cognito app client's callback URLs).
+const APP_URL = `${window.location.origin}/`;
+const COGNITO_DOMAIN = window.location.hostname.endsWith("geovive.link")
+  ? "https://auth.geovive.link"
+  : "https://us-east-1clqbezjhi.auth.us-east-1.amazoncognito.com";
+
 const cognitoAuthConfig = {
   // Cognito *issuer* (user pool OIDC authority)
   authority: "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_cLqbEZJhi",
@@ -9,7 +16,7 @@ const cognitoAuthConfig = {
   client_id: "hfchi8fm98nberrcj43ge2ipu",
 
   // Must exactly match a Callback URL in your app client settings
-  redirect_uri: "https://dev.d24kp6zzj6jjwt.amplifyapp.com/",
+  redirect_uri: APP_URL,
 
   response_type: "code",
 
@@ -51,8 +58,8 @@ export async function getCurrentUser() {
 
 export async function logout() {
   const clientId = "hfchi8fm98nberrcj43ge2ipu";
-  const logoutUri = "https://dev.d24kp6zzj6jjwt.amplifyapp.com/"; // same as your redirect_uri
-  const cognitoDomain = "https://us-east-1clqbezjhi.auth.us-east-1.amazoncognito.com";
+  const logoutUri = APP_URL;
+  const cognitoDomain = COGNITO_DOMAIN;
 
   // 1) Clear the local user from oidc-client-ts (localStorage)
   await userManager.removeUser();
