@@ -73,7 +73,12 @@
     .layout {
       display: grid;
       grid-template-columns: 320px minmax(0, 1fr); /* tray | map */
-      min-height: 100vh;
+      grid-template-rows: minmax(0, 1fr);
+      /* Fixed to the window so the map never grows when the sidebar fills in;
+         the sidebar scrolls on its own instead. */
+      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
     }
 
     body {
@@ -266,7 +271,13 @@
       .tray-content {
         padding: 0.75rem 1rem 1rem;
         overflow-y: auto;
-        height: 100%;
+        flex: 1;
+        min-height: 0;
+      }
+
+      .top-tray-container {
+        min-height: 0;
+        overflow: hidden;
       }
     }
 
@@ -512,6 +523,7 @@
     .map-wrapper {
       position: relative;
       min-height: 0;
+      height: 100%;
     }
 
     /* Map overlay / status */
@@ -526,11 +538,6 @@
       align-items: flex-end;
     }
 
-    .mapboxgl-canvas {
-      position: relative !important;
-      width: 100% !important;
-      height: 100% !important;
-    }
 
     @media (max-width: 850px) {
       /* The tray covers the top of the map on small screens, so show the
