@@ -2,9 +2,12 @@
 // The API builds the file (full-detail shapes) and returns a short-lived link.
 
 const FORMATS = [
-  { value: "geojson", label: "GeoJSON" },
-  { value: "kml", label: "KML (Google Earth)" },
-  { value: "gpx", label: "GPX (GPS apps)" }
+  { value: "geojson", label: "GeoJSON",
+    help: "Standard map data file. Use it with GIS software (QGIS, ArcGIS), other web maps, or to import back into GeoVivé." },
+  { value: "kml", label: "KML (Google Earth)",
+    help: "Opens in Google Earth, Google My Maps and most mapping apps. Keeps pin colors and details." },
+  { value: "gpx", label: "GPX (GPS apps)",
+    help: "For GPS units and phone apps like onX, Gaia GPS, CalTopo and Garmin. Pins become waypoints; lines and area edges become tracks." }
 ];
 
 function currentDatasetId() {
@@ -33,7 +36,13 @@ async function init() {
   status.className = "export-status";
   status.setAttribute("role", "status");
 
-  bar.append(select, btn, status);
+  const help = document.createElement("p");
+  help.className = "hint export-help";
+  const showHelp = () => { help.textContent = FORMATS.find(f => f.value === select.value)?.help || ""; };
+  select.addEventListener("change", showHelp);
+  showHelp();
+
+  bar.append(select, btn, status, help);
 
   const sync = () => { btn.disabled = select.disabled = !currentDatasetId(); };
   window.addEventListener("geovive:dataset-applied", sync);

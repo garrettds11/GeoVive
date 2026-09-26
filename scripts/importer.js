@@ -44,22 +44,23 @@ function buildDialog() {
 
       <div data-src="upload">
         <input type="file" id="import-file" accept=".geojson,.json,application/geo+json,application/json">
-        <p class="hint">Up to 50 MB. Coordinates must be longitude/latitude (WGS 84).</p>
+        <p class="hint">A <strong>.geojson</strong> or <strong>.json</strong> map data file, the common format that open-data sites, GIS software and many map apps export. Up to 50 MB, in regular latitude/longitude.</p>
       </div>
       <div data-src="url" hidden>
         <input type="url" id="import-url" placeholder="https://…/data.geojson">
-        <p class="hint">A public link to a GeoJSON file.</p>
+        <p class="hint">A web address that downloads a GeoJSON file, e.g. the "GeoJSON" download link on a government or open-data site.</p>
       </div>
       <div data-src="arcgis" hidden>
         <input type="url" id="import-arcgis" placeholder="https://…/FeatureServer/0">
         <input type="text" id="import-where" placeholder="Optional filter, e.g. STATE = 'CO'">
-        <p class="hint">A layer URL ending in FeatureServer/&lt;n&gt; or MapServer/&lt;n&gt;. Up to 20,000 features.</p>
+        <p class="hint">Many state and federal agencies publish map layers on ArcGIS servers. Paste the address of one layer; it ends in <strong>FeatureServer/0</strong> or <strong>MapServer/2</strong> (any number). Up to 20,000 features.</p>
       </div>
 
       <details class="import-options">
         <summary>Options</summary>
         <label>Name field <input type="text" id="import-name-field" list="import-fields" placeholder="Automatic"></label>
         <label>Category field <input type="text" id="import-category-field" list="import-fields" placeholder="None"></label>
+        <p class="hint">Fields are the columns of information each feature carries, like UNIT_NAME or TYPE. Leave blank and GeoVivé picks a name field for you.</p>
         <datalist id="import-fields"></datalist>
         <label class="inline"><input type="checkbox" id="import-replace"> Replace everything in this map</label>
       </details>
