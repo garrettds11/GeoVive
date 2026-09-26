@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GeoVivé Developer Docs</title>
+  <link rel="icon" href="/assets/favicon-32x32.png" />
+  <link rel="stylesheet" href="/docs/docs.css" />
+</head>
+<body>
+  <main class="page">
+    <header>
+      <div class="top">
+        <h1>Geo<span>Vivé</span> Docs</h1>
+        <span class="tagline">API reference · v1</span>
+      </div>
+      <nav class="tabs">
+        <a href="/docs/">User guide</a>
+        <a href="/docs/developers/" class="active">Developers</a>
+        <a href="/">Open the map →</a>
+      </nav>
+    </header>
+
+    <nav class="toc">
+      <a href="#overview">Overview</a>
+      <a href="#auth">Authentication</a>
+      <a href="#access">Access rules</a>
+      <a href="#datasets">Datasets</a>
+      <a href="#features">Features</a>
+      <a href="#formats">Formats</a>
+      <a href="#errors">Errors</a>
+      <a href="#examples">Examples</a>
+      <a href="#connected-apps">Connected apps</a>
+    </nav>
+
+    <h2 id="overview">Overview</h2>
+    <p>GeoVivé stores places as <strong>features</strong> (standard <a href="https://datatracker.ietf.org/doc/html/rfc7946" target="_blank" rel="noopener">GeoJSON</a>) grouped into <strong>datasets</strong>. Each dataset has an owner and is either public or private. The API is JSON over HTTPS.</p>
+    <div class="card">
+      <p><strong>Base URL:</strong> <code>https://api.geovive.link</code></p>
+      <p style="margin:0">All paths below are under <code>/v1</code>. Public data needs no key; writes need a signed-in user's token.</p>
+    </div>
+
+    <h2 id="auth">Authentication</h2>
+    <p>GeoVivé uses Amazon Cognito (OpenID Connect) with Google sign-in. Authenticated calls send the user's <strong>access token</strong>:</p>
+    <pre><code>Authorization: Bearer &lt;access_token&gt;</code></pre>
+    <div class="table-wrap"><table>
+      <tr><th>Setting</th><th>Value</th></tr>
+      <tr><td>Issuer</td><td><code>https://cognito-idp.us-east-1.amazonaws.com/us-east-1_cLqbEZJhi</code></td></tr>
+      <tr><td>Sign-in domain</td><td><code>https://auth.geovive.link</code></td></tr>
+      <tr><td>Flow</td><td>Authorization code + PKCE</td></tr>
+      <tr><td>Token</td><td>Access token (<code>token_use: access</code>); the user is identified by its <code>sub</code> claim</td></tr>
+    </table></div>
+    <p>Tokens are currently issued only to GeoVivé's own web app. Third-party access is coming through <a href="#connected-apps">connected apps</a>.</p>
+
+    <h2 id="access">Access rules</h2>
+    <ul>
+      <li><strong>Reads</strong> need no token. Public datasets are returned to everyone. Private datasets are returned only to their owner, when a valid token is sent; everyone else gets <code>404</code>, so a private dataset's existence isn't revealed.</li>
+      <li><strong>Writes</strong> (create, update, delete) always need a token, and only the dataset's owner may change it or its features.</li>
+      <li>An invalid or expired token on a read returns <code>401</code> rather than being ignored.</li>
+      <li>Browser calls are accepted from GeoVivé's own sites. Server-to-server calls aren't limited by origin.</li>
+    </ul>
+
+    <h2 id="datasets">Datasets</h2>
+    <div class="table-wrap"><table>
+      <tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr>
+      <tr><td>GET</td><td><code>/v1/datasets</code></td><td><span class="tag public">optional</span></td><td>Public datasets, plus your private ones when signed in</td></tr>
+      <tr><td>POST</td><td><code>/v1/datasets</code></td><td><span class="tag auth">required</span></td><td>Create a dataset (you become the owner). Returns <code>201</code></td></tr>
+      <tr><td>GET</td><td><code>/v1/datasets/{datasetId}</code></td><td><span class="tag public">optional</span></td><td>One dataset</td></tr>
+      <tr><td>PATCH</td><td><code>/v1/datasets/{datasetId}</code></td><td><span class="tag auth">owner</span></td><td>Update <code>name</code>, <code>description</code> or <code>visibility</code></td></tr>
+      <tr><td>DELETE</td><td><code>/v1/datasets/{datasetId}</code></td><td><span class="tag auth">owner</span></td><td>Delete the dataset and all its features. Returns <code>204</code></td></tr>
+    </table></div>
+    <p><strong>Create / update body</strong></p>
+<pre><code>{
+  "name": "Scouting spots",          // required on create
+  "description": "Optional text",
+  "visibility": "private"            // "private" (default) or "public"
+}</code></pre>
+    <p><strong>Dataset object</strong></p>
+<pre><code>{
+  "datasetId": "world-capitals",
+  "name": "World Capitals",
+  "description": "National capitals of the world (Natural Earth)…",
+  "visibility": "public",
+  "ownerId": "system",
+  "source": "https://www.naturalearthdata.com/",
+  "featureCount": 215,
+  "createdAt": "2026-09-26T01:51:59.386Z",
+  "updatedAt": "2026-09-26T01:51:59.386Z"
+}</code></pre>
+
+    <h2 id="features">Features</h2>
+    <div class="table-wrap"><table>
+      <tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr>
+      <tr><td>GET</td><td><code>/v1/datasets/{datasetId}/features</code></td><td><span class="tag public">optional</span></td><td>A <code>FeatureCollection</code>. Query: <code>limit</code> (default 500, max 1000), <code>nextToken</code></td></tr>
+      <tr><td>POST</td><td><code>/v1/datasets/{datasetId}/features</code></td><td><span class="tag auth">owner</span></td><td>Add a feature. GeoVivé assigns the ID. Returns <code>201</code></td></tr>
+      <tr><td>GET</td><td><code>/v1/datasets/{datasetId}/features/{featureId}</code></td><td><span class="tag public">optional</span></td><td>One feature</td></tr>
+      <tr><td>PUT</td><td><code>/v1/datasets/{datasetId}/features/{featureId}</code></td><td><span class="tag auth">owner</span></td><td>Replace a feature's geometry and properties</td></tr>
+      <tr><td>DELETE</td><td><code>/v1/datasets/{datasetId}/features/{featureId}</code></td><td><span class="tag auth">owner</span></td><td>Delete a feature. Returns <code>204</code></td></tr>
+    </table></div>
+    <p><strong>Pagination:</strong> when more results exist, the collection includes <code>nextToken</code>. Pass it back as a query parameter to get the next page.</p>
+
+    <h2 id="formats">Formats</h2>
+    <h3>Feature (request)</h3>
+<pre><code>{
+  "type": "Feature",
+  "geometry": { "type": "Point", "coordinates": [-104.9903, 39.7392] },
+  "properties": {
+    "name": "Trailhead",           // required
+    "category": "location",        // event | location | alert (others are stored but not styled)
+    "description": "Parking for 10 cars"
+    // any other properties are stored and returned as-is
+  }
+}</code></pre>
+    <ul>
+      <li>Coordinates are <strong>[longitude, latitude]</strong> (WGS 84), as GeoJSON requires.</li>
+      <li>Geometry types: <code>Point</code>, <code>MultiPoint</code>, <code>LineString</code>, <code>MultiLineString</code>, <code>Polygon</code>, <code>MultiPolygon</code>. The map currently draws points only.</li>
+      <li>Keep each feature under roughly 350 KB. Very detailed polygons aren't supported yet.</li>
+    </ul>
+    <h3>Feature (response)</h3>
+    <p>GeoVivé adds <code>id</code>, <code>datasetId</code>, <code>createdAt</code> and <code>updatedAt</code> to <code>properties</code>, and sets the feature's top-level <code>id</code>. These are ignored if sent in a request.</p>
+
+    <h2 id="errors">Errors</h2>
+    <p>Errors return JSON: <code>{ "message": "…" }</code>.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Status</th><th>Meaning</th></tr>
+      <tr><td><code>400</code></td><td>Invalid body, geometry or query parameter</td></tr>
+      <tr><td><code>401</code></td><td>Missing, invalid or expired token</td></tr>
+      <tr><td><code>403</code></td><td>Signed in, but not the dataset's owner</td></tr>
+      <tr><td><code>404</code></td><td>Not found, or a private dataset you can't see</td></tr>
+      <tr><td><code>500</code></td><td>Server error</td></tr>
+    </table></div>
+
+    <h2 id="examples">Examples</h2>
+    <h3>Read a public dataset</h3>
+<pre><code>curl https://api.geovive.link/v1/datasets
+curl "https://api.geovive.link/v1/datasets/world-capitals/features?limit=50"</code></pre>
+    <h3>Create a dataset and add a pin</h3>
+<pre><code>TOKEN="&lt;access token&gt;"
+
+curl -X POST https://api.geovive.link/v1/datasets \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"Scouting spots","visibility":"private"}'
+
+curl -X POST https://api.geovive.link/v1/datasets/&lt;datasetId&gt;/features \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"type":"Feature","geometry":{"type":"Point","coordinates":[-104.99,39.74]},
+       "properties":{"name":"Trailhead","category":"location"}}'</code></pre>
+    <h3>JavaScript</h3>
+<pre><code>const res = await fetch("https://api.geovive.link/v1/datasets/world-capitals/features");
+const collection = await res.json();   // GeoJSON FeatureCollection
+map.getSource("places").setData(collection);</code></pre>
+
+    <h2 id="connected-apps">Connected apps (coming soon)</h2>
+    <div class="card">
+      <p>GeoVivé is adding support for other sites to link a user's GeoVivé account with their own and work with that user's maps, with the user's consent. Planned:</p>
+      <ul>
+        <li><strong>Account linking</strong> via OAuth 2.0, with a GeoVivé consent screen and a Connected apps page where users can revoke access.</li>
+        <li><strong>Open in GeoVivé links</strong> that send a user to a map for a specific item in your app, show your reference area, and return them when they're done.</li>
+        <li><strong>App-scoped access:</strong> an app sees only maps created through it or shared with it.</li>
+      </ul>
+      <p style="margin:0">Interested in integrating? Watch this page. Details will be published here as each part ships.</p>
+    </div>
+
+    <footer>GeoVivé API v1 · <a href="/docs/">User guide</a></footer>
+  </main>
+</body>
+</html>
