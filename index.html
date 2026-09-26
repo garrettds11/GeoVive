@@ -23,6 +23,8 @@
   <meta name="theme-color" content="#ffffff">
   <!--link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌎</text></svg>"-->
 
+  <script src="./config.js"></script>
+
   <script type="importmap">
     {
       "imports": {
@@ -790,7 +792,13 @@
     });
 
     // 1. Mapbox token
-    mapboxgl.accessToken = "pk.eyJ1IjoiZ3doaXoiLCJhIjoiY21pNHc4cXFuMjI2MzJqbXowZDFybGdvYiJ9.syxHOGayNBn3ZEnKr-8KVg";
+    const mapboxToken = window.GEOVIVE_CONFIG?.MAPBOX_ACCESS_TOKEN;
+
+    if (!mapboxToken) {
+      throw new Error("Missing MAPBOX_ACCESS_TOKEN runtime config.");
+    }
+
+    mapboxgl.accessToken = mapboxToken;
 
     // 2. Map styles
     const MAP_STYLES = {
@@ -1282,6 +1290,7 @@
     });
     
   </script>
+
 
 <!-- Auth and login modal script -->  
 <script type="module" src="./scripts/main.js"></script>

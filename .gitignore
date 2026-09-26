@@ -78,3 +78,6 @@ amplifyconfiguration*
 
 #secrets and things that shouldn't be public
 *secret*
+
+# javascript
+config.js
