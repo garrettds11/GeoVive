@@ -13,6 +13,7 @@ const users = new UserManager({
   userStore: new WebStorageStateStore({ store: window.localStorage })
 });
 
+const LAYER_STATE = { approved: "Approved", review: "In review", rejected: "Not approved", checking: "Checking" };
 const STEPS = [
   ["registered", "Registered"], ["domain", "Domain verified"], ["checks", "Checks passed"],
   ["payment", "Payment"], ["live", "Live"]
@@ -148,6 +149,10 @@ async function appView(appId) {
     <div id="ac-run-msg"></div>
     ${running ? `<p style="color:var(--muted)">Checking your domain, layer list and every source. This usually takes under a minute; the report is also emailed to ${esc(app.contactEmail)}.</p>` : ""}
 
+    ${app.layers?.length ? `<h3>Layers</h3>
+    <p style="color:var(--muted)">Only approved layers are shown to your users. New or changed layers are checked automatically; any needing a person are reviewed within 5 business days.</p>
+    <ul class="ac-hist">${app.layers.sort((a, b) => a.id.localeCompare(b.id)).map(l => `<li><code>${esc(l.id)}</code> · <span class="ac-badge ${l.state === "approved" ? "live" : l.state === "rejected" ? "checks_failed" : "verifying"}">${esc(LAYER_STATE[l.state] || l.state)}</span>${l.findings?.length && l.state !== "approved" ? ` · ${esc(l.findings.join("; "))}` : ""}</li>`).join("")}</ul>` : ""}
+
     <h3>History</h3>
     <ul class="ac-hist">${(app.history || []).map(h => `<li>${date(h.at)} · ${esc(describe(h))}</li>`).join("")}</ul>`;
 
@@ -173,6 +178,9 @@ function describe(h) {
   if (h.type === "payment") return `Payment received${h.promo ? " with a promotion" : ""}`;
   if (h.type === "term") return `Term runs to ${date(h.termEndsAt)} (${h.termsVersion})`;
   if (h.type === "notice") return `“Connection is live” notice sent`;
+  if (h.type === "layer-change") return `Layer changes found: ${(h.layers || []).join(", ")}`;
+  if (h.type === "layer-review") return `Layer update checked: ${(h.approved || []).length} approved, ${(h.review || []).length} in review, ${(h.rejected || []).length} not approved`;
+  if (h.type === "layer-decision") return `Reviewer ${h.decision === "approve" ? "approved" : "rejected"} ${h.layerId}`;
   return h.type;
 }
 

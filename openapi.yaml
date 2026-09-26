@@ -212,8 +212,9 @@ paths:
       tags: [Overlays]
       summary: A connected app's layers
       description: |
-        Layers the app brings to GeoVivé, from its registered layer list. Display settings
-        for every layer; source details only for layers with delivery "direct".
+        Layers the app brings to GeoVivé: only approved versions of the layers in its
+        registered layer list (new or changed layers are checked before they show).
+        Display settings for every layer; source details only for layers with delivery "direct".
       security: [{}]
       responses:
         "200":
@@ -369,6 +370,72 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Import" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+
+  /v1/appconnect/apps:
+    get:
+      tags: [AppConnect]
+      summary: Your connected apps
+      responses:
+        "200": { description: "{ apps: [...] } with each app's stage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [AppConnect]
+      summary: Register an app
+      description: The caller becomes the owner. Returns the domain-verification token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [appId, name, domain, layersUrl, contactEmail, acceptTerms]
+              properties:
+                appId: { type: string, pattern: "^[a-z0-9][a-z0-9-]{2,40}$" }
+                name: { type: string }
+                domain: { type: string, example: trails.example.com }
+                layersUrl: { type: string, format: uri }
+                returnOrigins: { type: array, items: { type: string } }
+                contactEmail: { type: string, format: email }
+                acceptTerms: { type: boolean, const: true }
+      responses:
+        "201": { description: The app, stage "registered", with verification details }
+        "400": { description: Invalid details }
+        "409": { description: App ID taken }
+        "429": { description: Too many apps for this owner }
+
+  /v1/appconnect/apps/{appId}:
+    parameters:
+      - { name: appId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [AppConnect]
+      summary: One of your apps, with layer states and history
+      responses:
+        "200": { description: The app }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/appconnect/apps/{appId}/checks:
+    parameters:
+      - { name: appId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [AppConnect]
+      summary: Run the connection checks
+      description: Runs in the background; the PDF report is emailed and listed on the app.
+      responses:
+        "202": { description: Checks started }
+        "409": { description: Already running, or the app is suspended }
+        "429": { description: Checks ran moments ago }
+
+  /v1/appconnect/apps/{appId}/reports/{reportId}:
+    parameters:
+      - { name: appId, in: path, required: true, schema: { type: string } }
+      - { name: reportId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [AppConnect]
+      summary: A 10-minute link to a report or notice PDF
+      responses:
+        "200": { description: "{ url, expiresIn }" }
         "404": { $ref: "#/components/responses/NotFound" }
 
 components:

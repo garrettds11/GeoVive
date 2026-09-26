@@ -1,4 +1,5 @@
 // Background worker for AppConnect checks (invoked asynchronously by the API).
+import "./safelog.mjs";   // first: keeps personal information out of logs
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { S3Client } from "@aws-sdk/client-s3";

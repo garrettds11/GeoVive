@@ -12,6 +12,7 @@
 // large shapes land in S3 with a preview. The dataset keeps a provenance record
 // (source, fetched-at, license/attribution) for each import.
 
+import "./safelog.mjs";   // first: keeps personal information out of logs
 import { GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { S3Client, GetObjectCommand, HeadObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { randomUUID } from "node:crypto";

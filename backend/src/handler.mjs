@@ -6,6 +6,7 @@
 // Write routes are protected by the API Gateway JWT authorizer, and the
 // handler additionally enforces ownership.
 
+import "./safelog.mjs";   // first: keeps personal information out of logs
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
   DynamoDBDocumentClient, GetCommand, PutCommand, DeleteCommand,

@@ -109,7 +109,8 @@ function ownerView(app) {
       fileUrl: `https://${app.domain}/.well-known/geovive.txt`, fileContents: app.verifyToken },
     paymentUrl: app.status === "awaiting_payment" ? app.paymentUrl : undefined,
     termStartsAt: app.termStartsAt, termEndsAt: app.termEndsAt, termsVersion: app.termsVersion,
-    lastReportId: app.lastReportId, lastCheckAt: app.lastCheckAt, createdAt: app.createdAt, updatedAt: app.updatedAt
+    lastReportId: app.lastReportId, lastCheckAt: app.lastCheckAt, createdAt: app.createdAt, updatedAt: app.updatedAt,
+    layers: Object.entries(app.layerState || {}).map(([id, st]) => ({ id, state: st.state, at: st.at, findings: st.findings }))
   };
 }
 
