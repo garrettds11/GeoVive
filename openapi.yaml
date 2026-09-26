@@ -17,6 +17,7 @@ tags:
   - name: Datasets
   - name: Features
   - name: Imports
+  - name: Exports
 
 paths:
   /v1/datasets:
@@ -198,6 +199,42 @@ paths:
         "204": { description: Deleted }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/datasets/{datasetId}/exports:
+    parameters:
+      - $ref: "#/components/parameters/datasetId"
+    post:
+      tags: [Exports]
+      summary: Export a dataset as GeoJSON, KML or GPX
+      description: |
+        Anyone who can read the dataset can export it (public maps without signing in).
+        The file has full-detail geometry and is returned as a download link valid for an hour.
+        GPX has no areas: polygons become tracks along their outer boundaries.
+      security: [{}, { cognito: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                format: { type: string, enum: [geojson, kml, gpx], default: geojson }
+      responses:
+        "200":
+          description: Download link
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  format: { type: string }
+                  fileName: { type: string }
+                  featureCount: { type: integer }
+                  bytes: { type: integer }
+                  url: { type: string, format: uri }
+                  expiresAt: { type: string, format: date-time }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /v1/datasets/{datasetId}/imports/upload-url:

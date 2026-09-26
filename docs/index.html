@@ -29,6 +29,7 @@
       <a href="#my-maps">My maps</a>
       <a href="#pins">Pins</a>
       <a href="#import">Importing data</a>
+      <a href="#export">Exporting</a>
       <a href="#privacy">Public &amp; private</a>
       <a href="#faq">FAQ</a>
     </nav>
@@ -97,6 +98,15 @@
       <li><strong>ArcGIS layer:</strong> the address of a government or organization map layer, ending in <code>FeatureServer/0</code> or <code>MapServer/2</code>. You can add a filter, such as <code>STATE = 'CO'</code>.</li>
     </ul>
     <p>Under <strong>Options</strong> you can choose which field holds each feature's name and category, and whether to add to the map or replace everything in it. Imports run in the background and show their progress; up to 20,000 features at a time. GeoVivé records where the data came from.</p>
+
+    <h2 id="export">Exporting a map</h2>
+    <p>Under <strong>Dataset</strong>, pick a format and click <strong>Export</strong> to download the map you're viewing:</p>
+    <ul>
+      <li><strong>GeoJSON</strong>: for GIS software and other map apps. It includes where imported data came from.</li>
+      <li><strong>KML</strong>: for Google Earth and most mapping apps.</li>
+      <li><strong>GPX</strong>: for GPS units and outdoor apps. Pins become waypoints and lines become tracks. Areas become tracks along their edges.</li>
+    </ul>
+    <p>You can export public maps and your own maps. Shapes are exported at full detail.</p>
 
     <h2 id="privacy">Public and private maps</h2>
     <div class="card">

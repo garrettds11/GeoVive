@@ -685,7 +685,12 @@
     .layer-legend .legend-swatch { width: 8px; height: 8px; margin-right: 0.2rem; }
 
     /* ---------- Dataset view controls ---------- */
-    .dataset-actions { display: flex; gap: 0.35rem; margin-top: 0.45rem; }
+    .dataset-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin-top: 0.45rem; }
+    .export-format {
+      padding: 0.22rem 0.4rem; border-radius: 0.5rem; border: 1px solid var(--border);
+      background: #020617; color: inherit; font: inherit; font-size: 0.78rem;
+    }
+    .export-status { font-size: 0.75rem; color: var(--muted); }
     .dataset-actions .btn { padding: 0.25rem 0.7rem; font-size: 0.78rem; }
     .data-view-hint { font-size: 0.75rem; color: #fbbf24; margin-top: 0.4rem; }
     .data-view-hint[hidden] { display: none; }
@@ -1692,6 +1697,7 @@
 <script type="module" src="./scripts/open.js"></script>
   <script type="module" src="./scripts/layers.js"></script>
   <script type="module" src="./scripts/importer.js"></script>
+  <script type="module" src="./scripts/exporter.js"></script>
 
 
 </body>

@@ -31,6 +31,7 @@
       <a href="#errors">Errors</a>
       <a href="#examples">Examples</a>
       <a href="#imports">Imports</a>
+      <a href="#exports">Exports</a>
       <a href="#open-links">Open links</a>
       <a href="#connected-apps">Connected apps</a>
     </nav>
@@ -175,6 +176,14 @@ map.getSource("places").setData(collection);</code></pre>
       <li>Each feature is checked like <code>POST …/features</code>. Invalid ones are skipped and counted. Large shapes are stored in full.</li>
       <li>Imported features keep their original properties, plus <code>sourceId</code> when the source has one.</li>
       <li>The dataset records each import in <code>imports</code>: source URL or file name, layer title, attribution, time and counts.</li>
+    </ul>
+
+    <h2 id="exports">Exports</h2>
+    <p><code>POST /v1/datasets/{datasetId}/exports</code> with <code>{ "format": "geojson" | "kml" | "gpx" }</code> returns a download link valid for an hour. No sign-in is needed for public datasets; send your token for private ones.</p>
+    <ul>
+      <li>Files have full-detail geometry and all feature properties. GeoJSON adds a <code>geovive</code> block with the dataset name, export time and the sources of imported data.</li>
+      <li>KML keeps pin colors and puts properties in <code>ExtendedData</code>.</li>
+      <li>GPX: points become waypoints and lines become tracks. Areas become tracks along their outer boundaries, since GPX has no areas.</li>
     </ul>
 
     <h2 id="open-links">Open in GeoVivé links</h2>

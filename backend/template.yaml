@@ -109,6 +109,11 @@ Resources:
             Status: Enabled
             NoncurrentVersionExpiration: { NoncurrentDays: 30 }
             AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 }
+          - Id: expire-exports
+            Status: Enabled
+            Prefix: exports/
+            ExpirationInDays: 1
+            NoncurrentVersionExpiration: { NoncurrentDays: 1 }
           - Id: expire-import-uploads
             Status: Enabled
             Prefix: uploads/
@@ -237,6 +242,7 @@ Resources:
         DeleteDataset:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: DELETE, Path: "/v1/datasets/{datasetId}" } }
         CreateFeature:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/datasets/{datasetId}/features" } }
         UpdateFeature:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: PUT, Path: "/v1/datasets/{datasetId}/features/{featureId}" } }
+        ExportDataset:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/datasets/{datasetId}/exports", Auth: { Authorizer: NONE } } }
         ImportUploadUrl:  { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/datasets/{datasetId}/imports/upload-url" } }
         StartImport:      { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/datasets/{datasetId}/imports" } }
         GetImport:        { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/datasets/{datasetId}/imports/{importId}" } }

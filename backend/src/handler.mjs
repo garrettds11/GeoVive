@@ -20,6 +20,7 @@ import { randomUUID } from "node:crypto";
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { getApp, originAllowed } from "./apps.mjs";
+import { FORMATS, render as renderExport, fileName as exportFileName } from "./export.mjs";
 import {
   GeometryError, validateGeometry, bboxOf, byteSize, simplifyToFit,
   INLINE_LIMIT, MAX_GEOMETRY
@@ -517,6 +518,61 @@ async function getImport(event, datasetId, importId) {
   return importView(Item);
 }
 
+// ------------------------------------------------------------------ exports
+// Builds the file with full-detail geometry, stores it under exports/ (kept a
+// day) and returns a short-lived download link. Anyone who can read the dataset
+// can export it.
+
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) { const i = next++; out[i] = await fn(items[i], i); }
+  }));
+  return out;
+}
+
+async function exportDataset(event, datasetId) {
+  const caller = await getCaller(event, { required: false });
+  const ds = await loadDataset(datasetId);
+  assertCanRead(ds, caller);
+  const body = event.body ? parseBody(event) : {};
+  const format = String(body.format || "geojson").toLowerCase();
+  if (!FORMATS[format]) throw new HttpError(400, `format must be one of ${Object.keys(FORMATS).join(", ")}`);
+
+  const items = [];
+  let ExclusiveStartKey;
+  do {
+    const page = await ddb.send(new QueryCommand({
+      TableName: FEATURES_TABLE, KeyConditionExpression: "datasetId = :d",
+      ExpressionAttributeValues: { ":d": datasetId }, ExclusiveStartKey
+    }));
+    items.push(...(page.Items || []));
+    ExclusiveStartKey = page.LastEvaluatedKey;
+  } while (ExclusiveStartKey);
+
+  const features = await mapLimit(items, 8, async (item) => {
+    const f = toFeature(item, item.geometryRef ? await loadFullGeometry(item) : undefined);
+    delete f.properties.geometryDetail;
+    return f;
+  });
+  features.sort((a, b) => String(a.properties.name).localeCompare(String(b.properties.name)));
+
+  const { ext, type } = FORMATS[format];
+  const name = exportFileName(ds.name, ext);
+  const key = `exports/${datasetId}/${randomUUID()}/${name}`;
+  const content = renderExport(format, ds, features);
+  await s3.send(new PutObjectCommand({
+    Bucket: GEOMETRY_BUCKET, Key: key, Body: content, ContentType: type,
+    ContentDisposition: `attachment; filename="${name}"`
+  }));
+  const url = await getSignedUrl(s3, new GetObjectCommand({ Bucket: GEOMETRY_BUCKET, Key: key }), { expiresIn: 3600 });
+  return {
+    format, fileName: name, featureCount: features.length, bytes: Buffer.byteLength(content),
+    url, expiresAt: new Date(Date.now() + 3600_000).toISOString()
+  };
+}
+
 // ------------------------------------------------------------------ router
 
 export const handler = async (event) => {
@@ -540,6 +596,7 @@ export const handler = async (event) => {
       case "GET /v1/datasets/{datasetId}/features/{featureId}": result = await getFeature(event, p.datasetId, p.featureId); break;
       case "PUT /v1/datasets/{datasetId}/features/{featureId}": result = await updateFeature(event, p.datasetId, p.featureId); break;
       case "DELETE /v1/datasets/{datasetId}/features/{featureId}": result = await deleteFeature(event, p.datasetId, p.featureId); status = 204; break;
+      case "POST /v1/datasets/{datasetId}/exports": result = await exportDataset(event, p.datasetId); break;
       case "POST /v1/datasets/{datasetId}/imports/upload-url": result = await createUploadUrl(event, p.datasetId); break;
       case "POST /v1/datasets/{datasetId}/imports": result = await startImport(event, p.datasetId); status = 202; break;
       case "GET /v1/datasets/{datasetId}/imports/{importId}": result = await getImport(event, p.datasetId, p.importId); break;
