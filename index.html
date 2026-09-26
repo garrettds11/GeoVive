@@ -649,6 +649,19 @@
     /* On phones the tray handle sits over the top of the map */
     @media (max-width: 850px) { .mapboxgl-ctrl-top-left { top: 56px; } }
 
+    .legend-count { color: var(--muted); font-size: 0.75rem; margin-left: 0.3rem; }
+
+    /* ---------- Layers panel ---------- */
+    .layer-group-title { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0.6rem 0 0.3rem; }
+    .layer-row { border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.35rem 0.5rem; margin-bottom: 0.35rem; }
+    .layer-row label.layer-toggle { display: flex; align-items: center; gap: 0.4rem; font-size: 0.83rem; cursor: pointer; }
+    .layer-meta { font-size: 0.72rem; color: var(--muted); margin: 0.2rem 0 0 1.35rem; }
+    .layer-meta a { color: var(--accent1); }
+    .layer-opacity { display: flex; align-items: center; gap: 0.4rem; margin: 0.25rem 0 0 1.35rem; font-size: 0.72rem; color: var(--muted); }
+    .layer-opacity input { flex: 1; accent-color: var(--accent1); }
+    .layer-legend { display: flex; flex-wrap: wrap; gap: 0.2rem 0.6rem; margin: 0.25rem 0 0 1.35rem; font-size: 0.72rem; color: var(--muted); }
+    .layer-legend .legend-swatch { width: 8px; height: 8px; margin-right: 0.2rem; }
+
     /* ---------- Dataset view controls ---------- */
     .dataset-actions { display: flex; gap: 0.35rem; margin-top: 0.45rem; }
     .dataset-actions .btn { padding: 0.25rem 0.7rem; font-size: 0.78rem; }
@@ -750,23 +763,20 @@
                 <option value="satellite">Satellite</option>
             </select>
           </label>
-          <!-- Category filters -->
-          <div class="filter-group">
-            <h3>Show categories</h3>
-            <div class="filter-option">
-              <input type="checkbox" id="filter-events" value="event" checked />
-              <label for="filter-events"><span class="legend-swatch events"></span>Events</label>
-            </div>
-            <div class="filter-option">
-              <input type="checkbox" id="filter-locations" value="location" checked />
-              <label for="filter-locations"><span class="legend-swatch locations"></span>Locations</label>
-            </div>
-            <div class="filter-option">
-              <input type="checkbox" id="filter-alerts" value="alert" checked />
-              <label for="filter-alerts"><span class="legend-swatch alerts"></span>Alerts</label>
-            </div>
+          <!-- Categories of the active dataset (built from its data) -->
+          <div class="filter-group" id="active-legend">
+            <h3>Categories</h3>
+            <div id="legend-items"><p class="hint">Loading…</p></div>
           </div>
-          
+
+          <!-- Extra datasets and external overlays (scripts/layers.js) -->
+          <div class="filter-group" id="layers-panel">
+            <h3>Layers</h3>
+            <p class="hint">Show more datasets and outside map layers on top of the active dataset.</p>
+            <div id="layers-datasets"></div>
+            <div id="layers-overlays"></div>
+          </div>
+
           <!-- My maps (signed-in users) -->
           <div id="my-maps" class="filter-group" hidden>
             <h3>My maps</h3>
@@ -890,10 +900,6 @@
         setInitialTrayState();
       });
 
-      // END FIX: Manually run setupCategoryFilters() to apply initial visibility
-      // to the feature list items, preventing them from being hidden due to 
-      // the map load delay/issue.
-      setupCategoryFilters(); 
     });
 
     // 1. Mapbox token
@@ -959,10 +965,30 @@
     }
 
     // Populate the dataset dropdown from the API (public + the user's private datasets)
+    // Metadata of the datasets the user can see (name, pin types, …), by ID
+    let datasetMeta = new Map();
+
+    // Load every feature of a dataset (follows pagination) and color it
+    async function loadDatasetFeatures(datasetId) {
+      const id = encodeURIComponent(datasetId);
+      const features = [];
+      let nextToken;
+      do {
+        const qs = nextToken ? `?nextToken=${encodeURIComponent(nextToken)}` : "";
+        const page = await apiGet(`/v1/datasets/${id}/features${qs}`);
+        features.push(...page.features);
+        nextToken = page.nextToken;
+      } while (nextToken);
+      const categories = decorateFeatures(datasetMeta.get(datasetId), features);
+      return { geojson: { type: "FeatureCollection", features }, categories };
+    }
+
     async function refreshDatasetOptions() {
       const select = document.getElementById("dataset-select");
       try {
         const { datasets } = await apiGet("/v1/datasets");
+        datasetMeta = new Map(datasets.map(d => [d.datasetId, d]));
+        window.dispatchEvent(new CustomEvent("geovive:datasets-listed", { detail: { datasets } }));
         const current = select.value;
         select.innerHTML = "";
         datasets.forEach(d => {
@@ -980,24 +1006,21 @@
       }
     }
 
+    let loadedCategories = [];
+
     async function loadDataset(key) {
+      if (key !== currentDataset) hiddenCategories.clear();
       currentDataset = key;
+      loadedCategories = [];
 
       if (!key) {
         return EMPTY_FC;
       }
 
       if (key.startsWith("api:")) {
-        const id = encodeURIComponent(key.slice(4));
-        const features = [];
-        let nextToken;
-        do {
-          const qs = nextToken ? `?nextToken=${encodeURIComponent(nextToken)}` : "";
-          const page = await apiGet(`/v1/datasets/${id}/features${qs}`);
-          features.push(...page.features);
-          nextToken = page.nextToken;
-        } while (nextToken);
-        return { type: "FeatureCollection", features };
+        const { geojson, categories } = await loadDatasetFeatures(key.slice(4));
+        loadedCategories = categories;
+        return geojson;
       }
 
       throw new Error(`Unknown dataset key: ${key}`);
@@ -1113,6 +1136,9 @@
       }
 
       buildFeatureList(geojson.features);
+      activeCategories = loadedCategories;
+      renderLegend(activeCategories);
+      applyFilters();
 
       currentGeojson = geojson;
       window.dispatchEvent(new CustomEvent("geovive:dataset-applied", { detail: { key } }));
@@ -1220,47 +1246,81 @@
       });
     }
 
-    // Category checkbox wiring
-    function setupCategoryFilters() {
-      const eventsCheckbox = document.getElementById("filter-events");
-      const locationsCheckbox = document.getElementById("filter-locations");
-      const alertsCheckbox = document.getElementById("filter-alerts");
+    // ---- Categories: defined by each dataset ----------------------------------
+    // A dataset's categories come from its pin types (featureTypes, set by a
+    // connected app) or, failing that, from the category values its places use.
+    const CATEGORY_PALETTE = ["#3b82f6", "#22c55e", "#f97316", "#a855f7", "#ef4444", "#14b8a6", "#eab308", "#ec4899", "#64748b"];
 
-      const entries = [
-        { el: eventsCheckbox, value: "event" },
-        { el: locationsCheckbox, value: "location" },
-        { el: alertsCheckbox, value: "alert" }
-      ];
+    function titleCase(v) {
+      return String(v).replace(/[_-]+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+    }
 
-      function applyFilters() {
-        const activeCategories = entries
-          .filter(e => e.el && e.el.checked)
-          .map(e => e.value);
-
-        // Map layer filter
-        if (GeoVivéMap.getLayer("GeoVivé-layer")) {
-          if (activeCategories.length === 0) {
-            GeoVivéMap.setFilter("GeoVivé-layer", ["==", ["get", "category"], "__none__"]);
-          } else {
-            GeoVivéMap.setFilter(
-              "GeoVivé-layer",
-              ["in", ["get", "category"], ["literal", activeCategories]]
-            );
-          }
-        }
-
-        // Sidebar filter
-        document.querySelectorAll(".feature-list-item").forEach((item) => {
-          const cat = item.dataset.category;
-          item.style.display = activeCategories.includes(cat) ? "flex" : "none";
-        });
-      }
-
-      entries.forEach(e => {
-        if (e.el) e.el.addEventListener("change", applyFilters);
+    function categoriesOf(meta, features) {
+      const counts = new Map();
+      features.forEach(f => {
+        const c = f.properties?.category || "uncategorized";
+        counts.set(c, (counts.get(c) || 0) + 1);
       });
+      const cats = [];
+      (meta?.featureTypes || []).forEach(t => cats.push({ key: t.key, label: t.label, color: t.color }));
+      [...counts.keys()].sort().forEach(k => {
+        if (!cats.some(c => c.key === k)) cats.push({ key: k, label: titleCase(k), color: categoryColor[k] });
+      });
+      let p = 0;
+      cats.forEach(c => {
+        if (!c.color) c.color = CATEGORY_PALETTE[p++ % CATEGORY_PALETTE.length];
+        c.count = counts.get(c.key) || 0;
+      });
+      return cats;
+    }
 
-      applyFilters();
+    // Give every place a color from its dataset's categories (pins with their
+    // own color keep it). Returns the categories.
+    function decorateFeatures(meta, features) {
+      const cats = categoriesOf(meta, features);
+      const byKey = new Map(cats.map(c => [c.key, c.color]));
+      features.forEach(f => {
+        f.properties = f.properties || {};
+        if (!f.properties.color) f.properties.color = byKey.get(f.properties.category || "uncategorized");
+      });
+      return cats;
+    }
+
+    // Categories the user has unticked for the active dataset
+    const hiddenCategories = new Set();
+    let activeCategories = [];
+
+    function renderLegend(cats) {
+      const box = document.getElementById("legend-items");
+      if (!box) return;
+      if (!cats.length) { box.innerHTML = '<p class="hint">No places in this dataset yet.</p>'; return; }
+      box.innerHTML = "";
+      cats.forEach(c => {
+        const row = document.createElement("div");
+        row.className = "filter-option";
+        const id = `cat-${c.key.replace(/[^a-z0-9_-]/gi, "_")}`;
+        row.innerHTML = `
+          <input type="checkbox" id="${id}" ${hiddenCategories.has(c.key) ? "" : "checked"} />
+          <label for="${id}"><span class="legend-swatch" style="background:${c.color}"></span>${escapeHtml(c.label)}
+            <span class="legend-count">${c.count}</span></label>`;
+        row.querySelector("input").addEventListener("change", e => {
+          if (e.target.checked) hiddenCategories.delete(c.key); else hiddenCategories.add(c.key);
+          applyFilters();
+        });
+        box.appendChild(row);
+      });
+    }
+
+    function applyFilters() {
+      const hidden = [...hiddenCategories];
+      if (GeoVivéMap.getLayer("GeoVivé-layer")) {
+        GeoVivéMap.setFilter("GeoVivé-layer", hidden.length
+          ? ["!", ["in", ["coalesce", ["get", "category"], "uncategorized"], ["literal", hidden]]]
+          : null);
+      }
+      document.querySelectorAll(".feature-list-item").forEach(item => {
+        item.style.display = hiddenCategories.has(item.dataset.category || "uncategorized") ? "none" : "flex";
+      });
     }
 
     // Initial load
@@ -1305,7 +1365,6 @@
             `)
             .addTo(GeoVivéMap);
         });
-      setupCategoryFilters();
       resolveGeoViveReady();
     });
 
@@ -1458,6 +1517,8 @@
       authHeaders,
       applyDataset,
       zoomToData,
+      loadDatasetFeatures,
+      get datasets() { return [...datasetMeta.values()]; },
       refreshDatasetOptions,
       get currentDataset() { return currentDataset; },
       ready: new Promise(r => (resolveGeoViveReady = r))
@@ -1500,6 +1561,7 @@
 <script type="module" src="./scripts/main.js"></script>
 <script type="module" src="./scripts/editor.js"></script>
 <script type="module" src="./scripts/open.js"></script>
+  <script type="module" src="./scripts/layers.js"></script>
 
 
 </body>
