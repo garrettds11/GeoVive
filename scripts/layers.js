@@ -10,7 +10,8 @@ import { CATALOG, tileUrl } from "./catalog.js";
 
 const STATE_KEY = "geovive:layers";
 const state = loadState();          // { datasets: [id], overlays: { id: { on, opacity } } }
-const loaded = new Map();           // datasetId -> { geojson, categories }
+const loaded = new Map();          // datasetId -> { geojson, categories }
+const listening = new Set();                 // layer ids with click/hover handlers
 
 const $ = (id) => document.getElementById(id);
 const map = () => window.GeoVive.map;
@@ -104,27 +105,42 @@ function drawDataset(id) {
   const hidden = id === activeDatasetId();  // the active dataset is already drawn
   if (!m.getSource(dsSource(id))) m.addSource(dsSource(id), { type: "geojson", data: data.geojson });
   else m.getSource(dsSource(id)).setData(data.geojson);
-  if (!m.getLayer(dsSource(id))) {
-    m.addLayer({
-      id: dsSource(id), type: "circle", source: dsSource(id),
+  const color = ["coalesce", ["get", "color"], "#94a3b8"];
+  const before = m.getLayer("GeoVivé-fill") ? "GeoVivé-fill" : undefined;   // under the active dataset
+  const layers = [
+    { id: `${dsSource(id)}-fill`, type: "fill", filter: ["match", ["geometry-type"], ["Polygon", "MultiPolygon"], true, false],
+      paint: { "fill-color": color, "fill-opacity": 0.15 } },
+    { id: `${dsSource(id)}-line`, type: "line", filter: ["match", ["geometry-type"], ["LineString", "MultiLineString", "Polygon", "MultiPolygon"], true, false],
+      paint: { "line-color": color, "line-width": 1.5, "line-opacity": 0.85 } },
+    { id: dsSource(id), type: "circle", filter: ["match", ["geometry-type"], ["Point", "MultiPoint"], true, false],
       paint: {
         "circle-radius": 5.5,
-        "circle-color": ["coalesce", ["get", "color"], "#94a3b8"],
+        "circle-color": color,
         "circle-stroke-width": 1.2,
         "circle-stroke-color": "#020617",
         "circle-opacity": 0.85
-      }
-    }, m.getLayer("GeoVivé-layer") ? "GeoVivé-layer" : undefined);
-    m.on("click", dsSource(id), (e) => showDatasetPopup(id, e));
-    m.on("mouseenter", dsSource(id), () => { m.getCanvas().style.cursor = "pointer"; });
-    m.on("mouseleave", dsSource(id), () => { m.getCanvas().style.cursor = ""; });
-  }
-  m.setLayoutProperty(dsSource(id), "visibility", hidden ? "none" : "visible");
+      } }
+  ];
+  layers.forEach(layer => {
+    if (m.getLayer(layer.id)) return;
+    m.addLayer({ ...layer, source: dsSource(id) }, before);
+    if (listening.has(layer.id)) return;   // map listeners outlive style switches
+    listening.add(layer.id);
+    m.on("click", layer.id, (e) => showDatasetPopup(id, e));
+    m.on("mouseenter", layer.id, () => { m.getCanvas().style.cursor = "pointer"; });
+    m.on("mouseleave", layer.id, () => { m.getCanvas().style.cursor = ""; });
+  });
+  layers.forEach(layer => m.setLayoutProperty(layer.id, "visibility", hidden ? "none" : "visible"));
+}
+
+function removeDatasetLayers(id) {
+  const m = map();
+  [dsSource(id), `${dsSource(id)}-line`, `${dsSource(id)}-fill`].forEach(l => { if (m.getLayer(l)) m.removeLayer(l); });
 }
 
 function removeDataset(id) {
   const m = map();
-  if (m.getLayer(dsSource(id))) m.removeLayer(dsSource(id));
+  removeDatasetLayers(id);
   if (m.getSource(dsSource(id))) m.removeSource(dsSource(id));
 }
 
@@ -134,7 +150,7 @@ function showDatasetPopup(id, e) {
   const p = f.properties || {};
   const meta = window.GeoVive.datasets.find(d => d.datasetId === id);
   new mapboxgl.Popup({ closeOnMove: true })
-    .setLngLat(f.geometry.coordinates)
+    .setLngLat(f.geometry.type === "Point" ? f.geometry.coordinates : e.lngLat)
     .setHTML(`
       <div class="popup-title">${esc(p.name || "Untitled")}</div>
       <div class="popup-category">${esc(String(p.category || "").toUpperCase())} · ${esc(meta?.name || "")}</div>

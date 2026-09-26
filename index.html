@@ -1095,32 +1095,78 @@
     });
 
     // Helper to ensure our layer exists (used both on first load + style changes)
+    // Features are drawn as three layers from one source: shape fills, outlines
+    // and lines, then points on top. Each layer only takes its geometry types.
+    const featureColor = [
+      "coalesce",
+      ["get", "color"],   // a pin's own color (from its dataset's types) wins
+      ["match", ["get", "category"],
+        "event", categoryColor.event,
+        "location", categoryColor.location,
+        "alert", categoryColor.alert,
+        "#e5e7eb"]
+    ];
+    const GEOMETRY_FILTERS = {
+      "GeoVivé-fill": ["match", ["geometry-type"], ["Polygon", "MultiPolygon"], true, false],
+      "GeoVivé-line": ["match", ["geometry-type"], ["LineString", "MultiLineString", "Polygon", "MultiPolygon"], true, false],
+      "GeoVivé-layer": ["match", ["geometry-type"], ["Point", "MultiPoint"], true, false]
+    };
+    const FEATURE_LAYERS = Object.keys(GEOMETRY_FILTERS);
+
     function ensurePointLayer() {
-      if (!GeoVivéMap.getLayer("GeoVivé-layer")) {
-        GeoVivéMap.addLayer({
-          id: "GeoVivé-layer",
-          type: "circle",
-          source: "GeoVivé-points",
-          paint: {
-            "circle-radius": 7,
-            // A pin's own color (set from its dataset's pin types) wins;
-            // otherwise color by the built-in categories.
-            "circle-color": [
-              "coalesce",
-              ["get", "color"],
-              ["match",
-                ["get", "category"],
-                "event", categoryColor.event,
-                "location", categoryColor.location,
-                "alert", categoryColor.alert,
-                "#e5e7eb"]
-            ],
-            "circle-stroke-width": 1.5,
-            "circle-stroke-color": "#020617",
-            "circle-opacity": 0.9
-          }
-        });
+      const add = (layer) => {
+        if (!GeoVivéMap.getLayer(layer.id)) GeoVivéMap.addLayer({ ...layer, source: "GeoVivé-points", filter: GEOMETRY_FILTERS[layer.id] });
+      };
+      add({ id: "GeoVivé-fill", type: "fill", paint: { "fill-color": featureColor, "fill-opacity": 0.18 } });
+      add({ id: "GeoVivé-line", type: "line", paint: { "line-color": featureColor, "line-width": 2, "line-opacity": 0.9 } });
+      add({
+        id: "GeoVivé-layer", type: "circle",
+        paint: {
+          "circle-radius": 7,
+          "circle-color": featureColor,
+          "circle-stroke-width": 1.5,
+          "circle-stroke-color": "#020617",
+          "circle-opacity": 0.9
+        }
+      });
+      applyFilters();
+    }
+
+    // Large shapes arrive simplified; when one is clicked, draw its full outline.
+    const DETAIL_SOURCE = "GeoVivé-detail";
+    let detailData = EMPTY_FC;
+    function drawDetail() {
+      if (!GeoVivéMap.getSource(DETAIL_SOURCE)) {
+        GeoVivéMap.addSource(DETAIL_SOURCE, { type: "geojson", data: detailData });
+        GeoVivéMap.addLayer({ id: DETAIL_SOURCE, type: "line", source: DETAIL_SOURCE,
+          paint: { "line-color": "#facc15", "line-width": 2.5 } }, "GeoVivé-layer");
+      } else {
+        GeoVivéMap.getSource(DETAIL_SOURCE).setData(detailData);
       }
+    }
+    async function showFullDetail(props) {
+      detailData = EMPTY_FC;
+      if (GeoVivéMap.getSource(DETAIL_SOURCE)) drawDetail();
+      if (props.geometryDetail !== "simplified" || !props.datasetId || !props.id) return;
+      try {
+        const res = await fetch(`${GEO_VIVE_API_BASE}/v1/datasets/${encodeURIComponent(props.datasetId)}/features/${encodeURIComponent(props.id)}`,
+          { headers: await authHeaders() });
+        if (!res.ok) return;
+        detailData = { type: "FeatureCollection", features: [await res.json()] };
+        drawDetail();
+      } catch (e) { console.warn("Full shape could not be loaded", e); }
+    }
+
+    // Bounds of any geometry (uses the API's bbox when present)
+    function featureBounds(f) {
+      const b = new mapboxgl.LngLatBounds();
+      if (Array.isArray(f.bbox) && f.bbox.length === 4) {
+        b.extend([f.bbox[0], f.bbox[1]]); b.extend([f.bbox[2], f.bbox[3]]);
+        return b;
+      }
+      const walk = (c) => typeof c[0] === "number" ? b.extend(c) : c.forEach(walk);
+      if (Array.isArray(f.geometry?.coordinates)) walk(f.geometry.coordinates);
+      return b;
     }
 
     async function applyDataset(key, opts = {}) {
@@ -1157,8 +1203,8 @@
     function dataBounds(geojson) {
       const bounds = new mapboxgl.LngLatBounds();
       geojson.features.forEach(f => {
-        const c = f.geometry?.coordinates;
-        if (f.geometry?.type === "Point" && Array.isArray(c)) bounds.extend(c);
+        const fb = featureBounds(f);
+        if (!fb.isEmpty()) bounds.extend(fb);
       });
       return bounds.isEmpty() ? null : bounds;
     }
@@ -1176,8 +1222,11 @@
       const total = currentGeojson.features.length;
       if (!total) { hint.hidden = true; return; }
       const view = GeoVivéMap.getBounds();
-      const inView = currentGeojson.features.filter(f =>
-        f.geometry?.type === "Point" && view.contains(f.geometry.coordinates)).length;
+      const inView = currentGeojson.features.filter(f => {
+        const fb = featureBounds(f);
+        return !fb.isEmpty() && fb.getWest() <= view.getEast() && fb.getEast() >= view.getWest()
+          && fb.getSouth() <= view.getNorth() && fb.getNorth() >= view.getSouth();
+      }).length;
       hint.hidden = inView > 0;
       hint.querySelector("span").textContent =
         `None of this dataset's ${total} place${total === 1 ? "" : "s"} are in view.`;
@@ -1224,7 +1273,14 @@
         `;
 
         item.addEventListener("click", () => {
-          const coords = feature.geometry?.coordinates;
+          if (feature.geometry?.type !== "Point") {
+            const fb = featureBounds(feature);
+            if (fb.isEmpty()) return;
+            GeoVivéMap.fitBounds(fb, { padding: 60, maxZoom: PIN_ZOOM });
+            showFullDetail(props);
+            return;
+          }
+          const coords = feature.geometry.coordinates;
           if (!coords || coords.length < 2) return;
 
           const [lng, lat] = coords;
@@ -1313,11 +1369,11 @@
 
     function applyFilters() {
       const hidden = [...hiddenCategories];
-      if (GeoVivéMap.getLayer("GeoVivé-layer")) {
-        GeoVivéMap.setFilter("GeoVivé-layer", hidden.length
-          ? ["!", ["in", ["coalesce", ["get", "category"], "uncategorized"], ["literal", hidden]]]
-          : null);
-      }
+      const byCategory = ["!", ["in", ["coalesce", ["get", "category"], "uncategorized"], ["literal", hidden]]];
+      FEATURE_LAYERS.forEach(id => {
+        if (!GeoVivéMap.getLayer(id)) return;
+        GeoVivéMap.setFilter(id, hidden.length ? ["all", GEOMETRY_FILTERS[id], byCategory] : GEOMETRY_FILTERS[id]);
+      });
       document.querySelectorAll(".feature-list-item").forEach(item => {
         item.style.display = hiddenCategories.has(item.dataset.category || "uncategorized") ? "none" : "flex";
       });
@@ -1337,34 +1393,34 @@
         await applyDataset("");
       }
       ensurePointLayer();
-        GeoVivéMap.on("mouseenter", "GeoVivé-layer", () => {
-          GeoVivéMap.getCanvas().style.cursor = "pointer";
-        });
+      FEATURE_LAYERS.forEach(id => {
+        GeoVivéMap.on("mouseenter", id, () => { GeoVivéMap.getCanvas().style.cursor = "pointer"; });
+        GeoVivéMap.on("mouseleave", id, () => { GeoVivéMap.getCanvas().style.cursor = ""; });
+      });
 
-        GeoVivéMap.on("mouseleave", "GeoVivé-layer", () => {
-          GeoVivéMap.getCanvas().style.cursor = "";
-        });
+      // One click handler for all three layers: points win over shapes under them.
+      GeoVivéMap.on("click", (e) => {
+        const hits = GeoVivéMap.queryRenderedFeatures(e.point, { layers: FEATURE_LAYERS.filter(id => GeoVivéMap.getLayer(id)).reverse() });
+        const feature = hits[0];
+        if (!feature) return;
+        const isPoint = feature.geometry.type === "Point";
+        if (isPoint && window.GeoViveEditor?.onFeatureClick?.(feature, e)) return;
 
-        GeoVivéMap.on("click", "GeoVivé-layer", (e) => {
-          const feature = e.features && e.features[0];
-          if (!feature) return;
-          if (window.GeoViveEditor?.onFeatureClick?.(feature, e)) return;
+        const props = feature.properties || {};
+        const name = escapeHtml(props.name || "Untitled");
+        const category = escapeHtml(props.category || "location");
+        const description = escapeHtml(props.description || props.country || "");
 
-          const [lng, lat] = feature.geometry.coordinates;
-          const props = feature.properties || {};
-          const name = escapeHtml(props.name || "Untitled");
-          const category = escapeHtml(props.category || "location");
-          const description = escapeHtml(props.description || props.country || "");
-
-          new mapboxgl.Popup({ closeOnMove: true })
-            .setLngLat([lng, lat])
-            .setHTML(`
-              <div class="popup-title">${name}</div>
-              <div class="popup-category">${category.toUpperCase()}</div>
-              <div class="popup-desc">${description}</div>
-            `)
-            .addTo(GeoVivéMap);
-        });
+        new mapboxgl.Popup({ closeOnMove: true })
+          .setLngLat(isPoint ? feature.geometry.coordinates : e.lngLat)
+          .setHTML(`
+            <div class="popup-title">${name}</div>
+            <div class="popup-category">${category.toUpperCase()}</div>
+            <div class="popup-desc">${description}</div>
+          `)
+          .addTo(GeoVivéMap);
+        showFullDetail(props);
+      });
       resolveGeoViveReady();
     });
 
@@ -1541,7 +1597,8 @@
 
       GeoVivéMap.once("style.load", async () => {
         await applyDataset(currentDataset); // reload the active dataset; view stays put
-        ensurePointLayer();                 // re-add the layer on the new style
+        ensurePointLayer();                 // re-add the layers on the new style
+        drawDetail();                       // and the full-detail outline, if any
       });
     });
 

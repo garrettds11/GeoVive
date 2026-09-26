@@ -84,6 +84,34 @@ Resources:
         - { Key: project, Value: geovive }
         - { Key: env, Value: !Ref Env }
 
+  # Full geometry of large shapes (the features table keeps a simplified preview)
+  GeometryBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub geovive-${Env}-geometry-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
+      VersioningConfiguration: { Status: Enabled }
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-versions
+            Status: Enabled
+            NoncurrentVersionExpiration: { NoncurrentDays: 30 }
+            AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 }
+      Tags:
+        - { Key: project, Value: geovive }
+        - { Key: env, Value: !Ref Env }
+
   HttpApi:
     Type: AWS::Serverless::HttpApi
     Properties:
@@ -117,16 +145,20 @@ Resources:
       FunctionName: !Sub geovive-${Env}-api
       CodeUri: dist/
       Handler: index.handler
+      MemorySize: 1024   # simplifying large shapes is CPU-bound
+      Timeout: 25
       Environment:
         Variables:
           DATASETS_TABLE: !Ref DatasetsTable
           FEATURES_TABLE: !Ref FeaturesTable
+          GEOMETRY_BUCKET: !Ref GeometryBucket
           USER_POOL_ID: !Ref UserPoolId
           USER_POOL_CLIENT_ID: !Ref UserPoolClientId
           ALLOWED_ORIGINS: !Join [",", !Ref AllowedOrigins]
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref DatasetsTable }
         - DynamoDBCrudPolicy: { TableName: !Ref FeaturesTable }
+        - S3CrudPolicy: { BucketName: !Ref GeometryBucket }
       Events:
         # Public reads (visibility enforced in the handler)
         ListDatasets:     { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /v1/datasets, Auth: { Authorizer: NONE } } }
@@ -188,5 +220,7 @@ Outputs:
     Value: !Ref DatasetsTable
   FeaturesTableName:
     Value: !Ref FeaturesTable
+  GeometryBucketName:
+    Value: !Ref GeometryBucket
   PreSignUpFunctionArn:
     Value: !GetAtt PreSignUpFunction.Arn

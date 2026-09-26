@@ -94,7 +94,7 @@
       <tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr>
       <tr><td>GET</td><td><code>/v1/datasets/{datasetId}/features</code></td><td><span class="tag public">optional</span></td><td>A <code>FeatureCollection</code>. Query: <code>limit</code> (default 500, max 1000), <code>nextToken</code></td></tr>
       <tr><td>POST</td><td><code>/v1/datasets/{datasetId}/features</code></td><td><span class="tag auth">owner</span></td><td>Add a feature. GeoVivé assigns the ID. Returns <code>201</code></td></tr>
-      <tr><td>GET</td><td><code>/v1/datasets/{datasetId}/features/{featureId}</code></td><td><span class="tag public">optional</span></td><td>One feature</td></tr>
+      <tr><td>GET</td><td><code>/v1/datasets/{datasetId}/features/{featureId}</code></td><td><span class="tag public">optional</span></td><td>One feature, always with full-detail geometry. Query: <code>detail=simplified</code> for the preview</td></tr>
       <tr><td>PUT</td><td><code>/v1/datasets/{datasetId}/features/{featureId}</code></td><td><span class="tag auth">owner</span></td><td>Replace a feature's geometry and properties</td></tr>
       <tr><td>DELETE</td><td><code>/v1/datasets/{datasetId}/features/{featureId}</code></td><td><span class="tag auth">owner</span></td><td>Delete a feature. Returns <code>204</code></td></tr>
     </table></div>
@@ -114,11 +114,11 @@
 }</code></pre>
     <ul>
       <li>Coordinates are <strong>[longitude, latitude]</strong> (WGS 84), as GeoJSON requires.</li>
-      <li>Geometry types: <code>Point</code>, <code>MultiPoint</code>, <code>LineString</code>, <code>MultiLineString</code>, <code>Polygon</code>, <code>MultiPolygon</code>. The map currently draws points only.</li>
-      <li>Keep each feature under roughly 350 KB. Very detailed polygons aren't supported yet.</li>
+      <li>Geometry types: <code>Point</code>, <code>MultiPoint</code>, <code>LineString</code>, <code>MultiLineString</code>, <code>Polygon</code>, <code>MultiPolygon</code>. Polygon rings must be closed.</li>
+      <li><strong>Large shapes:</strong> geometry up to 5 MB and 500,000 vertices. Shapes over 100 KB are stored in full, and lists return a simplified preview with <code>properties.geometryDetail: "simplified"</code>. Get the single feature for full detail.</li>
     </ul>
     <h3>Feature (response)</h3>
-    <p>GeoVivé adds <code>id</code>, <code>datasetId</code>, <code>createdAt</code> and <code>updatedAt</code> to <code>properties</code>, and sets the feature's top-level <code>id</code>. These are ignored if sent in a request.</p>
+    <p>GeoVivé adds <code>id</code>, <code>datasetId</code>, <code>createdAt</code> and <code>updatedAt</code> to <code>properties</code>, and sets the feature's top-level <code>id</code>. These are ignored if sent in a request. Non-point features include a GeoJSON <code>bbox</code> of the full shape.</p>
 
     <h2 id="errors">Errors</h2>
     <p>Errors return JSON: <code>{ "message": "…" }</code>.</p>
@@ -128,6 +128,7 @@
       <tr><td><code>401</code></td><td>Missing, invalid or expired token</td></tr>
       <tr><td><code>403</code></td><td>Signed in, but not the dataset's owner</td></tr>
       <tr><td><code>404</code></td><td>Not found, or a private dataset you can't see</td></tr>
+      <tr><td><code>413</code></td><td>Geometry over 5 MB</td></tr>
       <tr><td><code>500</code></td><td>Server error</td></tr>
     </table></div>
 

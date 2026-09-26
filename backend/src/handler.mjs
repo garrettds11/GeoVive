@@ -11,9 +11,17 @@ import {
   DynamoDBDocumentClient, GetCommand, PutCommand, DeleteCommand,
   QueryCommand, BatchWriteCommand, UpdateCommand
 } from "@aws-sdk/lib-dynamodb";
+import {
+  S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand,
+  ListObjectsV2Command, DeleteObjectsCommand
+} from "@aws-sdk/client-s3";
 import { CognitoJwtVerifier } from "aws-jwt-verify";
 import { randomUUID } from "node:crypto";
 import { getApp, originAllowed } from "./apps.mjs";
+import {
+  GeometryError, validateGeometry, bboxOf, byteSize, simplifyToFit,
+  INLINE_LIMIT, MAX_GEOMETRY
+} from "./geometry.mjs";
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true }
@@ -21,6 +29,8 @@ const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
 
 const DATASETS_TABLE = process.env.DATASETS_TABLE;
 const FEATURES_TABLE = process.env.FEATURES_TABLE;
+const GEOMETRY_BUCKET = process.env.GEOMETRY_BUCKET;
+const s3 = new S3Client({});
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
 
 const verifier = CognitoJwtVerifier.create({
@@ -29,7 +39,6 @@ const verifier = CognitoJwtVerifier.create({
   tokenUse: "access"
 });
 
-const GEOMETRY_TYPES = new Set(["Point", "MultiPoint", "LineString", "MultiLineString", "Polygon", "MultiPolygon"]);
 const VISIBILITIES = new Set(["public", "private"]);
 
 // ------------------------------------------------------------------ helpers
@@ -113,39 +122,62 @@ function datasetView(d) {
   };
 }
 
-function validateGeometry(g) {
-  if (!g || typeof g !== "object" || !GEOMETRY_TYPES.has(g.type) || !Array.isArray(g.coordinates)) {
-    throw new HttpError(400, `geometry must be a GeoJSON geometry of type ${[...GEOMETRY_TYPES].join(", ")}`);
-  }
-  if (g.type === "Point") {
-    const [lng, lat] = g.coordinates;
-    if (!Number.isFinite(lng) || !Number.isFinite(lat) || lng < -180 || lng > 180 || lat < -90 || lat > 90) {
-      throw new HttpError(400, "Point coordinates must be [lng, lat] within valid ranges");
-    }
-  }
-}
+// Large geometries live in S3; the table keeps a simplified preview.
+const geometryKey = (datasetId, featureId) => `geometry/${datasetId}/${featureId}.json`;
 
-function featureItem(datasetId, featureId, body, existing) {
+async function featureItem(datasetId, featureId, body, existing) {
   if (!body || body.type !== "Feature") throw new HttpError(400, "Body must be a GeoJSON Feature");
-  validateGeometry(body.geometry);
+  try { validateGeometry(body.geometry); } catch (e) {
+    if (e instanceof GeometryError) throw new HttpError(400, e.message);
+    throw e;
+  }
   const props = { ...(body.properties || {}) };
   if (!props.name || typeof props.name !== "string") throw new HttpError(400, "properties.name is required");
   delete props.id; delete props.datasetId; delete props.createdAt; delete props.updatedAt;
+  delete props.geometryDetail;
   const now = new Date().toISOString();
-  return {
+  const item = {
     datasetId, featureId,
     geometry: body.geometry,
     properties: props,
     createdAt: existing?.createdAt || now,
     updatedAt: now
   };
+  if (body.geometry.type !== "Point") item.bbox = bboxOf(body.geometry);
+
+  const size = byteSize(body.geometry);
+  if (size > MAX_GEOMETRY) throw new HttpError(413, `geometry is too large (${size} bytes; limit ${MAX_GEOMETRY})`);
+  if (size > INLINE_LIMIT) {
+    const key = geometryKey(datasetId, featureId);
+    await s3.send(new PutObjectCommand({
+      Bucket: GEOMETRY_BUCKET, Key: key, Body: JSON.stringify(body.geometry),
+      ContentType: "application/geo+json"
+    }));
+    item.geometry = simplifyToFit(body.geometry);
+    item.geometryRef = { key, bytes: size };
+  } else if (existing?.geometryRef) {
+    await deleteStoredGeometry(existing);   // shape got small again
+  }
+  return item;
 }
 
-function toFeature(item) {
-  return {
+async function deleteStoredGeometry(item) {
+  if (item?.geometryRef?.key) {
+    await s3.send(new DeleteObjectCommand({ Bucket: GEOMETRY_BUCKET, Key: item.geometryRef.key }));
+  }
+}
+
+async function loadFullGeometry(item) {
+  const res = await s3.send(new GetObjectCommand({ Bucket: GEOMETRY_BUCKET, Key: item.geometryRef.key }));
+  return JSON.parse(await res.Body.transformToString());
+}
+
+// `full`: geometry to return in place of the stored preview.
+function toFeature(item, full) {
+  const f = {
     type: "Feature",
     id: item.featureId,
-    geometry: item.geometry,
+    geometry: full || item.geometry,
     properties: {
       ...item.properties,
       id: item.featureId,
@@ -154,6 +186,9 @@ function toFeature(item) {
       updatedAt: item.updatedAt
     }
   };
+  if (item.bbox) f.bbox = item.bbox;
+  if (item.geometryRef) f.properties.geometryDetail = full ? "full" : "simplified";
+  return f;
 }
 
 async function adjustCount(datasetId, delta) {
@@ -236,8 +271,23 @@ async function deleteDataset(event, datasetId) {
     }
     ExclusiveStartKey = page.LastEvaluatedKey;
   } while (ExclusiveStartKey);
+  await deleteDatasetGeometry(datasetId);
   await ddb.send(new DeleteCommand({ TableName: DATASETS_TABLE, Key: { datasetId } }));
   return undefined;
+}
+
+async function deleteDatasetGeometry(datasetId) {
+  let ContinuationToken;
+  do {
+    const page = await s3.send(new ListObjectsV2Command({
+      Bucket: GEOMETRY_BUCKET, Prefix: `geometry/${datasetId}/`, ContinuationToken
+    }));
+    const objects = (page.Contents || []).map(o => ({ Key: o.Key }));
+    if (objects.length) {
+      await s3.send(new DeleteObjectsCommand({ Bucket: GEOMETRY_BUCKET, Delete: { Objects: objects, Quiet: true } }));
+    }
+    ContinuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+  } while (ContinuationToken);
 }
 
 // ------------------------------------------------------------------ features
@@ -264,14 +314,16 @@ async function getFeature(event, datasetId, featureId) {
   assertCanRead(ds, caller);
   const { Item } = await ddb.send(new GetCommand({ TableName: FEATURES_TABLE, Key: { datasetId, featureId } }));
   if (!Item) throw new HttpError(404, "Feature not found");
-  return toFeature(Item);
+  const qs = event.queryStringParameters || {};
+  const full = Item.geometryRef && qs.detail !== "simplified" ? await loadFullGeometry(Item) : undefined;
+  return toFeature(Item, full);
 }
 
 async function createFeature(event, datasetId) {
   const caller = await getCaller(event, { required: true });
   const ds = await loadDataset(datasetId);
   assertOwner(ds, caller);
-  const item = featureItem(datasetId, randomUUID(), parseBody(event));
+  const item = await featureItem(datasetId, randomUUID(), parseBody(event));
   await ddb.send(new PutCommand({ TableName: FEATURES_TABLE, Item: item }));
   await adjustCount(datasetId, 1);
   return toFeature(item);
@@ -283,7 +335,7 @@ async function updateFeature(event, datasetId, featureId) {
   assertOwner(ds, caller);
   const { Item: existing } = await ddb.send(new GetCommand({ TableName: FEATURES_TABLE, Key: { datasetId, featureId } }));
   if (!existing) throw new HttpError(404, "Feature not found");
-  const item = featureItem(datasetId, featureId, parseBody(event), existing);
+  const item = await featureItem(datasetId, featureId, parseBody(event), existing);
   await ddb.send(new PutCommand({ TableName: FEATURES_TABLE, Item: item }));
   return toFeature(item);
 }
@@ -296,6 +348,7 @@ async function deleteFeature(event, datasetId, featureId) {
     TableName: FEATURES_TABLE, Key: { datasetId, featureId }, ReturnValues: "ALL_OLD"
   }));
   if (!Attributes) throw new HttpError(404, "Feature not found");
+  await deleteStoredGeometry(Attributes);
   await adjustCount(datasetId, -1);
   return undefined;
 }

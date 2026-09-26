@@ -152,7 +152,16 @@ paths:
     get:
       tags: [Features]
       summary: Get a feature
+      description: |
+        Returns the full-detail geometry. Large shapes are simplified in list
+        responses (properties.geometryDetail = "simplified"); fetch the feature
+        here for full detail, or pass detail=simplified to get the preview.
       security: [{}, { cognito: [] }]
+      parameters:
+        - name: detail
+          in: query
+          required: false
+          schema: { type: string, enum: [full, simplified], default: full }
       responses:
         "200":
           description: The feature
@@ -283,7 +292,10 @@ components:
 
     Geometry:
       type: object
-      description: GeoJSON geometry (RFC 7946). Coordinates are [longitude, latitude].
+      description: |
+        GeoJSON geometry (RFC 7946). Coordinates are [longitude, latitude] in WGS 84.
+        Polygon rings must be closed. Up to 5 MB and 500,000 vertices per geometry;
+        shapes over 100 KB are stored in full and served simplified in lists.
       required: [type, coordinates]
       properties:
         type:
@@ -319,6 +331,12 @@ components:
         type: { type: string, const: Feature }
         id: { type: string }
         geometry: { $ref: "#/components/schemas/Geometry" }
+        bbox:
+          type: array
+          description: "[west, south, east, north] of the full geometry (non-point features)"
+          items: { type: number }
+          minItems: 4
+          maxItems: 4
         properties:
           allOf:
             - $ref: "#/components/schemas/FeatureInputProperties"
@@ -329,6 +347,10 @@ components:
                 datasetId: { type: string }
                 createdAt: { type: string, format: date-time }
                 updatedAt: { type: string, format: date-time }
+                geometryDetail:
+                  type: string
+                  enum: [simplified, full]
+                  description: Present on large shapes; "simplified" means the geometry is a preview
 
     FeatureCollection:
       type: object
