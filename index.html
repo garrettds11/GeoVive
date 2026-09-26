@@ -674,11 +674,26 @@
 
     /* ---------- North lock control ---------- */
     .north-lock-btn { display: flex; align-items: center; justify-content: center; color: #374151; }
-    .north-lock-btn .shackle { transition: transform 0.2s ease; transform-origin: 16px 11px; }
-    .north-lock-btn:not(.is-locked) .shackle { transform: translateY(-2px) rotate(20deg); }
+    .ctrl-emoji { font-size: 17px; line-height: 1; font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
+    .north-lock-btn:not(.is-locked) .ctrl-emoji { opacity: 0.45; filter: grayscale(1); }
+    /* Compass: the needle turns with the map */
+    .mapboxgl-ctrl button.mapboxgl-ctrl-compass .mapboxgl-ctrl-icon { background-image: none !important; display: flex; align-items: center; justify-content: center; }
+    .mapboxgl-ctrl button.mapboxgl-ctrl-compass .mapboxgl-ctrl-icon::before { content: "🧭"; font-size: 17px; line-height: 1; font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
+    /* My location: a navigation arrow (blue when showing your location) */
+    .mapboxgl-ctrl button.mapboxgl-ctrl-geolocate .mapboxgl-ctrl-icon,
+    .mapboxgl-ctrl button.mapboxgl-ctrl-geolocate.mapboxgl-ctrl-geolocate-active .mapboxgl-ctrl-icon,
+    .mapboxgl-ctrl button.mapboxgl-ctrl-geolocate.mapboxgl-ctrl-geolocate-background .mapboxgl-ctrl-icon {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20.5 3.5 3.8 10.6c-.8.3-.7 1.4.1 1.6l6.6 1.5 1.5 6.6c.2.8 1.3.9 1.6.1L20.5 3.5z' fill='%23374151'/%3E%3C/svg%3E") !important;
+      background-size: 18px 18px; background-position: center; background-repeat: no-repeat;
+    }
+    .mapboxgl-ctrl button.mapboxgl-ctrl-geolocate.mapboxgl-ctrl-geolocate-active .mapboxgl-ctrl-icon,
+    .mapboxgl-ctrl button.mapboxgl-ctrl-geolocate.mapboxgl-ctrl-geolocate-background .mapboxgl-ctrl-icon {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20.5 3.5 3.8 10.6c-.8.3-.7 1.4.1 1.6l6.6 1.5 1.5 6.6c.2.8 1.3.9 1.6.1L20.5 3.5z' fill='%232563eb'/%3E%3C/svg%3E") !important;
+    }
     .north-lock-btn.is-locked { color: #fff; background: #16a34a; }
     .north-lock-btn.is-locked:hover { background: #15803d; }
-    .three-d-btn { font-weight: 700; font-size: 12px; color: #374151; }
+    .three-d-btn { display: flex; align-items: center; justify-content: center; }
+    .three-d-btn:not(.is-on) .ctrl-emoji { opacity: 0.55; filter: grayscale(1); }
     .three-d-btn.is-on { color: #fff; background: #2563eb; }
     .three-d-btn.is-on:hover { background: #1d4ed8; }
     /* On phones the tray handle sits over the top of the map */
@@ -874,8 +889,8 @@
             <div id="edit-bar" hidden>
               <div class="edit-title">Editing <strong id="edit-bar-title"></strong></div>
               <div class="edit-actions">
-                <button type="button" id="add-pin-btn" class="btn primary">+ Add pin</button>
-                <button type="button" id="pin-here-btn" class="btn">Pin my location</button>
+                <button type="button" id="add-pin-btn" class="btn primary">📍 Add pin</button>
+                <button type="button" id="pin-here-btn" class="btn">📍 Pin my location</button>
                 <button type="button" id="delete-map-btn" class="btn danger">Delete map</button>
               </div>
               <p class="hint" style="margin-top:0.35rem;">Click a pin to edit or delete it.</p>
@@ -1559,14 +1574,8 @@
         this.button = document.createElement("button");
         this.button.type = "button";
         this.button.className = "north-lock-btn";
-        this.button.innerHTML = `
-          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none"
-               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="5" y="11" width="14" height="10" rx="2"></rect>
-            <path class="shackle" d="M8 11V7a4 4 0 0 1 8 0v4"></path>
-            <text x="12" y="19" text-anchor="middle" font-size="7" font-weight="700"
-                  fill="currentColor" stroke="none">N</text>
-          </svg>`;
+        this.button.innerHTML = `<span class="ctrl-emoji" aria-hidden="true">🔒</span>`;
+        this.button.title = "Lock north up";
         this.button.addEventListener("click", () => this.set(!this.locked));
         this.container.appendChild(this.button);
         let saved = false;
@@ -1647,7 +1656,8 @@
         this.button = document.createElement("button");
         this.button.type = "button";
         this.button.className = "three-d-btn";
-        this.button.textContent = "3D";
+        this.button.innerHTML = `<span class="ctrl-emoji" aria-hidden="true">🆛</span>`;
+        this.button.setAttribute("aria-label", "3D terrain and buildings");
         this.button.addEventListener("click", () => this.set(!this.on, { move: true }));
         this.container.appendChild(this.button);
         let saved = false;

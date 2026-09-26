@@ -121,7 +121,7 @@ function setAddMode(on) {
   state.addMode = on;
   const btn = $("add-pin-btn");
   if (btn) {
-    btn.textContent = on ? "Click the map to place a pin… (Esc to cancel)" : "+ Add pin";
+    btn.textContent = on ? "Click the map to place a pin… (Esc to cancel)" : "📍 Add pin";
     btn.classList.toggle("active", on);
   }
   const canvas = window.GeoVive?.map?.getCanvas();
@@ -139,7 +139,7 @@ async function createMap() {
     nameEl.value = "";
     await refreshDatasets();
     await selectDataset(ds.datasetId);
-    setStatus(`Created "${ds.name}". Click + Add pin to start.`);
+    setStatus(`Created "${ds.name}". Click 📍 Add pin to start.`);
   } catch (e) {
     setStatus(e.message, true);
   }
@@ -266,7 +266,7 @@ function pinMyLocation() {
   if (!navigator.geolocation) { setStatus("This browser can't share your location."); return; }
   if (btn) { btn.disabled = true; btn.textContent = "Finding you…"; }
   navigator.geolocation.getCurrentPosition(pos => {
-    if (btn) { btn.disabled = false; btn.textContent = "Pin my location"; }
+    if (btn) { btn.disabled = false; btn.textContent = "📍 Pin my location"; }
     const lngLat = { lng: pos.coords.longitude, lat: pos.coords.latitude };
     const map = window.GeoVive.map;
     map.flyTo({ center: [lngLat.lng, lngLat.lat], zoom: Math.max(map.getZoom(), 15) });
@@ -275,7 +275,7 @@ function pinMyLocation() {
     const acc = Math.round(pos.coords.accuracy || 0);
     if (acc) setStatus(`Location found (within about ${acc} m). Adjust the name and save the pin.`);
   }, err => {
-    if (btn) { btn.disabled = false; btn.textContent = "Pin my location"; }
+    if (btn) { btn.disabled = false; btn.textContent = "📍 Pin my location"; }
     setStatus(err.code === err.PERMISSION_DENIED ? "Location sharing is off for this site. Allow it in your browser settings to pin your location."
       : "Couldn't get your location. Try again, or place the pin by clicking the map.");
   }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
