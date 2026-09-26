@@ -13,6 +13,7 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import { CognitoJwtVerifier } from "aws-jwt-verify";
 import { randomUUID } from "node:crypto";
+import { getApp, originAllowed } from "./apps.mjs";
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true }
@@ -107,6 +108,7 @@ function datasetView(d) {
   return {
     datasetId: d.datasetId, name: d.name, description: d.description || "",
     visibility: d.visibility, ownerId: d.ownerId, source: d.source,
+    origin: d.origin, referenceArea: d.referenceArea, featureTypes: d.featureTypes,
     featureCount: d.featureCount || 0, createdAt: d.createdAt, updatedAt: d.updatedAt
   };
 }
@@ -298,6 +300,78 @@ async function deleteFeature(event, datasetId, featureId) {
   return undefined;
 }
 
+// ------------------------------------------------------------------ connected apps (phase 2)
+
+function publicAppView(appId, app) {
+  return {
+    appId, name: app.name,
+    returnOrigins: app.returnOrigins, areaOrigins: app.areaOrigins,
+    featureTypes: app.featureTypes
+  };
+}
+
+async function getAppInfo(appId) {
+  const app = getApp(appId);
+  if (!app) throw new HttpError(404, "Unknown app");
+  return publicAppView(appId, app);
+}
+
+// Find or create the signed-in user's map for one item in a connected app.
+// owner + appId + externalRef is unique (GSI byOrigin on originKey).
+async function openAppMap(event, appId, externalRef) {
+  const caller = await getCaller(event, { required: true });
+  const app = getApp(appId);
+  if (!app) throw new HttpError(404, "Unknown app");
+  if (!externalRef || externalRef.length > 200) throw new HttpError(400, "Invalid item reference");
+
+  const body = event.body ? parseBody(event) : {};
+  const title = typeof body.title === "string" && body.title.trim() ? body.title.trim().slice(0, 120) : null;
+  const externalUrl = body.externalUrl;
+  const referenceArea = body.referenceArea;
+  if (externalUrl !== undefined && !originAllowed(externalUrl, app.returnOrigins)) {
+    throw new HttpError(400, "externalUrl is not an allowed return address for this app");
+  }
+  if (referenceArea !== undefined && !originAllowed(referenceArea, app.areaOrigins)) {
+    throw new HttpError(400, "referenceArea must be served from an allowed origin for this app");
+  }
+
+  const originKey = `${caller.sub}#${appId}#${externalRef}`;
+  const found = await ddb.send(new QueryCommand({
+    TableName: DATASETS_TABLE, IndexName: "byOrigin",
+    KeyConditionExpression: "originKey = :k", ExpressionAttributeValues: { ":k": originKey }, Limit: 1
+  }));
+  const existing = found.Items?.[0];
+  const now = new Date().toISOString();
+
+  if (existing) {
+    // Keep links fresh (the app's URL or area may change); never rename the user's map.
+    const next = {
+      ...existing,
+      origin: { ...existing.origin, externalUrl: externalUrl ?? existing.origin?.externalUrl },
+      referenceArea: referenceArea ?? existing.referenceArea,
+      featureTypes: app.featureTypes,
+      updatedAt: now
+    };
+    await ddb.send(new PutCommand({ TableName: DATASETS_TABLE, Item: next }));
+    return { created: false, dataset: datasetView(next) };
+  }
+
+  const item = {
+    datasetId: randomUUID(),
+    name: title || `${app.name} – ${externalRef}`,
+    description: `Created from ${app.name}`,
+    visibility: "private",
+    ownerId: caller.sub,
+    origin: { appId, externalRef, externalUrl },
+    originKey,
+    referenceArea,
+    featureTypes: app.featureTypes,
+    featureCount: 0, createdAt: now, updatedAt: now
+  };
+  await ddb.send(new PutCommand({ TableName: DATASETS_TABLE, Item: item }));
+  return { created: true, dataset: datasetView(item) };
+}
+
 // ------------------------------------------------------------------ router
 
 export const handler = async (event) => {
@@ -321,6 +395,11 @@ export const handler = async (event) => {
       case "GET /v1/datasets/{datasetId}/features/{featureId}": result = await getFeature(event, p.datasetId, p.featureId); break;
       case "PUT /v1/datasets/{datasetId}/features/{featureId}": result = await updateFeature(event, p.datasetId, p.featureId); break;
       case "DELETE /v1/datasets/{datasetId}/features/{featureId}": result = await deleteFeature(event, p.datasetId, p.featureId); status = 204; break;
+      case "GET /v1/apps/{appId}": result = await getAppInfo(p.appId); break;
+      case "PUT /v1/apps/{appId}/maps/{externalRef}": {
+        const out = await openAppMap(event, p.appId, p.externalRef);
+        result = out.dataset; status = out.created ? 201 : 200; break;
+      }
       default: throw new HttpError(404, `No route for ${routeKey}`);
     }
     return respond(event, status, result);

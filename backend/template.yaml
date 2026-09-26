@@ -48,6 +48,7 @@ Resources:
         - { AttributeName: datasetId, AttributeType: S }
         - { AttributeName: visibility, AttributeType: S }
         - { AttributeName: ownerId, AttributeType: S }
+        - { AttributeName: originKey, AttributeType: S }
       KeySchema:
         - { AttributeName: datasetId, KeyType: HASH }
       GlobalSecondaryIndexes:
@@ -56,6 +57,9 @@ Resources:
           Projection: { ProjectionType: ALL }
         - IndexName: byOwner
           KeySchema: [{ AttributeName: ownerId, KeyType: HASH }]
+          Projection: { ProjectionType: ALL }
+        - IndexName: byOrigin
+          KeySchema: [{ AttributeName: originKey, KeyType: HASH }]
           Projection: { ProjectionType: ALL }
       PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
       Tags:
@@ -129,7 +133,9 @@ Resources:
         GetDataset:       { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/datasets/{datasetId}", Auth: { Authorizer: NONE } } }
         ListFeatures:     { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/datasets/{datasetId}/features", Auth: { Authorizer: NONE } } }
         GetFeature:       { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/datasets/{datasetId}/features/{featureId}", Auth: { Authorizer: NONE } } }
+        GetApp:           { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/apps/{appId}", Auth: { Authorizer: NONE } } }
         # Authenticated writes (ownership enforced in the handler)
+        OpenAppMap:       { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: PUT, Path: "/v1/apps/{appId}/maps/{externalRef}" } }
         CreateDataset:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: /v1/datasets } }
         UpdateDataset:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: PATCH, Path: "/v1/datasets/{datasetId}" } }
         DeleteDataset:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: DELETE, Path: "/v1/datasets/{datasetId}" } }

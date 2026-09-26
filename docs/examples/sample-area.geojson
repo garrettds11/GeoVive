@@ -1,0 +1,16 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "Sample area – Rocky Mountain National Park (approx.)" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-105.90, 40.20], [-105.55, 40.20], [-105.49, 40.33],
+          [-105.58, 40.49], [-105.80, 40.52], [-105.93, 40.40], [-105.90, 40.20]
+        ]]
+      }
+    }
+  ]
+}

@@ -30,6 +30,7 @@
       <a href="#formats">Formats</a>
       <a href="#errors">Errors</a>
       <a href="#examples">Examples</a>
+      <a href="#open-links">Open links</a>
       <a href="#connected-apps">Connected apps</a>
     </nav>
 
@@ -150,15 +151,37 @@ curl -X POST https://api.geovive.link/v1/datasets/&lt;datasetId&gt;/features \
 const collection = await res.json();   // GeoJSON FeatureCollection
 map.getSource("places").setData(collection);</code></pre>
 
+    <h2 id="open-links">Open in GeoVivé links</h2>
+    <p>A registered app can send its signed-in users to their own GeoVivé map for one item in the app (for example, a hunt plan), then bring them back.</p>
+<pre><code>https://geovive.link/open?app=&lt;appId&gt;&amp;ref=&lt;itemId&gt;
+  &amp;title=&lt;map name&gt;
+  &amp;area=&lt;URL of a GeoJSON outline&gt;
+  &amp;return=&lt;URL to come back to&gt;</code></pre>
+    <div class="table-wrap"><table>
+      <tr><th>Parameter</th><th>Required</th><th>Meaning</th></tr>
+      <tr><td><code>app</code></td><td>yes</td><td>Your registered app ID</td></tr>
+      <tr><td><code>ref</code></td><td>yes</td><td>Your ID for the item. The same user + app + ref always opens the same map.</td></tr>
+      <tr><td><code>title</code></td><td>no</td><td>Name for the map when it's first created</td></tr>
+      <tr><td><code>area</code></td><td>no</td><td>GeoJSON drawn as a read-only outline (never stored as pins). Must be served from one of your registered origins, with CORS allowing <code>https://geovive.link</code>.</td></tr>
+      <tr><td><code>return</code></td><td>no</td><td>Where <strong>Done</strong> sends the user. Must be on one of your registered origins.</td></tr>
+    </table></div>
+    <p>GeoVivé signs the user in if needed, finds or creates their private map, applies your pin types, and shows a banner. <strong>Done</strong> returns them to <code>return</code> with <code>?geovive_map=&lt;datasetId&gt;</code> added. Only the ID travels in the URL.</p>
+    <p>The map belongs to the user. Until connected apps ship (below), your app can't read it with its own credentials; the user sees it in GeoVivé under <strong>My maps</strong>.</p>
+    <h3>API used by the link</h3>
+    <div class="table-wrap"><table>
+      <tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr>
+      <tr><td>GET</td><td><code>/v1/apps/{appId}</code></td><td><span class="tag public">none</span></td><td>App name, allowed origins and pin types</td></tr>
+      <tr><td>PUT</td><td><code>/v1/apps/{appId}/maps/{ref}</code></td><td><span class="tag auth">required</span></td><td>Find or create the caller's map for that item. Body: <code>title</code>, <code>externalUrl</code>, <code>referenceArea</code>. Returns <code>201</code> when created, <code>200</code> when it already existed.</td></tr>
+    </table></div>
+    <p>To register an app, send its name, return origins, outline origins and pin types to the GeoVivé team.</p>
+
     <h2 id="connected-apps">Connected apps (coming soon)</h2>
     <div class="card">
-      <p>GeoVivé is adding support for other sites to link a user's GeoVivé account with their own and work with that user's maps, with the user's consent. Planned:</p>
+      <p>Next, apps will be able to link a user's GeoVivé account with their own and read that user's maps, with the user's consent:</p>
       <ul>
-        <li><strong>Account linking</strong> via OAuth 2.0, with a GeoVivé consent screen and a Connected apps page where users can revoke access.</li>
-        <li><strong>Open in GeoVivé links</strong> that send a user to a map for a specific item in your app, show your reference area, and return them when they're done.</li>
+        <li><strong>Account linking</strong> via OAuth 2.0, with a consent screen and a Connected apps page where users can revoke access.</li>
         <li><strong>App-scoped access:</strong> an app sees only maps created through it or shared with it.</li>
       </ul>
-      <p style="margin:0">Interested in integrating? Watch this page. Details will be published here as each part ships.</p>
     </div>
 
     <footer>GeoVivé API v1 · <a href="/docs/">User guide</a></footer>
