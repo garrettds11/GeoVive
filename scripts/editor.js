@@ -259,6 +259,28 @@ function onFeatureClick(feature, e) {
   return true;
 }
 
+// Add a pin at the device's current location (asks the browser for permission).
+// The position is only used to place the pin form; it's saved only if the user saves the pin.
+function pinMyLocation() {
+  const btn = $("pin-here-btn");
+  if (!navigator.geolocation) { setStatus("This browser can't share your location."); return; }
+  if (btn) { btn.disabled = true; btn.textContent = "Finding you…"; }
+  navigator.geolocation.getCurrentPosition(pos => {
+    if (btn) { btn.disabled = false; btn.textContent = "Pin my location"; }
+    const lngLat = { lng: pos.coords.longitude, lat: pos.coords.latitude };
+    const map = window.GeoVive.map;
+    map.flyTo({ center: [lngLat.lng, lngLat.lat], zoom: Math.max(map.getZoom(), 15) });
+    setAddMode(false);
+    openPinForm(lngLat, null);
+    const acc = Math.round(pos.coords.accuracy || 0);
+    if (acc) setStatus(`Location found (within about ${acc} m). Adjust the name and save the pin.`);
+  }, err => {
+    if (btn) { btn.disabled = false; btn.textContent = "Pin my location"; }
+    setStatus(err.code === err.PERMISSION_DENIED ? "Location sharing is off for this site. Allow it in your browser settings to pin your location."
+      : "Couldn't get your location. Try again, or place the pin by clicking the map.");
+  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
+}
+
 function wireMap() {
   const map = window.GeoVive.map;
   map.on("click", (e) => {
@@ -286,6 +308,7 @@ async function init() {
   $("create-map-btn")?.addEventListener("click", createMap);
   $("new-map-name")?.addEventListener("keydown", (e) => { if (e.key === "Enter") createMap(); });
   $("add-pin-btn")?.addEventListener("click", () => setAddMode(!state.addMode));
+  $("pin-here-btn")?.addEventListener("click", pinMyLocation);
   $("delete-map-btn")?.addEventListener("click", deleteCurrentMap);
   $("dataset-select")?.addEventListener("change", () => { closePopup(); setTimeout(updateEditBar, 0); });
   window.addEventListener("geovive:dataset-applied", updateEditBar);

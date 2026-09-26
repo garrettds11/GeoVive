@@ -146,15 +146,6 @@
       padding: 0.25em 0.25em 1em 0.25em;
     }
 
-    .badge {
-      padding: 0.2rem 0.75rem;
-      border-radius: 999px;
-      border: 1px solid var(--accent-soft);
-      background: rgba(15, 23, 42, 0.9);
-      font-size: 0.75rem;
-      color: var(--muted);
-    }
-
     main {
       flex: 1 1 auto;
       display: grid;
@@ -590,6 +581,7 @@
       .map-status {
         top: auto;
         bottom: 2.25rem;
+        flex-direction: column-reverse;   /* the wider "Mapbox connected" pill sits lowest */
       }
       .map-wrapper {
         min-height: 70vh;  /* keep at least half the screen for the map */
@@ -883,6 +875,7 @@
               <div class="edit-title">Editing <strong id="edit-bar-title"></strong></div>
               <div class="edit-actions">
                 <button type="button" id="add-pin-btn" class="btn primary">+ Add pin</button>
+                <button type="button" id="pin-here-btn" class="btn">Pin my location</button>
                 <button type="button" id="delete-map-btn" class="btn danger">Delete map</button>
               </div>
               <p class="hint" style="margin-top:0.35rem;">Click a pin to edit or delete it.</p>
@@ -942,7 +935,6 @@
         <div class="status-pill" id="status-zoom">
           Zoom: <span id="zoom-value">–</span>
         </div>
-        <div class="badge">v0.1 · beta</div>
       </div>
     </section>
   </main>
@@ -1540,6 +1532,14 @@
     // Map scale (bottom-left): miles/feet and kilometers/meters
     GeoVivéMap.addControl(new mapboxgl.ScaleControl({ maxWidth: 120, unit: "imperial" }), "bottom-left");
     GeoVivéMap.addControl(new mapboxgl.ScaleControl({ maxWidth: 120, unit: "metric" }), "bottom-left");
+
+    // My location (top-left): centers on the device's location and shows it as a dot.
+    // The location stays in the browser; nothing is saved unless the user adds a pin.
+    const geolocate = new mapboxgl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: true }, trackUserLocation: false, showAccuracyCircle: true,
+      fitBoundsOptions: { maxZoom: 15 }
+    });
+    GeoVivéMap.addControl(geolocate, "top-left");
 
     // Compass (top-left): the needle shows the map's rotation; click to reset
     // to north-up and flat.
