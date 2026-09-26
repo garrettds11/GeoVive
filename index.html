@@ -602,6 +602,33 @@
       color: var(--muted);
     }
   
+    /* ---------- My maps + pin editing ---------- */
+    #my-maps[hidden], #edit-bar[hidden] { display: none; }
+    .my-maps-list { display: flex; flex-direction: column; gap: 0.35rem; margin: 0.4rem 0; }
+    .my-map-item { display: flex; flex-direction: column; align-items: flex-start; width: 100%; text-align: left;
+      background: var(--bg-alt); color: var(--text); border: 1px solid var(--border); border-radius: 0.5rem;
+      padding: 0.4rem 0.6rem; cursor: pointer; font: inherit; }
+    .my-map-item:hover, .my-map-item.active { border-color: var(--accent1); background: var(--accent-soft); }
+    .my-map-name { font-size: 0.85rem; font-weight: 600; }
+    .my-map-meta { font-size: 0.72rem; color: var(--muted); }
+    .new-map-row { display: flex; gap: 0.35rem; margin-top: 0.4rem; }
+    .new-map-row input[type=text], .pin-form input, .pin-form select, .pin-form textarea {
+      width: 100%; background: var(--bg-alt); color: var(--text); border: 1px solid var(--border);
+      border-radius: 0.4rem; padding: 0.35rem 0.5rem; font: inherit; font-size: 0.82rem; }
+    .new-map-public { font-size: 0.75rem; color: var(--muted); display: flex; gap: 0.3rem; align-items: center; margin-top: 0.3rem; }
+    #edit-bar { border: 1px solid var(--accent-strong); border-radius: 0.6rem; padding: 0.5rem 0.6rem; margin-top: 0.5rem; }
+    #edit-bar .edit-title { font-size: 0.8rem; color: var(--muted); margin-bottom: 0.4rem; }
+    #edit-bar .edit-title strong { color: var(--text); }
+    .edit-actions { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+    #add-pin-btn.active { background: var(--accent1); color: #020617; }
+    .btn.danger { background: #7f1d1d; border-color: #991b1b; }
+    #editor-status { font-size: 0.75rem; margin-top: 0.35rem; min-height: 1em; }
+    .pin-form { display: flex; flex-direction: column; gap: 0.45rem; color: #111827; }
+    .pin-form label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.75rem; font-weight: 600; }
+    .pin-form input, .pin-form select, .pin-form textarea { background: #fff; color: #111827; border-color: #d1d5db; }
+    .pin-form-actions { display: flex; gap: 0.35rem; justify-content: flex-end; }
+    .pin-form-actions .btn { padding: 0.25rem 0.6rem; font-size: 0.78rem; }
+    .pin-form-error { color: #b91c1c; font-size: 0.75rem; }
   </style>
 </head>
 <body>
@@ -706,6 +733,26 @@
             </div>
           </div>
           
+          <!-- My maps (signed-in users) -->
+          <div id="my-maps" class="filter-group" hidden>
+            <h3>My maps</h3>
+            <div id="my-maps-list" class="my-maps-list"></div>
+            <div class="new-map-row">
+              <input type="text" id="new-map-name" placeholder="New map name" maxlength="120" />
+              <button type="button" id="create-map-btn" class="btn primary">Create</button>
+            </div>
+            <label class="new-map-public"><input type="checkbox" id="new-map-public" /> Public (anyone can view)</label>
+            <div id="edit-bar" hidden>
+              <div class="edit-title">Editing <strong id="edit-bar-title"></strong></div>
+              <div class="edit-actions">
+                <button type="button" id="add-pin-btn" class="btn primary">+ Add pin</button>
+                <button type="button" id="delete-map-btn" class="btn danger">Delete map</button>
+              </div>
+              <p class="hint" style="margin-top:0.35rem;">Click a pin to edit or delete it.</p>
+            </div>
+            <div id="editor-status"></div>
+          </div>
+
           <!-- Dataset selector -->
           <div class="filter-group" style="margin-top: 0.5rem;">
             <h3>Dataset</h3>
@@ -1064,7 +1111,7 @@
       }
     }
 
-    async function applyDataset(key) {
+    async function applyDataset(key, opts = {}) {
       const geojson = await loadDataset(key);
 
       if (!GeoVivéMap.getSource("GeoVivé-points")) {
@@ -1078,7 +1125,9 @@
 
       buildFeatureList(geojson.features);
 
-      if (geojson.features.length > 0) {
+      window.dispatchEvent(new CustomEvent("geovive:dataset-applied", { detail: { key } }));
+
+      if (geojson.features.length > 0 && !opts.keepView) {
         const bounds = new mapboxgl.LngLatBounds();
         geojson.features.forEach(f => {
           const [lng, lat] = f.geometry.coordinates;
@@ -1218,6 +1267,7 @@
         GeoVivéMap.on("click", "GeoVivé-layer", (e) => {
           const feature = e.features && e.features[0];
           if (!feature) return;
+          if (window.GeoViveEditor?.onFeatureClick?.(feature, e)) return;
 
           const [lng, lat] = feature.geometry.coordinates;
           const props = feature.properties || {};
@@ -1235,7 +1285,20 @@
             .addTo(GeoVivéMap);
         });
       setupCategoryFilters();
+      resolveGeoViveReady();
     });
+
+    // Shared API for module scripts (scripts/editor.js)
+    let resolveGeoViveReady;
+    window.GeoVive = {
+      map: GeoVivéMap,
+      apiBase: GEO_VIVE_API_BASE,
+      authHeaders,
+      applyDataset,
+      refreshDatasetOptions,
+      get currentDataset() { return currentDataset; },
+      ready: new Promise(r => (resolveGeoViveReady = r))
+    };
 
     // 6. Style selector
     const styleSelect = document.getElementById("style-select");
@@ -1269,6 +1332,7 @@
 
 <!-- Auth and login modal script -->  
 <script type="module" src="./scripts/main.js"></script>
+<script type="module" src="./scripts/editor.js"></script>
 
 
 </body>

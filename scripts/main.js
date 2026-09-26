@@ -6,9 +6,17 @@ import {
   logout
 } from "./auth.js";
 
+// Resolves once any sign-in redirect has been processed, so other modules
+// (scripts/editor.js) read the correct signed-in user.
+let resolveAuthReady;
+window.GeoViveAuthReady = new Promise(r => (resolveAuthReady = r));
+
 document.addEventListener("DOMContentLoaded", async () => {
   // 1) See if this is the Cognito redirect (with ?code=...) and process it
-  await handleRedirectCallback();
+  const signedIn = await handleRedirectCallback();
+  // Remove ?code=&state= from the address bar after a successful sign-in
+  if (signedIn) history.replaceState(null, "", window.location.pathname);
+  resolveAuthReady();
 
   // 2) Initialize the auth UI (header buttons, status)
   initAuthUi();
