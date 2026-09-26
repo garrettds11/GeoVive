@@ -81,3 +81,5 @@ amplifyconfiguration*
 
 # javascript
 config.js
+# internal docs
+internal-doc_*
