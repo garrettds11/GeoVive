@@ -34,7 +34,7 @@ function fetchList(appId) {
 function toEntry(appId, appName, l) {
   const entry = {
     id: `${appId}:${l.id}`, appId, layerId: l.id, type: "vector", app: appName,
-    group: l.group ? `${appName} · ${l.group}` : appName,
+    group: "AppConnect", subgroup: l.group || "Layers",
     name: l.name, color: l.color, description: l.description || "",
     publisher: l.attribution, attribution: l.attribution, license: l.license || "", source: null
   };

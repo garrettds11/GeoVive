@@ -22,6 +22,7 @@ import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { originAllowed } from "./apps.mjs";
 import { getActiveApp } from "./appstore.mjs";
+import * as appconnect from "./appconnect.mjs";
 import { FORMATS, render as renderExport, fileName as exportFileName } from "./export.mjs";
 import { validateLayerList, publicLayer, buildLayer, LayerListError } from "./overlays.mjs";
 import {
@@ -38,6 +39,7 @@ const FEATURES_TABLE = process.env.FEATURES_TABLE;
 const GEOMETRY_BUCKET = process.env.GEOMETRY_BUCKET;
 const IMPORTS_TABLE = process.env.IMPORTS_TABLE;
 const IMPORT_FUNCTION = process.env.IMPORT_FUNCTION;
+const APPCHECK_FUNCTION = process.env.APPCHECK_FUNCTION;
 const lambda = new LambdaClient({});
 const s3 = new S3Client({});
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
@@ -681,11 +683,28 @@ export const handler = async (event) => {
         const out = await openAppMap(event, p.appId, p.externalRef);
         result = out.dataset; status = out.created ? 201 : 200; break;
       }
+      case "POST /v1/appconnect/apps":
+        result = await appconnect.signup(ddb, await getCaller(event, { required: true }), parseBody(event)); status = 201; break;
+      case "GET /v1/appconnect/apps":
+        result = await appconnect.listMine(ddb, await getCaller(event, { required: true })); break;
+      case "GET /v1/appconnect/apps/{appId}":
+        result = await appconnect.getMine(ddb, await getCaller(event, { required: true }), p.appId); break;
+      case "POST /v1/appconnect/apps/{appId}/checks":
+        result = await appconnect.requestChecks(ddb, await getCaller(event, { required: true }), p.appId,
+          payload => lambda.send(new InvokeCommand({ FunctionName: APPCHECK_FUNCTION, InvocationType: "Event", Payload: Buffer.from(JSON.stringify(payload)) })));
+        status = 202; break;
+      case "GET /v1/appconnect/apps/{appId}/reports/{reportId}":
+        result = await appconnect.reportLink(ddb, s3, await getCaller(event, { required: true }), p.appId, p.reportId); break;
+      case "POST /v1/appconnect/stripe/webhook": {
+        const raw = event.isBase64Encoded ? Buffer.from(event.body || "", "base64").toString("utf8") : (event.body || "");
+        result = await appconnect.stripeWebhook(ddb, s3, raw, event.headers?.["stripe-signature"] || event.headers?.["Stripe-Signature"]);
+        break;
+      }
       default: throw new HttpError(404, `No route for ${routeKey}`);
     }
     return respond(event, status, result);
   } catch (err) {
-    if (err instanceof HttpError) return respond(event, err.status, { message: err.message });
+    if (err instanceof HttpError || err instanceof appconnect.AppConnectError) return respond(event, err.status, { message: err.message });
     console.error("Unhandled error", err);
     return respond(event, 500, { message: "Internal error" });
   }

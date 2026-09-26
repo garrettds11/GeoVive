@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AppConnect · GeoVivé</title>
+  <link rel="icon" href="/assets/favicon-32x32.png" />
+  <link rel="stylesheet" href="/docs/docs.css" />
+  <script src="/config.js"></script>
+  <script type="importmap">{ "imports": { "oidc-client-ts": "https://cdn.jsdelivr.net/npm/oidc-client-ts@3.4.1/+esm" } }</script>
+  <style>
+    .ac-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .ac-btn { background: var(--accent); color: #02130a; border: 0; border-radius: 6px; padding: 9px 14px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; font-size: 14px; }
+    .ac-btn.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+    .ac-btn.pay { background: #3b82f6; color: #fff; }
+    .ac-btn[disabled] { opacity: .5; cursor: default; }
+    .ac-form { display: grid; gap: 12px; max-width: 640px; }
+    .ac-form label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+    .ac-form input, .ac-form textarea { background: var(--code-bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font: inherit; font-size: 14px; }
+    .ac-form .check { display: flex; gap: 8px; align-items: flex-start; color: var(--text); }
+    .ac-apps { display: grid; gap: 8px; margin: 12px 0 24px; }
+    .ac-app { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); text-decoration: none; }
+    .ac-app:hover { border-color: var(--accent); }
+    .ac-badge { font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: rgba(148,163,184,.15); color: var(--muted); white-space: nowrap; }
+    .ac-badge.live { background: var(--accent-soft); color: var(--accent); }
+    .ac-badge.checks_failed, .ac-badge.suspended, .ac-badge.expired { background: rgba(239,68,68,.15); color: #f87171; }
+    .ac-badge.awaiting_payment, .ac-badge.verifying { background: rgba(59,130,246,.15); color: #60a5fa; }
+    .ac-steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 16px 0; }
+    .ac-step { border-top: 3px solid var(--border); padding-top: 6px; font-size: 12px; color: var(--muted); }
+    .ac-step.done { border-color: var(--accent); color: var(--text); }
+    .ac-step.now { border-color: #60a5fa; color: var(--text); }
+    .ac-msg { padding: 10px 12px; border-radius: 8px; margin: 12px 0; font-size: 14px; }
+    .ac-msg.err { background: rgba(239,68,68,.12); color: #fca5a5; }
+    .ac-msg.ok { background: var(--accent-soft); color: #86efac; }
+    .ac-copy { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; word-break: break-all; }
+    .ac-hist { font-size: 13px; color: var(--muted); list-style: none; padding: 0; }
+    .ac-hist li { padding: 4px 0; border-bottom: 1px solid var(--border); }
+    @media (max-width: 600px) { .ac-steps { grid-template-columns: repeat(2, 1fr); } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <div class="top">
+        <h1>Geo<span>Vivé</span> AppConnect</h1>
+        <span class="tagline">Connect your app's layers</span>
+      </div>
+      <nav class="tabs">
+        <a href="/docs/developers/appconnect/">Requirements</a>
+        <a href="/docs/terms/appconnect/">Terms</a>
+        <a href="/appconnect/" class="active">Your apps</a>
+        <a href="/">Open the map →</a>
+      </nav>
+    </header>
+    <div id="ac-root"><p>Loading…</p></div>
+    <footer>GeoVivé AppConnect · <a href="/docs/developers/appconnect/">What you need to connect</a></footer>
+  </main>
+  <script type="module" src="/appconnect/appconnect.js"></script>
+</body>
+</html>

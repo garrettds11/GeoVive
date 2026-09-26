@@ -143,6 +143,7 @@ Resources:
         - { AttributeName: sk, AttributeType: S }
         - { AttributeName: status, AttributeType: S }
         - { AttributeName: updatedAt, AttributeType: S }
+        - { AttributeName: ownerId, AttributeType: S }
       KeySchema:
         - { AttributeName: appId, KeyType: HASH }
         - { AttributeName: sk, KeyType: RANGE }
@@ -151,6 +152,9 @@ Resources:
           KeySchema:
             - { AttributeName: status, KeyType: HASH }
             - { AttributeName: updatedAt, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+        - IndexName: byOwner
+          KeySchema: [{ AttributeName: ownerId, KeyType: HASH }]
           Projection: { ProjectionType: ALL }
       PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
       Tags:
@@ -250,6 +254,8 @@ Resources:
           USER_POOL_CLIENT_ID: !Ref UserPoolClientId
           ALLOWED_ORIGINS: !Join [",", !Ref AllowedOrigins]
           APPS_TABLE: !Ref AppsTable
+          APPCHECK_FUNCTION: !Ref AppCheckFunction
+          STRIPE_SECRET_ID: geovive/stripe
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref DatasetsTable }
         - DynamoDBCrudPolicy: { TableName: !Ref FeaturesTable }
@@ -257,6 +263,15 @@ Resources:
         - DynamoDBCrudPolicy: { TableName: !Ref ImportsTable }
         - LambdaInvokePolicy: { FunctionName: !Ref ImportFunction }
         - DynamoDBCrudPolicy: { TableName: !Ref AppsTable }
+        - LambdaInvokePolicy: { FunctionName: !Ref AppCheckFunction }
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:geovive/stripe-*
+            - Effect: Allow
+              Action: [ses:SendEmail, ses:SendRawEmail]
+              Resource: "*"
+              Condition: { StringEquals: { "ses:FromAddress": appconnect@geovive.link } }
       Events:
         # Public reads (visibility enforced in the handler)
         ListDatasets:     { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /v1/datasets, Auth: { Authorizer: NONE } } }
@@ -277,7 +292,47 @@ Resources:
         ImportUploadUrl:  { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/datasets/{datasetId}/imports/upload-url" } }
         StartImport:      { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/datasets/{datasetId}/imports" } }
         GetImport:        { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/datasets/{datasetId}/imports/{importId}" } }
+        AppConnectSignup: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: /v1/appconnect/apps } }
+        AppConnectList:   { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /v1/appconnect/apps } }
+        AppConnectGet:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/appconnect/apps/{appId}" } }
+        AppConnectChecks: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/appconnect/apps/{appId}/checks" } }
+        AppConnectReport: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/appconnect/apps/{appId}/reports/{reportId}" } }
+        StripeWebhook:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: /v1/appconnect/stripe/webhook, Auth: { Authorizer: NONE } } }
         DeleteFeature:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: DELETE, Path: "/v1/datasets/{datasetId}/features/{featureId}" } }
+
+  # AppConnect connection checks, reports and emails (invoked asynchronously by the API)
+  AppCheckFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub geovive-${Env}-appcheck
+      Description: Runs AppConnect checks, writes the PDF report and emails it
+      CodeUri: dist/
+      Handler: appworker.handler
+      MemorySize: 2048
+      Timeout: 900
+      Environment:
+        Variables:
+          APPS_TABLE: !Ref AppsTable
+          GEOMETRY_BUCKET: !Ref GeometryBucket
+          STRIPE_SECRET_ID: geovive/stripe
+          ALLOWED_ORIGINS: !Join [",", !Ref AllowedOrigins]
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref AppsTable }
+        - S3CrudPolicy: { BucketName: !Ref GeometryBucket }
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:geovive/stripe-*
+            - Effect: Allow
+              Action: [ses:SendEmail, ses:SendRawEmail]
+              Resource: "*"
+              Condition: { StringEquals: { "ses:FromAddress": appconnect@geovive.link } }
+
+  AppCheckLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/geovive-${Env}-appcheck
+      RetentionInDays: 30
 
   PreSignUpFunction:
     Type: AWS::Serverless::Function

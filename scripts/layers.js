@@ -247,7 +247,6 @@ function renderOverlays() {
   rowEls.clear();
   state.groups = state.groups || {};
   const groups = [...new Set(allEntries().map(e => e.group))];
-  let appHeaderShown = false;
   if (appInfo?.error) {
     const note = document.createElement("p");
     note.className = "hint layer-status";
@@ -255,37 +254,47 @@ function renderOverlays() {
     note.textContent = `Layers from this app couldn't be loaded: ${appInfo.error}`;
     box.appendChild(note);
   }
-  groups.forEach(g => {
-    const isApp = appEntries.some(e => e.group === g);
-    if (isApp && !appHeaderShown) {
-      appHeaderShown = true;
-      const h = document.createElement("div");
-      h.className = "layer-app-title";
-      h.textContent = `From ${appInfo?.appName || "connected app"}`;
-      box.insertBefore(h, box.firstChild);   // app layers come first
-    }
-    const details = document.createElement("details");
-    details.className = "layer-group";
-    details.open = state.groups[g] ?? GROUPS_OPEN_BY_DEFAULT.has(g);
-    const summary = document.createElement("summary");
-    summary.className = "layer-group-title";
-    const count = document.createElement("span");
-    count.className = "legend-count";
-    const setCount = () => { const n = groupCount(g); count.textContent = n ? `${n} on` : ""; };
-    summary.append(document.createTextNode(g + " "), count);
-    setCount();
-    details.appendChild(summary);
-    details.addEventListener("toggle", () => { state.groups[g] = details.open; saveState(); });
-    if (isApp) {
-      if (state.groups[g] === undefined && groupCount(g)) details.open = true;
-      const firstBase = box.querySelector("details.layer-group:not([data-app])");
-      details.dataset.app = "1";
-      box.insertBefore(details, firstBase);   // keep app groups above GeoVivé's own
-    } else {
-      box.appendChild(details);
-    }
+  // Connected apps share one AppConnect section, whatever app handed layers over.
+  if (appEntries.length) box.appendChild(groupSection("AppConnect", appEntries, {
+    app: true, intro: `From ${appInfo?.appName || "a connected app"} · shown for this visit only`
+  }));
+  groups.filter(g => g !== "AppConnect").forEach(g => box.appendChild(groupSection(g, allEntries().filter(e => e.group === g))));
+}
 
-    allEntries().filter(e => e.group === g).forEach(entry => {
+function groupSection(g, entries, { app = false, intro } = {}) {
+  const details = document.createElement("details");
+  details.className = "layer-group" + (app ? " layer-appconnect" : "");
+  const count = document.createElement("span");
+  count.className = "legend-count";
+  const setCount = () => { const n = entries.filter(e => state.overlays[e.id]?.on).length; count.textContent = n ? `${n} on` : ""; };
+  details.open = state.groups[g] ?? (GROUPS_OPEN_BY_DEFAULT.has(g) || (app && entries.some(e => state.overlays[e.id]?.on)));
+  const summary = document.createElement("summary");
+  summary.className = "layer-group-title";
+  summary.append(document.createTextNode(g + " "), count);
+  details.appendChild(summary);
+  details.addEventListener("toggle", () => { state.groups[g] = details.open; saveState(); });
+  if (intro) {
+    const p = document.createElement("div");
+    p.className = "layer-app-title";
+    p.textContent = intro;
+    details.appendChild(p);
+  }
+  let sub = null;
+  entries.forEach(entry => {
+    if (app && entry.subgroup !== sub) {
+      sub = entry.subgroup;
+      const h = document.createElement("div");
+      h.className = "layer-subgroup-title";
+      h.textContent = sub;
+      details.appendChild(h);
+    }
+    details.appendChild(layerRow(entry, setCount));
+  });
+  setCount();
+  return details;
+}
+
+function layerRow(entry, setCount) {
       const on = !!state.overlays[entry.id]?.on;
       const row = document.createElement("div");
       row.className = "layer-row";
@@ -312,10 +321,8 @@ function renderOverlays() {
         if (!b.isEmpty()) map().fitBounds(b, { padding: 40 });
       });
       rowEls.set(entry.id, row);
-      details.appendChild(row);
-      updateRow(entry);
-    });
-  });
+      queueMicrotask(() => updateRow(entry));
+      return row;
 }
 
 // Re-create everything after a style switch (setStyle drops custom layers).

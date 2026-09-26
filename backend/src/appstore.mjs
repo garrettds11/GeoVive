@@ -61,6 +61,11 @@ function resolve(item) {
   const app = { ...item };
   if (app.siteOrigins) { app.returnOrigins = SITE_ORIGINS; app.areaOrigins = SITE_ORIGINS; }
   app.returnOrigins ||= []; app.areaOrigins ||= []; app.featureTypes ||= [];
+  // Self-service apps may keep localhost for sandbox testing; it's ignored once live.
+  if (app.ownerId && app.status === "live") {
+    const prod = o => !/^http:\/\/localhost(:\d+)?$/.test(o);
+    app.returnOrigins = app.returnOrigins.filter(prod); app.areaOrigins = app.areaOrigins.filter(prod);
+  }
   return app;
 }
 
@@ -68,12 +73,12 @@ const CACHE_MS = 60_000;
 const cache = new Map();   // appId -> { at, app }
 
 // The app record (any status), or null. Cached for a minute per Lambda instance.
-export async function getAppRecord(ddb, appId) {
+export async function getAppRecord(ddb, appId, { fresh = false } = {}) {
   if (typeof appId !== "string" || !/^[a-z0-9][a-z0-9-]{1,62}$/.test(appId)) return null;
   if (!APPS_TABLE) return resolve(SEED_APPS[appId] ? { appId, status: "live", ...SEED_APPS[appId] } : null);
   const hit = cache.get(appId);
-  if (hit && Date.now() - hit.at < CACHE_MS) return hit.app;
-  const res = await ddb.send(new GetCommand({ TableName: APPS_TABLE, Key: { appId, sk: "APP" } }));
+  if (!fresh && hit && Date.now() - hit.at < CACHE_MS) return hit.app;
+  const res = await ddb.send(new GetCommand({ TableName: APPS_TABLE, Key: { appId, sk: "APP" }, ConsistentRead: fresh }));
   const app = resolve(res.Item);
   cache.set(appId, { at: Date.now(), app });
   return app;
