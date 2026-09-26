@@ -367,5 +367,77 @@ async function init() {
   updateEditBar();
 }
 
-window.GeoViveEditor = { onFeatureClick, canEdit: canEditPin, edit: editPin };
+// ------------------------------------------------------------ save a pin to my map
+// From any pin card: pick one of your maps (or name a new one) and a copy is added
+// there, with a note of where it came from.
+
+const LAST_TARGET_KEY = "geovive:saveTarget";
+
+function saveTo(root, props, feature) {
+  const panel = root.querySelector(".pin-save-panel");
+  const actions = root.querySelector(".pin-actions");
+  if (!panel) return;
+  if (!state.user) {
+    panel.innerHTML = `<p class="pin-save-note">Sign in to save pins to your own maps.</p>
+      <div class="pin-save-row"><button type="button" class="btn primary" data-s="signin">Sign in</button><button type="button" class="btn" data-s="cancel">Cancel</button></div>`;
+  } else {
+    const mine = state.datasets.filter(isMine).filter(d => d.datasetId !== props.datasetId);
+    let last = null; try { last = localStorage.getItem(LAST_TARGET_KEY); } catch { /* ignore */ }
+    const selected = mine.some(d => d.datasetId === last) ? last : (mine[0]?.datasetId || "__new");
+    panel.innerHTML = `
+      <label class="pin-save-label">Save a copy to
+        <select data-s="target">
+          ${mine.map(d => `<option value="${esc(d.datasetId)}" ${d.datasetId === selected ? "selected" : ""}>${esc(d.name)} (${d.featureCount || 0})</option>`).join("")}
+          <option value="__new" ${selected === "__new" ? "selected" : ""}>＋ New map…</option>
+        </select>
+      </label>
+      <input type="text" data-s="newname" maxlength="80" placeholder="New map name" value="Saved places" ${selected === "__new" ? "" : "hidden"}>
+      <div class="pin-save-row"><button type="button" class="btn primary" data-s="go">Save</button><button type="button" class="btn" data-s="cancel">Cancel</button></div>
+      <p class="pin-save-note" data-s="msg" role="status"></p>`;
+    const sel = panel.querySelector("[data-s=target]"), nameEl = panel.querySelector("[data-s=newname]");
+    sel.addEventListener("change", () => { nameEl.hidden = sel.value !== "__new"; if (!nameEl.hidden) nameEl.focus(); });
+    panel.querySelector("[data-s=go]").addEventListener("click", async (ev) => {
+      const btn = ev.currentTarget, msg = panel.querySelector("[data-s=msg]");
+      btn.disabled = true; msg.textContent = "Saving…";
+      try {
+        let target = sel.value, targetName;
+        if (target === "__new") {
+          const name = nameEl.value.trim() || "Saved places";
+          const ds = await api("POST", "/v1/datasets", { name, visibility: "private" });
+          target = ds.datasetId; targetName = ds.name;
+        } else targetName = mine.find(d => d.datasetId === target)?.name;
+        await copyFeature(props, feature, target);
+        try { localStorage.setItem(LAST_TARGET_KEY, target); } catch { /* ignore */ }
+        await refreshDatasets();
+        panel.innerHTML = `<p class="pin-save-note ok">Saved to <strong>${esc(targetName)}</strong>.</p>
+          <div class="pin-save-row"><button type="button" class="btn" data-s="open">Open that map</button><button type="button" class="btn" data-s="cancel">Done</button></div>`;
+        panel.querySelector("[data-s=open]").addEventListener("click", () => { closeAllPopups(); selectDataset(target); });
+        panel.querySelector("[data-s=cancel]").addEventListener("click", () => { panel.hidden = true; actions.hidden = false; });
+      } catch (e) { msg.textContent = e.message; btn.disabled = false; }
+    });
+  }
+  panel.querySelector("[data-s=signin]")?.addEventListener("click", () => document.getElementById("signIn")?.click());
+  panel.querySelector("[data-s=cancel]")?.addEventListener("click", () => { panel.hidden = true; actions.hidden = false; });
+  actions.hidden = true;
+  panel.hidden = false;
+}
+
+function closeAllPopups() { document.querySelectorAll(".mapboxgl-popup").forEach(p => p.remove()); }
+
+async function copyFeature(props, feature, targetId) {
+  let geometry = feature.geometry;
+  // Shapes drawn on the map can be simplified or cut at tile edges: copy the stored one
+  if (geometry?.type !== "Point" && props.datasetId && props.id) {
+    const full = await api("GET", `/v1/datasets/${encodeURIComponent(props.datasetId)}/features/${encodeURIComponent(props.id)}`);
+    geometry = full.geometry;
+  }
+  const source = state.datasets.find(d => d.datasetId === props.datasetId);
+  const copy = {};
+  for (const k of ["name", "category", "color", "description"]) if (props[k] !== undefined && props[k] !== null && props[k] !== "") copy[k] = props[k];
+  copy.name ||= "Saved place";
+  copy.savedFrom = { datasetId: props.datasetId, datasetName: source?.name || props.datasetId, featureId: props.id, savedAt: new Date().toISOString() };
+  return api("POST", `/v1/datasets/${encodeURIComponent(targetId)}/features`, { type: "Feature", geometry, properties: copy });
+}
+
+window.GeoViveEditor = { onFeatureClick, canEdit: canEditPin, edit: editPin, saveTo };
 init().catch(e => console.error("Editor init failed", e));
