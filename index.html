@@ -1437,8 +1437,8 @@
     const DEM_SOURCE = "geovive-dem";
     const BUILDINGS_LAYER = "geovive-3d-buildings";
 
-    function apply3D(map, on) {
-      if (!map.isStyleLoaded()) return;
+    function apply3D(map, on, { force = false } = {}) {
+      if (!force && !map.isStyleLoaded()) return;
       if (on) {
         if (!map.getSource(DEM_SOURCE)) {
           map.addSource(DEM_SOURCE, {
@@ -1486,7 +1486,14 @@
         this.on = saved;
         this.render();
         // Apply once the style is ready, and again after every style switch
-        map.on("style.load", () => apply3D(map, this.on));
+        // (isStyleLoaded() can still be false during style.load, so force it,
+        // then check again once the map settles in case anything was missed)
+        map.on("style.load", () => {
+          apply3D(map, this.on, { force: true });
+          map.once("idle", () => {
+            if (this.on !== !!map.getTerrain()) apply3D(map, this.on, { force: true });
+          });
+        });
         if (map.isStyleLoaded()) apply3D(map, this.on);
         return this.container;
       }
