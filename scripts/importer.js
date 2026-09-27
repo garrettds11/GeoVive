@@ -185,7 +185,8 @@ async function init() {
   btn.type = "button";
   btn.id = "import-btn";
   btn.className = "btn";
-  btn.textContent = "Import data";
+  btn.textContent = "Import";
+  btn.title = "Import data (GeoJSON file or link, ArcGIS layer) into this map";
   actions.insertBefore(btn, $("delete-map-btn"));
 
   let dlg;

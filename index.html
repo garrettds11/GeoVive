@@ -844,6 +844,11 @@
     #edit-bar .edit-title { font-size: 0.8rem; color: var(--muted); margin-bottom: 0.4rem; }
     #edit-bar .edit-title strong { color: var(--text); }
     .edit-actions { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+    .all-maps-btn { width: 100%; margin-bottom: 0.2rem; }
+    .all-maps-btn[hidden] { display: none; }
+    .all-maps-head { display: flex; justify-content: space-between; align-items: center; }
+    .all-maps-list { max-height: min(60vh, 480px); overflow-y: auto; }
+    #all-maps-filter { width: 100%; padding: 0.45rem 0.55rem; border-radius: 0.5rem; border: 1px solid var(--border); background: #020617; color: inherit; font: inherit; font-size: 0.85rem; }
     #add-pin-btn.active { background: var(--accent1); color: #020617; }
     /* Import dialog (scripts/importer.js) */
     .import-dialog {
@@ -960,6 +965,14 @@
           <div id="my-maps" class="filter-group" hidden>
             <h3>My maps</h3>
             <div id="my-maps-list" class="my-maps-list"></div>
+            <button type="button" id="all-maps-btn" class="btn all-maps-btn" hidden>📂 All my maps</button>
+            <dialog id="all-maps-dialog" class="import-dialog all-maps-dialog" aria-labelledby="all-maps-title">
+              <div class="import-form">
+                <div class="all-maps-head"><h3 id="all-maps-title">My maps</h3><button type="button" class="btn" data-close aria-label="Close">✕</button></div>
+                <input type="search" id="all-maps-filter" placeholder="Find a map" autocomplete="off" aria-label="Find one of my maps">
+                <div id="all-maps-list" class="my-maps-list all-maps-list"></div>
+              </div>
+            </dialog>
             <form id="map-details" class="map-details" hidden>
               <label>Name<input name="name" maxlength="120" required></label>
               <label>Description<textarea name="description" rows="3" maxlength="1000" placeholder="What's on this map, and who is it for?"></textarea></label>
@@ -976,9 +989,9 @@
             <div id="edit-bar" hidden>
               <div class="edit-title">Editing <strong id="edit-bar-title"></strong></div>
               <div class="edit-actions">
-                <button type="button" id="add-pin-btn" class="btn primary">📍 Add pin</button>
-                <button type="button" id="pin-here-btn" class="btn">📍 Pin my location</button>
-                <button type="button" id="delete-map-btn" class="btn danger">Delete map</button>
+                <button type="button" id="add-pin-btn" class="btn primary" title="Add a pin: click the map to place it">📍 New</button>
+                <button type="button" id="pin-here-btn" class="btn" title="Pin my current location">📍 My location</button>
+                <button type="button" id="delete-map-btn" class="btn danger" title="Delete this map and all its pins">🗑️ Map</button>
               </div>
               <p class="hint" style="margin-top:0.35rem;">Click a pin, then ✏️ to edit or delete it.</p>
             </div>

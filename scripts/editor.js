@@ -75,6 +75,16 @@ async function refreshDatasets() {
   renderMyMaps();
 }
 
+// Clicking the selected map again hides it and its pins.
+async function deselectDataset() {
+  closePopup();
+  setAddMode(false);
+  $("dataset-select").value = "";
+  await window.GeoVive.applyDataset("");
+  const form = $("map-details"); if (form) form.hidden = true;
+  updateEditBar();
+}
+
 async function selectDataset(datasetId) {
   const key = `api:${datasetId}`;
   $("dataset-select").value = key;
@@ -92,8 +102,17 @@ function renderMyMaps() {
 
   const list = $("my-maps-list");
   const mine = state.datasets.filter(isMine);
-  list.innerHTML = mine.length
-    ? mine.map(d => `
+  // The panel shows the few most recently changed maps (plus the open one);
+  // 📂 All my maps opens the full, searchable list.
+  const SHOWN = 4;
+  const recent = [...mine].sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")));
+  const cur = recent.find(d => d.datasetId === currentDatasetId());
+  const shown = recent.slice(0, SHOWN);
+  if (cur && !shown.includes(cur)) shown[SHOWN - 1] = cur;   // an open map picked from 📂 stays visible
+  const allBtn = $("all-maps-btn");
+  if (allBtn) { allBtn.hidden = mine.length <= SHOWN; allBtn.textContent = `📂 All my maps (${mine.length})`; }
+  list.innerHTML = shown.length
+    ? shown.map(d => `
         <div class="my-map-item" data-id="${esc(d.datasetId)}">
           <button type="button" class="my-map-open">
             <span class="my-map-name">${esc(d.name)}</span>
@@ -104,7 +123,8 @@ function renderMyMaps() {
     : `<p class="hint">No maps yet. Create one to start pinning places.</p>`;
 
   list.querySelectorAll(".my-map-item").forEach(item => {
-    item.querySelector(".my-map-open").addEventListener("click", () => selectDataset(item.dataset.id));
+    item.querySelector(".my-map-open").addEventListener("click", () =>
+      currentDatasetId() === item.dataset.id ? deselectDataset() : selectDataset(item.dataset.id));
     item.querySelector(".my-map-edit").addEventListener("click", async () => {
       const form = $("map-details");
       if (form && !form.hidden && form.dataset.for === item.dataset.id) { form.hidden = true; return; }   // pencil again closes it
@@ -113,6 +133,36 @@ function renderMyMaps() {
     });
   });
   updateEditBar();
+}
+
+// ------------------------------------------------------------ UI: all my maps (dialog)
+
+function renderAllMaps() {
+  const q = ($("all-maps-filter")?.value || "").trim().toLowerCase();
+  const mine = state.datasets.filter(isMine).sort((a, b) => a.name.localeCompare(b.name));
+  const hits = q ? mine.filter(d => `${d.name} ${d.description || ""} ${(d.tags || []).join(" ")}`.toLowerCase().includes(q)) : mine;
+  const list = $("all-maps-list");
+  list.innerHTML = hits.length ? hits.map(d => `
+    <div class="my-map-item ${d.datasetId === currentDatasetId() ? "active" : ""}" data-id="${esc(d.datasetId)}">
+      <button type="button" class="my-map-open">
+        <span class="my-map-name">${esc(d.name)}</span>
+        <span class="my-map-meta">${d.featureCount || 0} pins · ${esc(d.visibility)}</span>
+      </button>
+    </div>`).join("") : `<p class="hint">No maps match.</p>`;
+  list.querySelectorAll(".my-map-item").forEach(item => item.querySelector(".my-map-open").addEventListener("click", async () => {
+    $("all-maps-dialog").close();
+    if (currentDatasetId() === item.dataset.id) await deselectDataset(); else await selectDataset(item.dataset.id);
+    renderMyMaps();
+  }));
+}
+
+function initAllMaps() {
+  const dlg = $("all-maps-dialog"), btn = $("all-maps-btn");
+  if (!dlg || !btn) return;
+  btn.addEventListener("click", () => { $("all-maps-filter").value = ""; renderAllMaps(); dlg.showModal(); $("all-maps-filter").focus(); });
+  $("all-maps-filter").addEventListener("input", renderAllMaps);
+  dlg.querySelector("[data-close]").addEventListener("click", () => dlg.close());
+  dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
 }
 
 function updateEditBar() {
@@ -131,7 +181,7 @@ function setAddMode(on) {
   state.addMode = on;
   const btn = $("add-pin-btn");
   if (btn) {
-    btn.textContent = on ? "Click the map to place a pin… (Esc to cancel)" : "📍 Add pin";
+    btn.textContent = on ? "Click the map… (Esc cancels)" : "📍 New";
     btn.classList.toggle("active", on);
   }
   const canvas = window.GeoVive?.map?.getCanvas();
@@ -149,7 +199,7 @@ async function createMap() {
     nameEl.value = "";
     await refreshDatasets();
     await selectDataset(ds.datasetId);
-    setStatus(`Created "${ds.name}". Click 📍 Add pin to start, or ✏️ to add a description and tags.`);
+    setStatus(`Created "${ds.name}". Click 📍 New to add a pin, or ✏️ to add a description and tags.`);
   } catch (e) {
     setStatus(e.message, true);
   }
@@ -397,7 +447,8 @@ async function init() {
   $("map-details")?.querySelector("[data-cancel]")?.addEventListener("click", () => { $("map-details").hidden = true; });
   $("delete-map-btn")?.addEventListener("click", deleteCurrentMap);
   $("dataset-select")?.addEventListener("change", () => { closePopup(); setTimeout(updateEditBar, 0); });
-  window.addEventListener("geovive:dataset-applied", updateEditBar);
+  window.addEventListener("geovive:dataset-applied", renderMyMaps);
+  initAllMaps();
   window.addEventListener("geovive:datasets-changed", refreshDatasets);
 
   updateEditBar();
