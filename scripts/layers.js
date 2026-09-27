@@ -202,7 +202,7 @@ function renderDatasets() {
   if (!box) return;
   const active = activeDatasetId();
   const others = window.GeoVive.datasets.filter(d => d.datasetId !== active);
-  if (!others.length) { box.innerHTML = `<p class="hint">No other datasets yet. Create one, or open a public one with search.</p>`; return; }
+  if (!others.length) { box.innerHTML = `<p class="hint">No other maps yet. Create one, or open a public one with search.</p>`; return; }
   box.innerHTML = "";
   others.forEach(d => {
     const on = state.datasets.includes(d.datasetId);

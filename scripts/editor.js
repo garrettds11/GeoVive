@@ -1,4 +1,4 @@
-// editor.js — "My datasets" and pin editing for signed-in users (Phase 1).
+// editor.js — "My maps" and pin editing for signed-in users (Phase 1).
 // Depends on window.GeoVive (exposed by the inline script in index.html)
 // and on the signed-in user from auth.js.
 
@@ -82,7 +82,7 @@ async function selectDataset(datasetId) {
   updateEditBar();
 }
 
-// ------------------------------------------------------------ UI: My datasets panel
+// ------------------------------------------------------------ UI: My maps panel
 
 function renderMyMaps() {
   const panel = $("my-maps");
@@ -101,7 +101,7 @@ function renderMyMaps() {
           </button>
           <button type="button" class="my-map-edit" title="Edit name, description, tags and visibility" aria-label="Edit ${esc(d.name)}">✏️</button>
         </div>`).join("")
-    : `<p class="hint">No datasets yet. Create one to start pinning places.</p>`;
+    : `<p class="hint">No maps yet. Create one to start pinning places.</p>`;
 
   list.querySelectorAll(".my-map-item").forEach(item => {
     item.querySelector(".my-map-open").addEventListener("click", () => selectDataset(item.dataset.id));
@@ -144,7 +144,7 @@ async function createMap() {
   if (!name) { nameEl.focus(); return; }
   const visibility = $("new-map-public").checked ? "public" : "private";
   try {
-    setStatus("Creating dataset…");
+    setStatus("Creating map…");
     const ds = await api("POST", "/v1/datasets", { name, visibility });
     nameEl.value = "";
     await refreshDatasets();
@@ -158,7 +158,7 @@ async function createMap() {
 async function deleteCurrentMap() {
   const ds = currentDataset();
   if (!ds) return;
-  const ok = window.confirm(`Delete the dataset "${ds.name}" and all ${ds.featureCount || 0} pins? This cannot be undone.`);
+  const ok = window.confirm(`Delete the map "${ds.name}" and all ${ds.featureCount || 0} pins? This cannot be undone.`);
   if (!ok) return;
   try {
     await api("DELETE", `/v1/datasets/${encodeURIComponent(ds.datasetId)}`);
@@ -257,7 +257,7 @@ function wireEmojiPicker(form) {
 function openPinForm(lngLat, feature) {
   closePopup();
   const props = feature ? { ...feature.properties } : {};
-  const popup = new datasetboxgl.Popup({ closeOnClick: false, maxWidth: "300px" })
+  const popup = new mapboxgl.Popup({ closeOnClick: false, maxWidth: "300px" })
     .setLngLat(lngLat)
     .setHTML(pinFormHtml(props))
     .addTo(window.GeoVive.map);
@@ -437,7 +437,7 @@ async function saveDetails(e) {
 }
 
 // ------------------------------------------------------------ save a pin to my map
-// From any pin card: pick one of your datasets (or name a new one) and a copy is added
+// From any pin card: pick one of your maps (or name a new one) and a copy is added
 // there, with a note of where it came from.
 
 const LAST_TARGET_KEY = "geovive:saveTarget";
@@ -447,7 +447,7 @@ function saveTo(root, props, feature) {
   const actions = root.querySelector(".pin-actions");
   if (!panel) return;
   if (!state.user) {
-    panel.innerHTML = `<p class="pin-save-note">Sign in to save pins to your own datasets.</p>
+    panel.innerHTML = `<p class="pin-save-note">Sign in to save pins to your own maps.</p>
       <div class="pin-save-row"><button type="button" class="btn primary" data-s="signin">Sign in</button><button type="button" class="btn" data-s="cancel">Cancel</button></div>`;
   } else {
     const mine = state.datasets.filter(isMine).filter(d => d.datasetId !== props.datasetId);
@@ -457,10 +457,10 @@ function saveTo(root, props, feature) {
       <label class="pin-save-label">Save a copy to
         <select data-s="target">
           ${mine.map(d => `<option value="${esc(d.datasetId)}" ${d.datasetId === selected ? "selected" : ""}>${esc(d.name)} (${d.featureCount || 0})</option>`).join("")}
-          <option value="__new" ${selected === "__new" ? "selected" : ""}>＋ New dataset…</option>
+          <option value="__new" ${selected === "__new" ? "selected" : ""}>＋ New map…</option>
         </select>
       </label>
-      <input type="text" data-s="newname" maxlength="80" placeholder="New dataset name" value="Saved places" ${selected === "__new" ? "" : "hidden"}>
+      <input type="text" data-s="newname" maxlength="80" placeholder="New map name" value="Saved places" ${selected === "__new" ? "" : "hidden"}>
       <div class="pin-save-row"><button type="button" class="btn primary" data-s="go">Save</button><button type="button" class="btn" data-s="cancel">Cancel</button></div>
       <p class="pin-save-note" data-s="msg" role="status"></p>`;
     const sel = panel.querySelector("[data-s=target]"), nameEl = panel.querySelector("[data-s=newname]");
@@ -479,7 +479,7 @@ function saveTo(root, props, feature) {
         try { localStorage.setItem(LAST_TARGET_KEY, target); } catch { /* ignore */ }
         await refreshDatasets();
         panel.innerHTML = `<p class="pin-save-note ok">Saved to <strong>${esc(targetName)}</strong>.</p>
-          <div class="pin-save-row"><button type="button" class="btn" data-s="open">Open that dataset</button><button type="button" class="btn" data-s="cancel">Done</button></div>`;
+          <div class="pin-save-row"><button type="button" class="btn" data-s="open">Open that map</button><button type="button" class="btn" data-s="cancel">Done</button></div>`;
         panel.querySelector("[data-s=open]").addEventListener("click", () => { closeAllPopups(); selectDataset(target); });
         panel.querySelector("[data-s=cancel]").addEventListener("click", () => { panel.hidden = true; actions.hidden = false; });
       } catch (e) { msg.textContent = e.message; btn.disabled = false; }
@@ -506,7 +506,7 @@ async function copyFeature(props, feature, targetId) {
   copy.name ||= "Saved place";
   if (!["location", "event", "alert"].includes(copy.category)) copy.category = "location";
   // Provenance within the data model: where the copy came from
-  copy.source = `Saved from ${source?.name || "another dataset"}`.slice(0, 200);
+  copy.source = `Saved from ${source?.name || "another map"}`.slice(0, 200);
   copy.externalId = `${props.datasetId}/${props.id}`.slice(0, 200);
   return api("POST", `/v1/datasets/${encodeURIComponent(targetId)}/features`, { type: "Feature", geometry, properties: copy });
 }

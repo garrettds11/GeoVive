@@ -816,7 +816,7 @@
     .data-view-hint[hidden] { display: none; }
     .link-btn { background: none; border: 0; color: var(--accent1); cursor: pointer; font: inherit; padding: 0 0.2rem; text-decoration: underline; }
 
-    /* ---------- My datasets + pin editing ---------- */
+    /* ---------- My maps + pin editing ---------- */
     #my-maps[hidden], #edit-bar[hidden] { display: none; }
     .my-maps-list { display: flex; flex-direction: column; gap: 0.35rem; margin: 0.4rem 0; }
     .my-map-item { display: flex; flex-direction: column; align-items: flex-start; width: 100%; text-align: left;
@@ -956,19 +956,19 @@
             <div id="layers-overlays"></div>
           </details>
 
-          <!-- My datasets (signed-in users) -->
+          <!-- My maps (signed-in users) -->
           <div id="my-maps" class="filter-group" hidden>
-            <h3>My datasets</h3>
+            <h3>My maps</h3>
             <div id="my-maps-list" class="my-maps-list"></div>
             <form id="map-details" class="map-details" hidden>
               <label>Name<input name="name" maxlength="120" required></label>
-              <label>Description<textarea name="description" rows="3" maxlength="1000" placeholder="What's in this dataset, and who is it for?"></textarea></label>
-              <label>Tags <span class="hint">(comma-separated, up to 10; help people find public datasets)</span><input name="tags" placeholder="hiking, colorado, trailheads"></label>
+              <label>Description<textarea name="description" rows="3" maxlength="1000" placeholder="What's on this map, and who is it for?"></textarea></label>
+              <label>Tags <span class="hint">(comma-separated, up to 10; help people find public maps)</span><input name="tags" placeholder="hiking, colorado, trailheads"></label>
               <label class="new-map-public"><input type="checkbox" name="public"> Public (anyone can find and view it)</label>
               <div class="edit-actions"><button type="submit" class="btn primary">Save details</button><button type="button" class="btn" data-cancel>Cancel</button></div>
             </form>
             <div class="new-map-row">
-              <input type="text" id="new-map-name" placeholder="New dataset name" maxlength="120" />
+              <input type="text" id="new-map-name" placeholder="New map name" maxlength="120" />
               <button type="button" id="create-map-btn" class="btn primary">Create</button>
             </div>
             <label class="new-map-public"><input type="checkbox" id="new-map-public" /> Public (anyone can view)</label>
@@ -978,7 +978,7 @@
               <div class="edit-actions">
                 <button type="button" id="add-pin-btn" class="btn primary">📍 Add pin</button>
                 <button type="button" id="pin-here-btn" class="btn">📍 Pin my location</button>
-                <button type="button" id="delete-map-btn" class="btn danger">Delete dataset</button>
+                <button type="button" id="delete-map-btn" class="btn danger">Delete map</button>
               </div>
               <p class="hint" style="margin-top:0.35rem;">Click a pin, then ✏️ to edit or delete it.</p>
             </div>
@@ -987,9 +987,9 @@
 
           <!-- Dataset selector -->
           <div class="filter-group" style="margin-top: 0.5rem;">
-            <h3>Dataset</h3>
+            <h3>Map</h3>
             <div class="ds-search" id="ds-search">
-              <input type="search" id="ds-search-input" placeholder="Search public datasets (name, description, tags)" autocomplete="off" aria-label="Search public datasets" aria-controls="ds-search-results">
+              <input type="search" id="ds-search-input" placeholder="Search public maps (name, description, tags)" autocomplete="off" aria-label="Search public maps" aria-controls="ds-search-results">
               <div class="ds-search-results" id="ds-search-results" role="listbox" hidden></div>
             </div>
             <select id="dataset-select" style="width:100%; background:#020617; color:#e5e7eb; border:1px solid #1f2937; border-radius:0.5rem; padding:0.35rem 0.5rem; font-size:0.85rem;">
@@ -999,8 +999,8 @@
               <button type="button" id="zoom-to-data" class="btn">Zoom to data</button>
             </div>
             <details class="also-show">
-              <summary>Also show other datasets</summary>
-              <p class="hint">Draw more of your datasets, or public ones you've opened, on top of this one.</p>
+              <summary>Also show other maps</summary>
+              <p class="hint">Draw more of your maps, or public ones you've opened, on top of this one.</p>
               <div id="layers-datasets"></div>
             </details>
             <p id="data-view-hint" class="data-view-hint" hidden>
@@ -1008,7 +1008,7 @@
               <button type="button" class="link-btn" id="data-view-hint-zoom">Show them</button>
             </p>
             <p class="hint" style="margin-top:0.4rem;">
-                Choose which dataset GeoVivé displays. Switching keeps your current view.
+                Choose which map GeoVivé displays. Switching keeps your current view.
             </p>
             <br>
 
@@ -1179,9 +1179,9 @@
       return { geojson: { type: "FeatureCollection", features }, categories };
     }
 
-    // The dataset menu lists your datasets and the public datasets you've opened recently.
-    // Public datasets are found with the search box (scripts/dataset-search.js), so the
-    // menu stays short however many public datasets there are.
+    // The dataset menu lists your maps and the public maps you've opened recently.
+    // Public maps are found with the search box (scripts/dataset-search.js), so the
+    // menu stays short however many public maps there are.
     const RECENT_KEY = "geovive:recentDatasets";
     function recentIds() { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]"); } catch { return []; } }
     function rememberDataset(id) {
@@ -1214,13 +1214,13 @@
           });
           select.appendChild(g);
         };
-        group("Your datasets", mine);
-        group("Public datasets", others);
+        group("Your maps", mine);
+        group("Public maps", others);
         if ([...select.options].some(o => o.value === current)) select.value = current;
         return datasets;
       } catch (e) {
         console.warn("Dataset list unavailable", e);
-        select.innerHTML = '<option value="">No datasets available</option>';
+        select.innerHTML = '<option value="">No maps available</option>';
         return [];
       }
     }
@@ -1271,7 +1271,7 @@
     }
     const savedView = loadSavedView();
 
-    const GeoVivéMap = new datasetboxgl.Map({
+    const GeoVivéMap = new mapboxgl.Map({
       container: "map",
       style: MAP_STYLES.outdoors,
       center: savedView?.center || [-96.5730, 39.1794],
@@ -1388,7 +1388,7 @@
 
     // Bounds of any geometry (uses the API's bbox when present)
     function featureBounds(f) {
-      const b = new datasetboxgl.LngLatBounds();
+      const b = new mapboxgl.LngLatBounds();
       if (Array.isArray(f.bbox) && f.bbox.length === 4) {
         b.extend([f.bbox[0], f.bbox[1]]); b.extend([f.bbox[2], f.bbox[3]]);
         return b;
@@ -1431,7 +1431,7 @@
     let currentGeojson = EMPTY_FC;
 
     function dataBounds(geojson) {
-      const bounds = new datasetboxgl.LngLatBounds();
+      const bounds = new mapboxgl.LngLatBounds();
       geojson.features.forEach(f => {
         const fb = featureBounds(f);
         if (!fb.isEmpty()) bounds.extend(fb);
@@ -1459,7 +1459,7 @@
       }).length;
       hint.hidden = inView > 0;
       hint.querySelector("span").textContent =
-        `None of this dataset's ${total} place${total === 1 ? "" : "s"} are in view.`;
+        `None of this map's ${total} place${total === 1 ? "" : "s"} are in view.`;
     }
     GeoVivéMap.on("moveend", updateInViewHint);
 
@@ -1592,7 +1592,7 @@
     function renderLegend(cats) {
       const box = document.getElementById("legend-items");
       if (!box) return;
-      if (!cats.length) { box.innerHTML = '<p class="hint">No places in this dataset yet.</p>'; return; }
+      if (!cats.length) { box.innerHTML = '<p class="hint">No places on this map yet.</p>'; return; }
       box.innerHTML = "";
       cats.forEach(c => {
         const row = document.createElement("div");
@@ -1657,12 +1657,12 @@
     });
 
     // Map scale (bottom-left): miles/feet and kilometers/meters
-    GeoVivéMap.addControl(new datasetboxgl.ScaleControl({ maxWidth: 120, unit: "imperial" }), "bottom-left");
-    GeoVivéMap.addControl(new datasetboxgl.ScaleControl({ maxWidth: 120, unit: "metric" }), "bottom-left");
+    GeoVivéMap.addControl(new mapboxgl.ScaleControl({ maxWidth: 120, unit: "imperial" }), "bottom-left");
+    GeoVivéMap.addControl(new mapboxgl.ScaleControl({ maxWidth: 120, unit: "metric" }), "bottom-left");
 
     // My location (top-left): centers on the device's location and shows it as a dot.
     // The location stays in the browser; nothing is saved unless the user adds a pin.
-    const geolocate = new datasetboxgl.GeolocateControl({
+    const geolocate = new mapboxgl.GeolocateControl({
       positionOptions: { enableHighAccuracy: true }, trackUserLocation: false, showAccuracyCircle: true,
       fitBoundsOptions: { maxZoom: 15 }
     });
@@ -1671,7 +1671,7 @@
     // Compass (top-left): the needle shows the map's rotation; click to reset
     // to north-up and flat.
     GeoVivéMap.addControl(
-      new datasetboxgl.NavigationControl({ showZoom: false, visualizePitch: true }),
+      new mapboxgl.NavigationControl({ showZoom: false, visualizePitch: true }),
       "top-left"
     );
 
@@ -1852,7 +1852,7 @@
       } catch (e) {
         console.error(e);
         const hint = datasetSelect.parentElement.querySelector(".hint");
-        if (hint) hint.textContent = `Could not load dataset: ${e.message}`;
+        if (hint) hint.textContent = `Could not load map: ${e.message}`;
       }
     });
     

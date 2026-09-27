@@ -64,11 +64,11 @@
     <p>These tokens are issued only to GeoVivé's own web app. Other apps get access to a user's maps through <a href="#account-linking">account linking</a>, with the user's consent.</p>
 
     <h2 id="data-model">Data model</h2>
-    <p>GeoVivé stores <strong>datasets</strong> of <strong>features</strong> (standard GeoJSON) and displays <strong>layers</strong> it doesn't store. The authoritative definition is <a href="https://github.com/garrettds11/GeoVive/blob/main/datamodel.yaml"><code>datamodel.yaml</code></a> (JSON Schema). <code>openapi.yaml</code> references it, and every write is checked against it.</p>
+    <p>The app calls a dataset a <em>map</em>; this reference and the API say <em>dataset</em>. GeoVivé stores <strong>datasets</strong> of <strong>features</strong> (standard GeoJSON) and displays <strong>layers</strong> it doesn't store. The authoritative definition is <a href="https://github.com/garrettds11/GeoVive/blob/main/datamodel.yaml"><code>datamodel.yaml</code></a> (JSON Schema). <code>openapi.yaml</code> references it, and every write is checked against it.</p>
     <div class="table-wrap"><table>
       <tr><th>Concept</th><th>Data model</th><th>API</th><th>In the app</th><th>AppConnect</th></tr>
       <tr><td><b>Feature</b></td><td><code>Feature</code> = geometry + <code>FeatureProperties</code></td><td><code>/v1/datasets/{id}/features</code></td><td>A pin (point) or shape (line or area)</td><td>Pins in a user's datasets</td></tr>
-      <tr><td><b>Dataset</b></td><td><code>Dataset</code> + its <code>FeatureCollection</code></td><td><code>/v1/datasets</code></td><td>The Dataset menu</td><td>Created for a user by an Open in GeoVivé link or account linking</td></tr>
+      <tr><td><b>Dataset</b></td><td><code>Dataset</code> + its <code>FeatureCollection</code></td><td><code>/v1/datasets</code></td><td>A "map": the Map menu and My maps</td><td>Created for a user by an Open in GeoVivé link or account linking</td></tr>
       <tr><td><b>Layer</b></td><td><code>LayerList</code>: a display contract (source, style, credits, license), not stored features</td><td><code>/v1/apps/{appId}/layers</code>, relay</td><td>The Layers panel</td><td>The app's own layers</td></tr>
     </table></div>
     <div class="table-wrap"><table>

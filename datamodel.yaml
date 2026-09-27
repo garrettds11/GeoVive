@@ -17,7 +17,7 @@
 #   FeatureCollection  → a list of features; what the API returns for a map's contents
 #   Dataset            → the card (name, description, tags, owner, visibility, provenance)
 #                        around a FeatureCollection. Stored in GeoVivé and editable by its
-#                        owner. Not a GeoJSON term. The app calls it a "dataset".
+#                        owner. Not a GeoJSON term. Users see it as a "map" ("My maps").
 #   Layer              → someone else's data that GeoVivé only DISPLAYS (a government
 #                        agency or an AppConnect app). Not stored, not editable, not held to
 #                        the Feature rules; described by the LayerList contract below.
