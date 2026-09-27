@@ -16,6 +16,7 @@ import "./safelog.mjs";   // first: keeps personal information out of logs
 import { GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { S3Client, GetObjectCommand, HeadObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { randomUUID } from "node:crypto";
+import { toCategory } from "./model.mjs";
 import {
   ddb, featureItem, batchWrite, deleteAllFeatures, deleteDatasetGeometry, loadDataset
 } from "./handler.mjs";
@@ -32,6 +33,13 @@ const NAME_FIELDS = ["name", "NAME", "Name", "title", "TITLE", "Title", "label",
   "UNIT_NAME", "UnitName", "unit_name", "FORESTNAME", "NAMELSAD", "STATE_NAME", "COUNTY_NAME"];
 
 class ImportError extends Error {}
+
+// Short provenance label stored on each imported feature (source field of the model)
+function sourceLabel(job, meta) {
+  if (meta?.title) return `import: ${meta.title}`;
+  if (job.source.type === "upload") return `import: ${job.source.fileName || "uploaded file"}`;
+  try { return `import: ${new URL(job.source.url).hostname}`; } catch { return "import"; }
+}
 
 // ------------------------------------------------------------------ job state
 
@@ -155,6 +163,30 @@ export function pickName(props, nameField, index) {
   return s ? s.slice(0, 200) : `Feature ${index + 1}`;
 }
 
+// Source columns that aren't part of the data model become a short "Details" list
+// at the end of the description (up to 15 fields), so nothing is silently lost
+// and no new fields are created.
+const DESC_FIELDS = ["description", "DESCRIPTION", "Description", "desc", "notes", "NOTES", "Notes", "summary"];
+const MAX_EXTRA = 15;
+export function toModelProperties(props, { nameField, categoryField, sourceId, sourceLabel, index }) {
+  const name = pickName(props, nameField, index);
+  const used = new Set(Object.keys(props).filter(k => [nameField, categoryField].some(f => f && k.toLowerCase() === f.toLowerCase())));
+  NAME_FIELDS.forEach(f => { if (getProp(props, f) === name) used.add(Object.keys(props).find(k => k.toLowerCase() === f.toLowerCase())); });
+  const descKey = DESC_FIELDS.map(f => Object.keys(props).find(k => k === f)).find(Boolean);
+  if (descKey) used.add(descKey);
+  const rawCategory = categoryField ? getProp(props, categoryField) : undefined;
+  const extras = Object.entries(props).filter(([k, v]) => !used.has(k) && filled(v) && !/^(objectid|fid|shape_?(area|length|leng)|globalid)$/i.test(k));
+  const lines = extras.slice(0, MAX_EXTRA).map(([k, v]) => `- **${k}:** ${String(v).slice(0, 200)}`);
+  if (filled(rawCategory) && toCategory(rawCategory) !== String(rawCategory).trim().toLowerCase()) lines.unshift(`- **Type:** ${String(rawCategory).slice(0, 100)}`);
+  const parts = [descKey ? String(props[descKey]).trim() : "", lines.length ? lines.join("\n") : ""].filter(Boolean);
+  const out = { name, category: toCategory(rawCategory) };
+  const description = parts.join("\n\n").slice(0, 5000);
+  if (description) out.description = description;
+  if (sourceId !== undefined && filled(sourceId)) out.externalId = String(sourceId).slice(0, 200);
+  if (sourceLabel) out.source = String(sourceLabel).slice(0, 200);
+  return out;
+}
+
 function cleanProps(raw) {
   const out = {};
   for (const [k, v] of Object.entries(raw || {})) {
@@ -200,12 +232,8 @@ export async function runImport(importId) {
       const f = features[i];
       const props = cleanProps(f?.properties);
       const sourceId = f?.id ?? getProp(props, meta.idField);
-      const properties = {
-        ...props,
-        name: pickName(props, job.nameField, i),
-        ...(filled(getProp(props, job.categoryField)) ? { category: String(getProp(props, job.categoryField)).slice(0, 100) } : {}),
-        ...(sourceId !== undefined ? { sourceId: String(sourceId) } : {})
-      };
+      const properties = toModelProperties(props, { nameField: job.nameField, categoryField: job.categoryField,
+        sourceId, sourceLabel: sourceLabel(job, meta), index: i });
       try {
         batch.push(await featureItem(job.datasetId, randomUUID(), { type: "Feature", geometry: f?.geometry, properties }));
         imported++;

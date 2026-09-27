@@ -1,0 +1,613 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://geovive.link/schemas/datamodel.yaml",
+ "title": "GeoVivé data model",
+ "version": "1.0.0",
+ "$defs": {
+  "FeatureProperties": {
+   "description": "Everything GeoVivé knows about one feature besides its geometry. No other fields are allowed: specifics (a school's level, a clinic's hours) go in `description`.\n",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "name",
+    "category"
+   ],
+   "properties": {
+    "id": {
+     "type": "string",
+     "readOnly": true,
+     "description": "Pin identifier"
+    },
+    "datasetId": {
+     "type": "string",
+     "readOnly": true,
+     "description": "The map this pin belongs to (formerly mapId)"
+    },
+    "createdAt": {
+     "type": "string",
+     "format": "date-time",
+     "readOnly": true
+    },
+    "updatedAt": {
+     "type": "string",
+     "format": "date-time",
+     "readOnly": true
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 200,
+     "description": "Human-readable name or title"
+    },
+    "description": {
+     "type": "string",
+     "maxLength": 5000,
+     "description": "Markdown. Anything specific about this pin (address, hours, level, notes)."
+    },
+    "category": {
+     "type": "string",
+     "enum": [
+      "location",
+      "event",
+      "alert"
+     ],
+     "description": "location = a place (most records); event = recorded activity with coordinates; alert = noteworthy activity with coordinates, something someone should know about. Fixed set until the owner declares otherwise.\n"
+    },
+    "eventTime": {
+     "type": "string",
+     "format": "date-time",
+     "description": "When the event or activity happened (not when it was recorded). Required for events and alerts."
+    },
+    "status": {
+     "type": "string",
+     "enum": [
+      "active",
+      "inactive",
+      "archived"
+     ],
+     "default": "active",
+     "description": "Lifecycle of the pin (e.g. a closed school becomes inactive)"
+    },
+    "severity": {
+     "type": "string",
+     "enum": [
+      "info",
+      "warning",
+      "critical"
+     ],
+     "description": "Alerts only"
+    },
+    "source": {
+     "type": "string",
+     "maxLength": 200,
+     "description": "Where this pin came from (e.g. \"nces-edge-2024-25\", \"manual-entry\", \"bowandarrow-hunt\")"
+    },
+    "externalId": {
+     "type": "string",
+     "maxLength": 200,
+     "description": "The pin's identifier in its source, if any (e.g. an NCES school ID)"
+    },
+    "icon": {
+     "type": "string",
+     "maxLength": 32,
+     "description": "An emoji or a named icon"
+    },
+    "color": {
+     "type": "string",
+     "pattern": "^#[0-9a-fA-F]{6}$"
+    },
+    "geometryDetail": {
+     "type": "string",
+     "enum": [
+      "simplified",
+      "full"
+     ],
+     "readOnly": true
+    }
+   },
+   "allOf": [
+    {
+     "if": {
+      "properties": {
+       "category": {
+        "enum": [
+         "event",
+         "alert"
+        ]
+       }
+      },
+      "required": [
+       "category"
+      ]
+     },
+     "then": {
+      "required": [
+       "eventTime"
+      ]
+     }
+    },
+    {
+     "if": {
+      "properties": {
+       "category": {
+        "const": "alert"
+       }
+      },
+      "required": [
+       "category"
+      ]
+     },
+     "else": {
+      "not": {
+       "required": [
+        "severity"
+       ]
+      }
+     }
+    }
+   ]
+  },
+  "Feature": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "type",
+    "geometry",
+    "properties"
+   ],
+   "properties": {
+    "type": {
+     "const": "Feature"
+    },
+    "id": {
+     "type": "string",
+     "readOnly": true
+    },
+    "geometry": {
+     "$ref": "#/$defs/Geometry"
+    },
+    "bbox": {
+     "type": "array",
+     "readOnly": true,
+     "items": {
+      "type": "number"
+     },
+     "minItems": 4,
+     "maxItems": 4
+    },
+    "properties": {
+     "$ref": "#/$defs/FeatureProperties"
+    }
+   }
+  },
+  "FeatureCollection": {
+   "type": "object",
+   "required": [
+    "type",
+    "features"
+   ],
+   "properties": {
+    "type": {
+     "const": "FeatureCollection"
+    },
+    "features": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Feature"
+     }
+    },
+    "nextToken": {
+     "type": "string",
+     "description": "Pass back to get the next page"
+    }
+   }
+  },
+  "Position": {
+   "type": "array",
+   "minItems": 2,
+   "maxItems": 3,
+   "prefixItems": [
+    {
+     "type": "number",
+     "minimum": -180,
+     "maximum": 180
+    },
+    {
+     "type": "number",
+     "minimum": -90,
+     "maximum": 90
+    },
+    {
+     "type": "number",
+     "description": "elevation in meters"
+    }
+   ]
+  },
+  "Geometry": {
+   "oneOf": [
+    {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "type",
+      "coordinates"
+     ],
+     "properties": {
+      "type": {
+       "const": "Point"
+      },
+      "coordinates": {
+       "$ref": "#/$defs/Position"
+      }
+     }
+    },
+    {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "type",
+      "coordinates"
+     ],
+     "properties": {
+      "type": {
+       "const": "MultiPoint"
+      },
+      "coordinates": {
+       "type": "array",
+       "items": {
+        "$ref": "#/$defs/Position"
+       }
+      }
+     }
+    },
+    {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "type",
+      "coordinates"
+     ],
+     "properties": {
+      "type": {
+       "const": "LineString"
+      },
+      "coordinates": {
+       "type": "array",
+       "minItems": 2,
+       "items": {
+        "$ref": "#/$defs/Position"
+       }
+      }
+     }
+    },
+    {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "type",
+      "coordinates"
+     ],
+     "properties": {
+      "type": {
+       "const": "MultiLineString"
+      },
+      "coordinates": {
+       "type": "array",
+       "items": {
+        "type": "array",
+        "minItems": 2,
+        "items": {
+         "$ref": "#/$defs/Position"
+        }
+       }
+      }
+     }
+    },
+    {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "type",
+      "coordinates"
+     ],
+     "properties": {
+      "type": {
+       "const": "Polygon"
+      },
+      "coordinates": {
+       "type": "array",
+       "items": {
+        "type": "array",
+        "minItems": 4,
+        "items": {
+         "$ref": "#/$defs/Position"
+        }
+       }
+      }
+     }
+    },
+    {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "type",
+      "coordinates"
+     ],
+     "properties": {
+      "type": {
+       "const": "MultiPolygon"
+      },
+      "coordinates": {
+       "type": "array",
+       "items": {
+        "type": "array",
+        "items": {
+         "type": "array",
+         "minItems": 4,
+         "items": {
+          "$ref": "#/$defs/Position"
+         }
+        }
+       }
+      }
+     }
+    }
+   ]
+  },
+  "Dataset": {
+   "description": "A map — the card around a FeatureCollection. Its name, description and tags are what search finds.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "name"
+   ],
+   "properties": {
+    "datasetId": {
+     "type": "string",
+     "readOnly": true
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 120
+    },
+    "description": {
+     "type": "string",
+     "maxLength": 1000,
+     "description": "Markdown. What's on the map",
+     "where": null,
+     "and who it's for.": null
+    },
+    "tags": {
+     "type": "array",
+     "minItems": 0,
+     "maxItems": 10,
+     "uniqueItems": true,
+     "description": "Search labels for the whole map (e.g. education, schools, us-la). Lowercase words or short phrases.",
+     "items": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9 -]{0,30}[a-z0-9]$|^[a-z0-9]$"
+     }
+    },
+    "visibility": {
+     "type": "string",
+     "enum": [
+      "private",
+      "public",
+      "review"
+     ],
+     "default": "private",
+     "description": "review = built by an agent and waiting for admin approval (never listed or searchable)"
+    },
+    "ownerId": {
+     "type": "string",
+     "readOnly": true
+    },
+    "featureCount": {
+     "type": "integer",
+     "minimum": 0,
+     "readOnly": true
+    },
+    "provenance": {
+     "type": "array",
+     "readOnly": true,
+     "description": "One record per import or agent build",
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "source": {
+        "type": "string",
+        "description": "e.g. arcgis",
+        "url": null,
+        "upload": null,
+        "agent": null
+       },
+       "url": {
+        "type": "string"
+       },
+       "filter": {
+        "type": "string"
+       },
+       "license": {
+        "type": "string"
+       },
+       "attribution": {
+        "type": "string"
+       },
+       "fetchedAt": {
+        "type": "string",
+        "format": "date-time"
+       },
+       "imported": {
+        "type": "integer"
+       },
+       "skipped": {
+        "type": "integer"
+       }
+      }
+     }
+    },
+    "origin": {
+     "type": "object",
+     "readOnly": true,
+     "description": "Set when an AppConnect app created the map",
+     "additionalProperties": false,
+     "properties": {
+      "appId": {
+       "type": "string"
+      },
+      "externalRef": {
+       "type": "string"
+      },
+      "externalUrl": {
+       "type": "string"
+      }
+     }
+    },
+    "referenceArea": {
+     "type": "string",
+     "description": "URL of an area outline shown with the map (AppConnect)"
+    },
+    "createdAt": {
+     "type": "string",
+     "format": "date-time",
+     "readOnly": true
+    },
+    "updatedAt": {
+     "type": "string",
+     "format": "date-time",
+     "readOnly": true
+    }
+   }
+  },
+  "LayerList": {
+   "type": "object",
+   "required": [
+    "layers"
+   ],
+   "properties": {
+    "title": {
+     "type": "string",
+     "maxLength": 120
+    },
+    "layers": {
+     "type": "array",
+     "maxItems": 200,
+     "items": {
+      "$ref": "#/$defs/Layer"
+     }
+    }
+   }
+  },
+  "Layer": {
+   "type": "object",
+   "required": [
+    "id",
+    "name",
+    "source",
+    "label"
+   ],
+   "properties": {
+    "id": {
+     "type": "string",
+     "maxLength": 64,
+     "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+     "description": "Stable; links use it"
+    },
+    "name": {
+     "type": "string",
+     "maxLength": 120
+    },
+    "group": {
+     "type": "string",
+     "maxLength": 80
+    },
+    "color": {
+     "type": "string",
+     "pattern": "^#[0-9a-fA-F]{6}$"
+    },
+    "description": {
+     "type": "string",
+     "maxLength": 500
+    },
+    "attribution": {
+     "type": "string",
+     "maxLength": 200
+    },
+    "license": {
+     "type": "string",
+     "maxLength": 200
+    },
+    "label": {
+     "type": "string",
+     "maxLength": 200,
+     "pattern": "\\{\\w+\\}",
+     "description": "Template naming each feature, e.g. {UNIT_NAME}"
+    },
+    "fields": {
+     "type": "object",
+     "maxProperties": 40,
+     "description": "Source field → label shown on the feature's card",
+     "additionalProperties": {
+      "type": "string",
+      "maxLength": 80
+     }
+    },
+    "delivery": {
+     "type": "string",
+     "enum": [
+      "relay",
+      "direct"
+     ],
+     "default": "relay",
+     "description": "relay = GeoVivé fetches, simplifies and caches for display; direct = the browser loads the source"
+    },
+    "tolerance": {
+     "type": "number",
+     "exclusiveMinimum": 0,
+     "maximum": 0.01,
+     "description": "Simplification in degrees (relay)"
+    },
+    "source": {
+     "type": "object",
+     "required": [
+      "type",
+      "url"
+     ],
+     "properties": {
+      "type": {
+       "type": "string",
+       "enum": [
+        "arcgis",
+        "wfs",
+        "geojson"
+       ]
+      },
+      "url": {
+       "type": "string",
+       "pattern": "^https://"
+      },
+      "where": {
+       "type": "string",
+       "maxLength": 1000,
+       "description": "Filter (arcgis)"
+      },
+      "typeName": {
+       "type": "string",
+       "maxLength": 200,
+       "description": "Required for wfs"
+      },
+      "geometryField": {
+       "type": "string",
+       "maxLength": 64
+      },
+      "paging": {
+       "type": "boolean"
+      }
+     }
+    }
+   }
+  }
+ }
+}

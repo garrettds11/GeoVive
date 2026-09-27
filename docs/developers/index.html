@@ -139,11 +139,11 @@
 
 {
   "total": 3,              // public datasets that matched
-  "complete": true,        // false if the search stopped early on a very large catalog
+  "complete": true,
   "results": [ { …dataset… } ],
   "tags": [ { "name": "hiking", "count": 3 } ]   // tags among the matches, for filtering
 }</code></pre>
-    <p>Every word of <code>q</code> (two letters or more, accents ignored) must appear in the name, description or tags. Results rank name matches first, then tags, then description. With no <code>q</code>, results are the largest datasets first. Only public datasets are searched.</p>
+    <p>Full-text search over each public dataset's name, tags and description. It matches partial words (<code>trail</code> finds "Trailheads"), simple word forms (<code>schools</code> finds "school"), small typos, and ignores accents and case. Results rank by relevance, with name matches weighted most, then tags, then description. When no dataset matches every word, datasets matching any word are returned. With no <code>q</code>, results are the largest datasets first. Only public datasets are searched.</p>
 
     <h2 id="features">Features</h2>
     <div class="table-wrap"><table>

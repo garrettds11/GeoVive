@@ -79,8 +79,7 @@
         <div class="popup-title">${esc(uni(props.name || "Untitled"))}</div>
         <div class="popup-category">${esc(uni(category || props.category || "location")).toUpperCase()}</div>
         ${notes ? `<div class="popup-desc md">${markdown(notes)}</div>` : ""}
-        ${(() => { let f = props.savedFrom; if (typeof f === "string") { try { f = JSON.parse(f); } catch { f = null; } }
-          return f?.datasetName ? `<div class="pin-from">Saved from ${esc(f.datasetName)}</div>` : ""; })()}
+        ${/^Saved from /.test(props.source || "") ? `<div class="pin-from">${esc(props.source)}</div>` : ""}
         <div class="pin-actions">
           ${savable ? `<button type="button" class="pin-save" data-act="save" title="Save a copy to one of your datasets">${ICONS.save}<span>Save to my dataset</span></button>` : ""}
           ${editable ? `<button type="button" class="pin-act" data-act="edit" title="Edit pin" aria-label="Edit pin">${ICONS.edit}</button>` : ""}

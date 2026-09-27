@@ -9,7 +9,7 @@ const ds = new Map([["pub", { datasetId: "pub", ownerId: "u1", visibility: "publ
   ["priv", { datasetId: "priv", ownerId: "u1", visibility: "private", name: "Private", featureCount: 0 }],
   ["other", { datasetId: "other", ownerId: "u2", visibility: "private", name: "Theirs", featureCount: 0 }]]);
 const feats = new Map();
-const pt = (id, name) => feats.set(`pub|${id}`, { datasetId: "pub", featureId: id, geometry: { type: "Point", coordinates: [1, 2] }, properties: { name } });
+const pt = (id, name) => feats.set(`pub|${id}`, { datasetId: "pub", featureId: id, geometry: { type: "Point", coordinates: [1, 2] }, properties: { name, category: "location" } });
 pt("a", "Home"); pt("b", "Work"); pt("c", "Gym");
 const s3objs = new Map([["geometry/pub/c.json", JSON.stringify({ type: "Point", coordinates: [5, 6] })]]);
 feats.get("pub|c").geometryRef = { key: "geometry/pub/c.json", bytes: 10 };

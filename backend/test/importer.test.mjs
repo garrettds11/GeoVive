@@ -106,7 +106,10 @@ assert.match(job.errors[0], /Feature 2/);
 assert.equal(datasets.ds1.featureCount, 3);                      // 1 existing + 2
 assert.equal(datasets.ds1.imports[0].url, "https://data.example/units.geojson");
 const trail = Object.values(features).find(f => f.properties.name === "Trailhead");
-assert.equal(trail.properties.category, "access"); assert.equal(trail.properties.sourceId, "7");
+assert.equal(trail.properties.category, "location");            // not one of the three → location
+assert.equal(trail.properties.externalId, "7");
+assert.match(trail.properties.description, /\*\*Type:\*\* access/);   // original type kept in the description
+assert.deepEqual(Object.keys(trail.properties).sort().filter(k => !["id"].includes(k)).every(k => ["name","category","description","externalId","source"].includes(k)), true);
 assert.ok(Object.values(features).find(f => f.properties.name === "Big unit").geometryRef, "large shape stored in S3");
 // Someone else can't read the job
 assert.equal((await call("GET /v1/datasets/{datasetId}/imports/{importId}", { ...P, importId: r.body.importId }, undefined, "user-2")).status, 404);

@@ -202,8 +202,8 @@ function renderDatasets() {
   if (!box) return;
   const active = activeDatasetId();
   const others = window.GeoVive.datasets.filter(d => d.datasetId !== active);
-  if (!others.length) { box.innerHTML = ""; return; }
-  box.innerHTML = `<div class="layer-group-title">More datasets</div>`;
+  if (!others.length) { box.innerHTML = `<p class="hint">No other datasets yet. Create one, or open a public one with search.</p>`; return; }
+  box.innerHTML = "";
   others.forEach(d => {
     const on = state.datasets.includes(d.datasetId);
     const cats = loaded.get(d.datasetId)?.categories || [];

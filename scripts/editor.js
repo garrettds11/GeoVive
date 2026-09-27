@@ -94,14 +94,24 @@ function renderMyMaps() {
   const mine = state.datasets.filter(isMine);
   list.innerHTML = mine.length
     ? mine.map(d => `
-        <button type="button" class="my-map-item" data-id="${esc(d.datasetId)}">
-          <span class="my-map-name">${esc(d.name)}</span>
-          <span class="my-map-meta">${d.featureCount || 0} pins · ${esc(d.visibility)}</span>
-        </button>`).join("")
-    : `<p class="hint">No maps yet. Create one to start pinning places.</p>`;
+        <div class="my-map-item" data-id="${esc(d.datasetId)}">
+          <button type="button" class="my-map-open">
+            <span class="my-map-name">${esc(d.name)}</span>
+            <span class="my-map-meta">${d.featureCount || 0} pins · ${esc(d.visibility)}</span>
+          </button>
+          <button type="button" class="my-map-edit" title="Edit name, description, tags and visibility" aria-label="Edit ${esc(d.name)}">✏️</button>
+        </div>`).join("")
+    : `<p class="hint">No datasets yet. Create one to start pinning places.</p>`;
 
-  list.querySelectorAll(".my-map-item").forEach(btn =>
-    btn.addEventListener("click", () => selectDataset(btn.dataset.id)));
+  list.querySelectorAll(".my-map-item").forEach(item => {
+    item.querySelector(".my-map-open").addEventListener("click", () => selectDataset(item.dataset.id));
+    item.querySelector(".my-map-edit").addEventListener("click", async () => {
+      const form = $("map-details");
+      if (form && !form.hidden && form.dataset.for === item.dataset.id) { form.hidden = true; return; }   // pencil again closes it
+      if (currentDatasetId() !== item.dataset.id) await selectDataset(item.dataset.id);
+      openDetails();
+    });
+  });
   updateEditBar();
 }
 
@@ -134,12 +144,12 @@ async function createMap() {
   if (!name) { nameEl.focus(); return; }
   const visibility = $("new-map-public").checked ? "public" : "private";
   try {
-    setStatus("Creating map…");
+    setStatus("Creating dataset…");
     const ds = await api("POST", "/v1/datasets", { name, visibility });
     nameEl.value = "";
     await refreshDatasets();
     await selectDataset(ds.datasetId);
-    setStatus(`Created "${ds.name}". Click 📍 Add pin to start.`);
+    setStatus(`Created "${ds.name}". Click 📍 Add pin to start, or ✏️ to add a description and tags.`);
   } catch (e) {
     setStatus(e.message, true);
   }
@@ -148,7 +158,7 @@ async function createMap() {
 async function deleteCurrentMap() {
   const ds = currentDataset();
   if (!ds) return;
-  const ok = window.confirm(`Delete the map "${ds.name}" and all ${ds.featureCount || 0} pins? This cannot be undone.`);
+  const ok = window.confirm(`Delete the dataset "${ds.name}" and all ${ds.featureCount || 0} pins? This cannot be undone.`);
   if (!ok) return;
   try {
     await api("DELETE", `/v1/datasets/${encodeURIComponent(ds.datasetId)}`);
@@ -163,13 +173,18 @@ async function deleteCurrentMap() {
 
 // ------------------------------------------------------------ pin form popup
 
-// Pin types: the dataset's own (set by a connected app), else the defaults.
-function categoriesFor(ds) {
-  const types = ds?.featureTypes;
-  return Array.isArray(types) && types.length
-    ? types.map(t => ({ value: t.key, label: t.label, color: t.color }))
-    : PIN_CATEGORIES;
+// Pin categories are fixed by the data model: location, event, alert.
+function categoriesFor() { return PIN_CATEGORIES; }
+
+// datetime-local wants "YYYY-MM-DDTHH:MM" in local time
+function localTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
+// Fields a pin may carry (datamodel.yaml); everything else is dropped on save
+const MODEL_FIELDS = ["name", "category", "description", "eventTime", "status", "severity", "source", "externalId", "icon", "color"];
 
 function pinFormHtml(props = {}) {
   const cat = props.category || "location";
@@ -181,6 +196,12 @@ function pinFormHtml(props = {}) {
           ${categoriesFor(currentDataset()).map(c => `<option value="${c.value}" ${c.value === cat ? "selected" : ""}>${c.label}</option>`).join("")}
         </select>
       </label>
+      <div class="pin-when" ${cat === "location" ? "hidden" : ""}>
+        <label>When it happened<input type="datetime-local" name="eventTime" value="${localTime(props.eventTime)}"></label>
+        <label class="pin-severity" ${cat === "alert" ? "" : "hidden"}>Severity
+          <select name="severity">${["info", "warning", "critical"].map(v => `<option value="${v}" ${v === (props.severity || "info") ? "selected" : ""}>${v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select>
+        </label>
+      </div>
       <label>Notes <span class="hint">(Markdown: **bold**, *italic*, - lists, links)</span><span class="field-row"><textarea name="description" rows="4" maxlength="2000">${esc(props.description)}</textarea><button type="button" class="emoji-btn" data-emoji-for="description" title="Insert emoji" aria-label="Insert emoji">😀</button></span></label>
       <div class="emoji-pop" hidden></div>
       <div class="pin-form-actions">
@@ -248,19 +269,31 @@ function openPinForm(lngLat, feature) {
   if (!feature) form.querySelector("input[name=name]").focus();
 
   const fail = (msg) => { errEl.textContent = msg; errEl.hidden = false; };
+  // Events and alerts need a time; alerts also a severity
+  form.category.addEventListener("change", () => {
+    const c = form.category.value;
+    form.querySelector(".pin-when").hidden = c === "location";
+    form.querySelector(".pin-severity").hidden = c !== "alert";
+  });
 
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const fd = new FormData(form);
+    const category = fd.get("category");
+    const kept = Object.fromEntries(MODEL_FIELDS.filter(k => props[k] !== undefined && props[k] !== null && props[k] !== "").map(k => [k, props[k]]));
+    const properties = { ...kept, name: fd.get("name").trim(), category, description: fd.get("description").trim() };
+    delete properties.eventTime; delete properties.severity;
+    if (category !== "location") {
+      const t = fd.get("eventTime");
+      if (!t) { fail("Events and alerts need a date and time: when did it happen?"); return; }
+      properties.eventTime = new Date(t).toISOString();
+    }
+    if (category === "alert") properties.severity = fd.get("severity") || "info";
+    if (!properties.description) delete properties.description;
     const body = {
       type: "Feature",
       geometry: feature ? feature.geometry : { type: "Point", coordinates: [lngLat.lng, lngLat.lat] },
-      properties: {
-        name: fd.get("name").trim(),
-        category: fd.get("category"),
-        color: categoriesFor(currentDataset()).find(c => c.value === fd.get("category"))?.color,
-        description: fd.get("description").trim()
-      }
+      properties
     };
     const id = encodeURIComponent(currentDatasetId());
     try {
@@ -359,7 +392,7 @@ async function init() {
   $("new-map-name")?.addEventListener("keydown", (e) => { if (e.key === "Enter") createMap(); });
   $("add-pin-btn")?.addEventListener("click", () => setAddMode(!state.addMode));
   $("pin-here-btn")?.addEventListener("click", pinMyLocation);
-  $("details-map-btn")?.addEventListener("click", toggleDetails);
+
   $("map-details")?.addEventListener("submit", saveDetails);
   $("map-details")?.querySelector("[data-cancel]")?.addEventListener("click", () => { $("map-details").hidden = true; });
   $("delete-map-btn")?.addEventListener("click", deleteCurrentMap);
@@ -372,15 +405,16 @@ async function init() {
 
 // ------------------------------------------------------------ map details (name, description, tags, visibility)
 
-function toggleDetails() {
+function openDetails() {
   const form = $("map-details"), ds = currentDataset();
   if (!form || !ds) return;
-  if (!form.hidden) { form.hidden = true; return; }
   form.name.value = ds.name || "";
   form.description.value = ds.description || "";
   form.tags.value = (ds.tags || []).join(", ");
   form.public.checked = ds.visibility === "public";
+  form.dataset.for = ds.datasetId;
   form.hidden = false;
+  form.scrollIntoView({ block: "nearest", behavior: "smooth" });
   form.name.focus();
 }
 
@@ -470,7 +504,10 @@ async function copyFeature(props, feature, targetId) {
   const copy = {};
   for (const k of ["name", "category", "color", "description"]) if (props[k] !== undefined && props[k] !== null && props[k] !== "") copy[k] = props[k];
   copy.name ||= "Saved place";
-  copy.savedFrom = { datasetId: props.datasetId, datasetName: source?.name || props.datasetId, featureId: props.id, savedAt: new Date().toISOString() };
+  if (!["location", "event", "alert"].includes(copy.category)) copy.category = "location";
+  // Provenance within the data model: where the copy came from
+  copy.source = `Saved from ${source?.name || "another dataset"}`.slice(0, 200);
+  copy.externalId = `${props.datasetId}/${props.id}`.slice(0, 200);
   return api("POST", `/v1/datasets/${encodeURIComponent(targetId)}/features`, { type: "Feature", geometry, properties: copy });
 }
 

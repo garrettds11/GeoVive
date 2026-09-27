@@ -1,15 +1,6 @@
 // search.mjs — dataset metadata: tags, the search text, and search over public datasets.
 //
-// Each dataset stores `searchText`: its name, description and tags, lowercased and
-// accent-folded, kept in sync on every create/update. Search reads the public
-// datasets from the byVisibility index a page at a time, filters on the server
-// with DynamoDB `contains` for each query word, then ranks the matches here:
-// name matches first, then tags, then description.
-//
-// This is fast and free at the current scale (thousands of public datasets).
-// If public datasets grow to tens of thousands, move ranking to a search index
-// (for example OpenSearch Serverless) fed from the table's stream; the API
-// below doesn't need to change.
+// Tags are dataset-level (datamodel.yaml). Search is full-text: see searchPublic below.
 
 import { QueryCommand } from "@aws-sdk/lib-dynamodb";
 
@@ -43,52 +34,77 @@ export function terms(q) {
   return [...new Set(fold(q).replace(/[^a-z0-9 -]/g, " ").split(/\s+/).filter(w => w.length >= 2))].slice(0, 6);
 }
 
-// Relevance: every term must appear somewhere (the query already ensures that).
-export function score(d, words, tag) {
-  const name = fold(d.name), desc = fold(d.description), tags = (d.tags || []).map(fold);
-  let s = 0;
-  for (const w of words) {
-    if (name === w) s += 12;
-    else if (name.startsWith(w)) s += 8;
-    else if (new RegExp(`\\b${w}`).test(name)) s += 6;
-    else if (name.includes(w)) s += 4;
-    if (tags.includes(w)) s += 5; else if (tags.some(t => t.includes(w))) s += 3;
-    if (new RegExp(`\\b${w}`).test(desc)) s += 1.5; else if (desc.includes(w)) s += 1;
-  }
-  if (tag && tags.includes(tag)) s += 2;
-  s += Math.min(2, Math.log10((d.featureCount || 0) + 1) / 2);   // gentle nudge toward maps with content
-  return s;
+// ------------------------------------------------------------------ full-text search
+//
+// A full-text index (MiniSearch) over every public dataset's name (weighted most), tags
+// and description. It matches partial words ("trail" finds "Trailheads"), small typos
+// ("colrado"), simple word forms ("schools" finds "school"), ignores accents and case,
+// and ranks by relevance. The index is rebuilt from the table at most once a minute per
+// Lambda instance: fine for thousands of public datasets. Past that, the same interface
+// moves to a stored index or a search service (see DECISIONS).
+
+import MiniSearch from "minisearch";
+
+const STOP = new Set(["the", "of", "in", "and", "a", "an", "for", "to", "on", "at", "by", "with"]);
+// Light English stemming: plural and common endings, enough for "schools"/"school", "hiking"/"hike"
+export function stem(w) {
+  if (w.length > 5 && w.endsWith("ies")) return w.slice(0, -3) + "y";
+  if (w.length > 4 && /(ches|shes|sses|xes)$/.test(w)) return w.slice(0, -2);
+  if (w.length > 3 && w.endsWith("s") && !w.endsWith("ss")) return w.slice(0, -1);
+  if (w.length > 5 && w.endsWith("ing")) return w.slice(0, -3);
+  if (w.length > 4 && w.endsWith("ed")) return w.slice(0, -2);
+  return w;
+}
+const processTerm = (t) => { const w = fold(t).replace(/[^a-z0-9]/g, ""); return !w || STOP.has(w) ? null : stem(w); };
+
+const INDEX_TTL_MS = 60_000;
+let cached = { at: 0, index: null, docs: [] };
+
+async function publicDatasets(ddb, table) {
+  const items = []; let key;
+  do {
+    const res = await ddb.send(new QueryCommand({ TableName: table, IndexName: "byVisibility",
+      KeyConditionExpression: "#v = :v", ExpressionAttributeNames: { "#v": "visibility" }, ExpressionAttributeValues: { ":v": "public" },
+      ExclusiveStartKey: key }));
+    items.push(...(res.Items || [])); key = res.LastEvaluatedKey;
+  } while (key);
+  return items;
 }
 
-const SCAN_LIMIT = 5000;   // public datasets examined per search (index pages of up to 1 MB)
+export function buildIndex(docs) {
+  const index = new MiniSearch({
+    idField: "datasetId",
+    fields: ["name", "tagsText", "description"],
+    extractField: (d, f) => f === "tagsText" ? (d.tags || []).join(" ") : d[f],
+    processTerm,
+    searchOptions: { boost: { name: 3, tagsText: 2, description: 1 }, prefix: (t) => t.length >= 3, fuzzy: (t) => t.length >= 5 ? 0.2 : false, processTerm }
+  });
+  index.addAll(docs);
+  return index;
+}
+
+export function _resetSearchCache() { cached = { at: 0, index: null, docs: [] }; }
 
 export async function searchPublic(ddb, table, { q = "", tag = "", limit = 20 } = {}) {
-  const words = terms(q);
+  if (!cached.index || Date.now() - cached.at > INDEX_TTL_MS) {
+    const docs = await publicDatasets(ddb, table);
+    cached = { at: Date.now(), index: buildIndex(docs), docs };
+  }
   const t = tag ? cleanTags([tag])[0] : "";
-  const names = { "#v": "visibility" }, values = { ":v": "public" };
-  const filters = [];
-  words.forEach((w, i) => { filters.push(`contains(searchText, :w${i})`); values[`:w${i}`] = w; });
-  if (t) { filters.push("contains(tags, :tag)"); values[":tag"] = t; }
-  let key, examined = 0;
-  const hits = [];
-  do {
-    const res = await ddb.send(new QueryCommand({
-      TableName: table, IndexName: "byVisibility",
-      KeyConditionExpression: "#v = :v", ExpressionAttributeNames: names, ExpressionAttributeValues: values,
-      ...(filters.length ? { FilterExpression: filters.join(" AND ") } : {}),
-      ExclusiveStartKey: key
-    }));
-    examined += res.ScannedCount || 0;
-    hits.push(...(res.Items || []));
-    key = res.LastEvaluatedKey;
-  } while (key && examined < SCAN_LIMIT);
-
-  const ranked = words.length
-    ? hits.map(d => ({ d, s: score(d, words, t) })).sort((a, b) => b.s - a.s || a.d.name.localeCompare(b.d.name))
-    : hits.map(d => ({ d, s: 0 })).sort((a, b) => (b.d.featureCount || 0) - (a.d.featureCount || 0) || a.d.name.localeCompare(b.d.name));
-  // Tag suggestions from everything that matched
+  const byId = new Map(cached.docs.map(d => [d.datasetId, d]));
+  const tagOk = (d) => !t || (d.tags || []).includes(t);
+  let hits;
+  const query = String(q).trim();
+  if (query) {
+    // Every word should match; if nothing does, fall back to any word
+    let found = cached.index.search(query, { combineWith: "AND" });
+    if (!found.length) found = cached.index.search(query, { combineWith: "OR" });
+    hits = found.map(r => byId.get(r.id)).filter(d => d && tagOk(d));
+  } else {
+    hits = cached.docs.filter(tagOk).sort((a, b) => (b.featureCount || 0) - (a.featureCount || 0) || a.name.localeCompare(b.name));
+  }
   const counts = new Map();
   hits.forEach(d => (d.tags || []).forEach(x => counts.set(x, (counts.get(x) || 0) + 1)));
   const topTags = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 12).map(([name, count]) => ({ name, count }));
-  return { total: hits.length, complete: !key, results: ranked.slice(0, Math.min(50, limit)).map(x => x.d), tags: topTags };
+  return { total: hits.length, complete: true, results: hits.slice(0, Math.min(50, limit)), tags: topTags };
 }

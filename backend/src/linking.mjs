@@ -27,8 +27,8 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypt
 const TABLE = () => process.env.LINKS_TABLE;
 export const SCOPES = {
   profile: "See your display name and a user ID for this app",
-  "maps:read": "See maps it created for you, and maps you share with it",
-  "maps:write": "Create maps and add, change or delete pins in the maps it created"
+  "maps:read": "See datasets it created for you, and datasets you share with it",
+  "maps:write": "Create datasets and add, change or delete pins in the datasets it created"
 };
 const CODE_TTL = 300, ACCESS_TTL = 3600, REFRESH_TTL = 90 * 86400;
 export const MAX_REDIRECTS = 5, MAX_SHARED = 50;

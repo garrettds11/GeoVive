@@ -24,6 +24,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { originAllowed } from "./apps.mjs";
 import { getActiveApp, getAppRecord, isActive } from "./appstore.mjs";
 import * as linking from "./linking.mjs";
+import { validateFeature, validateDatasetFields, ModelError } from "./model.mjs";
 import { CognitoIdentityProviderClient, ListUsersCommand } from "@aws-sdk/client-cognito-identity-provider";
 import * as appconnect from "./appconnect.mjs";
 import { fetchLayerList, layerHash } from "./appcheck.mjs";
@@ -135,8 +136,8 @@ export function datasetView(d) {
   return {
     datasetId: d.datasetId, name: d.name, description: d.description || "", tags: d.tags || [],
     visibility: d.visibility, ownerId: d.ownerId, source: d.source,
-    origin: d.origin, referenceArea: d.referenceArea, featureTypes: d.featureTypes,
-    featureCount: d.featureCount || 0, imports: d.imports, createdAt: d.createdAt, updatedAt: d.updatedAt
+    origin: d.origin, referenceArea: d.referenceArea,
+    featureCount: d.featureCount || 0, provenance: d.imports, createdAt: d.createdAt, updatedAt: d.updatedAt
   };
 }
 
@@ -144,15 +145,15 @@ export function datasetView(d) {
 const geometryKey = (datasetId, featureId) => `geometry/${datasetId}/${featureId}.json`;
 
 export async function featureItem(datasetId, featureId, body, existing) {
-  if (!body || body.type !== "Feature") throw new HttpError(400, "Body must be a GeoJSON Feature");
+  try { body = validateFeature(body); } catch (e) {
+    if (e instanceof ModelError) throw new HttpError(400, e.message);
+    throw e;
+  }
   try { validateGeometry(body.geometry); } catch (e) {
     if (e instanceof GeometryError) throw new HttpError(400, e.message);
     throw e;
   }
-  const props = { ...(body.properties || {}) };
-  if (!props.name || typeof props.name !== "string") throw new HttpError(400, "properties.name is required");
-  delete props.id; delete props.datasetId; delete props.createdAt; delete props.updatedAt;
-  delete props.geometryDetail;
+  const props = body.properties;   // exactly the data model's fields
   const now = new Date().toISOString();
   const item = {
     datasetId, featureId,
@@ -266,14 +267,21 @@ async function searchDatasets(event) {
   return { ...out, results: out.results.map(datasetView) };
 }
 
+function validateName(name) {
+  try { validateDatasetFields({ name }); } catch (e) { if (e instanceof ModelError) throw new HttpError(400, e.message); throw e; }
+  return name;
+}
+
 function metaFields(body, existing = {}) {
   const out = {};
   if (body.description !== undefined) {
     if (typeof body.description !== "string") throw new HttpError(400, "description must be text");
-    out.description = body.description.trim().slice(0, 1000);
+    out.description = body.description.trim();
   }
   try { const t = cleanTags(body.tags); if (t !== undefined) out.tags = t; }
   catch (e) { if (e instanceof MetaError) throw new HttpError(400, e.message); throw e; }
+  try { validateDatasetFields(out, { partial: true }); }
+  catch (e) { if (e instanceof ModelError) throw new HttpError(400, e.message); throw e; }
   return out;
 }
 
@@ -281,13 +289,14 @@ async function createDataset(event) {
   const caller = await getCaller(event, { required: true });
   const body = parseBody(event);
   if (!body.name || typeof body.name !== "string") throw new HttpError(400, "name is required");
+  try { validateDatasetFields({ name: body.name.trim() }); } catch (e) { if (e instanceof ModelError) throw new HttpError(400, e.message); throw e; }
   const visibility = body.visibility || "private";
   if (!VISIBILITIES.has(visibility)) throw new HttpError(400, "visibility must be public or private");
   const now = new Date().toISOString();
   const meta = metaFields(body);
   const item = {
     datasetId: randomUUID(), name: body.name.trim().slice(0, 120), description: meta.description || "", tags: meta.tags || [],
-    visibility, ownerId: caller.sub, source: body.source, featureCount: 0, createdAt: now, updatedAt: now
+    visibility, ownerId: caller.sub, featureCount: 0, createdAt: now, updatedAt: now
   };
   item.searchText = searchTextOf(item);
   await ddb.send(new PutCommand({ TableName: DATASETS_TABLE, Item: item }));
@@ -303,7 +312,7 @@ async function updateDataset(event, datasetId) {
   const next = {
     ...ds,
     ...metaFields(body, ds),
-    name: typeof body.name === "string" && body.name.trim() ? body.name.trim().slice(0, 120) : ds.name,
+    name: typeof body.name === "string" && body.name.trim() ? validateName(body.name.trim()) : ds.name,
     visibility: body.visibility ?? ds.visibility,
     updatedAt: new Date().toISOString()
   };
@@ -483,7 +492,6 @@ function publicAppView(appId, app) {
   return {
     appId, name: app.name,
     returnOrigins: app.returnOrigins, areaOrigins: app.areaOrigins,
-    featureTypes: app.featureTypes,
     hasLayers: !!(app.layers || app.layersUrl)
   };
 }
@@ -527,8 +535,7 @@ async function openAppMap(event, appId, externalRef) {
       ...existing,
       origin: { ...existing.origin, externalUrl: externalUrl ?? existing.origin?.externalUrl },
       referenceArea: referenceArea ?? existing.referenceArea,
-      featureTypes: app.featureTypes,
-      updatedAt: now
+        updatedAt: now
     };
     await ddb.send(new PutCommand({ TableName: DATASETS_TABLE, Item: next }));
     return { created: false, dataset: datasetView(next) };
@@ -543,7 +550,6 @@ async function openAppMap(event, appId, externalRef) {
     origin: { appId, externalRef, externalUrl },
     originKey,
     referenceArea,
-    featureTypes: app.featureTypes,
     featureCount: 0, createdAt: now, updatedAt: now, tags: []
   };
   item.searchText = searchTextOf(item);
@@ -856,7 +862,7 @@ async function linkedRoute(event, routeKey, p) {
       const item = { datasetId: randomUUID(), name: body.name.trim().slice(0, 120), description: meta.description || `Created from ${app.name}`,
         tags: meta.tags || [], visibility: "private", ownerId: link.sub, origin: { appId: link.appId, externalRef },
         ...(externalRef ? { originKey: `${link.sub}#${link.appId}#${externalRef}` } : {}),
-        featureTypes: app.featureTypes, featureCount: 0, createdAt: now, updatedAt: now };
+        featureCount: 0, createdAt: now, updatedAt: now };
       if (item.originKey) {
         const found = await ddb.send(new QueryCommand({ TableName: DATASETS_TABLE, IndexName: "byOrigin",
           KeyConditionExpression: "originKey = :k", ExpressionAttributeValues: { ":k": item.originKey }, Limit: 1 }));
@@ -1006,7 +1012,7 @@ export const handler = async (event) => {
     }
     return respond(event, status, result);
   } catch (err) {
-    if (err instanceof HttpError || err instanceof appconnect.AppConnectError || err instanceof linking.LinkError) return respond(event, err.status, { message: err.message });
+    if (err instanceof HttpError || err instanceof appconnect.AppConnectError || err instanceof linking.LinkError || err instanceof ModelError) return respond(event, err.status, { message: err.message });
     console.error("Unhandled error", err);
     return respond(event, 500, { message: "Internal error" });
   }

@@ -13,7 +13,7 @@ const users = new UserManager({
 const uni = window.GeoVivePin?.uni || (v => v);
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const PAGE = 50;
-const TYPES = ["location", "event", "alert"];
+const TYPES = ["location", "event", "alert"];   // the data model's only categories
 
 const S = { user: null, maps: [], pins: [], apps: [], appEdit: null, sel: new Set(), editing: null, page: 0, sort: ["updatedAt", -1],
   f: { q: "", map: "", vis: "", type: "" } };
@@ -115,7 +115,7 @@ function render() {
         <label>Name<input name="name" required maxlength="120"></label>
         <label>Latitude<input name="lat" required inputmode="decimal" placeholder="39.7392"></label>
         <label>Longitude<input name="lng" required inputmode="decimal" placeholder="-104.9903"></label>
-        <label>Type<select name="category">${types.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join("")}</select></label>
+        <label>Type<select name="category">${TYPES.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join("")}</select></label>
         <label class="wide">Notes (Markdown)<textarea name="description" rows="3" maxlength="2000"></textarea></label>
         <div class="wide" style="display:flex;gap:0.5rem;justify-content:flex-end"><button type="button" class="btn2" data-a="new-cancel">Cancel</button><button class="btn2 primary">Create pin</button></div>
       </form>
@@ -297,7 +297,12 @@ async function saveEdit(tr, pin) {
   } else {
     geometry = (await api("GET", `/v1/datasets/${encodeURIComponent(pin.map.datasetId)}/features/${encodeURIComponent(pin.f.properties.id)}`)).geometry;
   }
-  const props = { ...pin.f.properties, name, category: val("category") || "location", description: val("description") };
+  const MODEL = ["name", "category", "description", "eventTime", "status", "severity", "source", "externalId", "icon", "color"];
+  const props = Object.fromEntries(MODEL.filter(k => pin.f.properties[k] != null && pin.f.properties[k] !== "").map(k => [k, pin.f.properties[k]]));
+  Object.assign(props, { name, category: val("category") || "location", description: val("description") });
+  if (!props.description) delete props.description;
+  if (props.category !== "location" && !props.eventTime) { msg("Events and alerts need a date and time. Set it on the map with the pin's ✏️ editor.", "err"); return; }
+  if (props.category !== "alert") delete props.severity;
   try {
     await api("PUT", `/v1/datasets/${encodeURIComponent(pin.map.datasetId)}/features/${encodeURIComponent(pin.f.properties.id)}`, { type: "Feature", geometry, properties: props });
     S.editing = null;

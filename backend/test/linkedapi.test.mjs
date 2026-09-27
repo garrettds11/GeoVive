@@ -89,7 +89,7 @@ assert.equal((await call("GET /v1/linked/datasets/{datasetId}", { p: { datasetId
 r = await call("GET /v1/linked/datasets/{datasetId}/features", { p: { datasetId: "own-app" }, headers: auth });
 assert.equal(r.body.features.length, 1);
 // write: only in maps the app created
-const pin = { type: "Feature", geometry: { type: "Point", coordinates: [3, 4] }, properties: { name: "Blind" } };
+const pin = { type: "Feature", geometry: { type: "Point", coordinates: [3, 4] }, properties: { name: "Blind", category: "location" } };
 r = await call("POST /v1/linked/datasets/{datasetId}/features", { p: { datasetId: "own-app" }, headers: auth, body: pin });
 assert.equal(r.status, 201); const fid = r.body.id;
 assert.equal((await call("POST /v1/linked/datasets/{datasetId}/features", { p: { datasetId: "shared" }, headers: auth, body: pin })).status, 403);

@@ -829,6 +829,16 @@
     .new-map-row input[type=text], .pin-form input, .pin-form select, .pin-form textarea {
       width: 100%; background: var(--bg-alt); color: var(--text); border: 1px solid var(--border);
       border-radius: 0.4rem; padding: 0.35rem 0.5rem; font: inherit; font-size: 0.82rem; }
+    .my-map-item { display: flex; flex-direction: row; align-items: stretch; gap: 0; padding: 0 !important; }
+    .my-map-open { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; text-align: left;
+      background: none; border: 0; color: inherit; font: inherit; padding: 0.45rem 0.6rem; cursor: pointer; }
+    .my-map-edit { background: none; border: 0; border-left: 1px solid rgba(148,163,184,0.15); padding: 0 0.6rem; cursor: pointer; font-size: 0.85rem;
+      opacity: 0.55; transition: opacity 0.15s; }
+    .my-map-item:hover .my-map-edit, .my-map-edit:focus-visible { opacity: 1; }
+    .map-details { margin: 0.4rem 0 0.6rem; }
+    .also-show { margin-top: 0.5rem; font-size: 0.8rem; }
+    .also-show summary { cursor: pointer; color: var(--muted); }
+    .also-show summary:hover { color: var(--text); }
     .new-map-public { font-size: 0.75rem; color: var(--muted); display: flex; gap: 0.3rem; align-items: center; margin-top: 0.3rem; }
     #edit-bar { border: 1px solid var(--accent-strong); border-radius: 0.6rem; padding: 0.5rem 0.6rem; margin-top: 0.5rem; }
     #edit-bar .edit-title { font-size: 0.8rem; color: var(--muted); margin-bottom: 0.4rem; }
@@ -939,11 +949,10 @@
             <div id="legend-items"><p class="hint">Loading…</p></div>
           </div>
 
-          <!-- Extra datasets and external overlays (scripts/layers.js) -->
+          <!-- Outside layers: government agencies and connected apps (scripts/layers.js) -->
           <details class="filter-group collapsible" id="layers-panel">
             <summary><h3>Layers</h3></summary>
-            <p class="hint">Show more datasets and outside map layers on top of the active dataset.</p>
-            <div id="layers-datasets"></div>
+            <p class="hint">Outside data shown on top of the map, from government agencies and connected apps. Layers are view-only.</p>
             <div id="layers-overlays"></div>
           </details>
 
@@ -951,6 +960,13 @@
           <div id="my-maps" class="filter-group" hidden>
             <h3>My datasets</h3>
             <div id="my-maps-list" class="my-maps-list"></div>
+            <form id="map-details" class="map-details" hidden>
+              <label>Name<input name="name" maxlength="120" required></label>
+              <label>Description<textarea name="description" rows="3" maxlength="1000" placeholder="What's in this dataset, and who is it for?"></textarea></label>
+              <label>Tags <span class="hint">(comma-separated, up to 10; help people find public datasets)</span><input name="tags" placeholder="hiking, colorado, trailheads"></label>
+              <label class="new-map-public"><input type="checkbox" name="public"> Public (anyone can find and view it)</label>
+              <div class="edit-actions"><button type="submit" class="btn primary">Save details</button><button type="button" class="btn" data-cancel>Cancel</button></div>
+            </form>
             <div class="new-map-row">
               <input type="text" id="new-map-name" placeholder="New dataset name" maxlength="120" />
               <button type="button" id="create-map-btn" class="btn primary">Create</button>
@@ -962,16 +978,8 @@
               <div class="edit-actions">
                 <button type="button" id="add-pin-btn" class="btn primary">📍 Add pin</button>
                 <button type="button" id="pin-here-btn" class="btn">📍 Pin my location</button>
-                <button type="button" id="details-map-btn" class="btn">Details</button>
                 <button type="button" id="delete-map-btn" class="btn danger">Delete dataset</button>
               </div>
-              <form id="map-details" class="map-details" hidden>
-                <label>Name<input name="name" maxlength="120" required></label>
-                <label>Description<textarea name="description" rows="3" maxlength="1000" placeholder="What's in this dataset, and who is it for?"></textarea></label>
-                <label>Tags <span class="hint">(comma-separated, up to 10; help people find public datasets)</span><input name="tags" placeholder="hiking, colorado, trailheads"></label>
-                <label class="new-map-public"><input type="checkbox" name="public"> Public (anyone can find and view it)</label>
-                <div class="edit-actions"><button type="submit" class="btn primary">Save details</button><button type="button" class="btn" data-cancel>Cancel</button></div>
-              </form>
               <p class="hint" style="margin-top:0.35rem;">Click a pin, then ✏️ to edit or delete it.</p>
             </div>
             <div id="editor-status"></div>
@@ -990,6 +998,11 @@
             <div class="dataset-actions">
               <button type="button" id="zoom-to-data" class="btn">Zoom to data</button>
             </div>
+            <details class="also-show">
+              <summary>Also show other datasets</summary>
+              <p class="hint">Draw more of your datasets, or public ones you've opened, on top of this one.</p>
+              <div id="layers-datasets"></div>
+            </details>
             <p id="data-view-hint" class="data-view-hint" hidden>
               <span></span>
               <button type="button" class="link-btn" id="data-view-hint-zoom">Show them</button>
@@ -1514,8 +1527,8 @@
     }
 
     // ---- Categories: defined by each dataset ----------------------------------
-    // A dataset's categories come from its pin types (featureTypes, set by a
-    // connected app) or, failing that, from the category values its places use.
+    // Every pin is a location, an event or an alert (datamodel.yaml); the legend
+    // shows those three with counts.
     const CATEGORY_PALETTE = ["#3b82f6", "#22c55e", "#f97316", "#a855f7", "#ef4444", "#14b8a6", "#eab308", "#ec4899", "#64748b"];
 
     function titleCase(v) {
@@ -1546,9 +1559,8 @@
         counts.set(c, (counts.get(c) || 0) + 1);
       });
       const cats = [];
-      // A dataset's own types first; people's maps (no source) get the default pin types
-      const types = meta?.featureTypes?.length ? meta.featureTypes
-        : (meta && !meta.source ? DEFAULT_PIN_TYPES : []);
+      // Every dataset uses the data model's three categories (datamodel.yaml)
+      const types = DEFAULT_PIN_TYPES;
       types.forEach(t => cats.push({ key: t.key, label: t.label, color: t.color }));
       [...counts.keys()].sort().forEach(k => {
         if (!cats.some(c => c.key === k)) cats.push({ key: k, label: titleCase(k), color: categoryColor[k] });
