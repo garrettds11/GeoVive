@@ -26,6 +26,13 @@ Parameters:
   HostedZoneId:
     Type: String
     Default: Z0318749XVX1CEI14FGK
+  GeoLibrarySub:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /geovive/agents/geo-library-sub
+    Description: >
+      The geo-library service account's Cognito sub, read from Parameter Store (written by the
+      agents/ stack when it creates the account). Datasets created by this caller are forced into
+      review visibility and can't self-escalate out of it -- see handler.mjs.
 
 Globals:
   Function:
@@ -353,6 +360,10 @@ Resources:
           ADMIN_TABLE: !Ref AdminTable
           APPCHECK_FUNCTION: !Ref AppCheckFunction
           STRIPE_SECRET_ID: geovive/stripe
+          GEO_LIBRARY_SUB: !Ref GeoLibrarySub
+          AGENT_RUN_PARAM: /geovive/agents/run
+          AGENT_AUDIT_TABLE: !Sub geovive-${Env}-agents-audit
+          AGENT_MONTHLY_LIMIT_USD: "20"
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref DatasetsTable }
         - DynamoDBCrudPolicy: { TableName: !Ref FeaturesTable }
@@ -379,6 +390,12 @@ Resources:
             - Effect: Allow
               Action: cognito-idp:ListUsers
               Resource: !Sub arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}
+            - Effect: Allow
+              Action: [ssm:GetParameter, ssm:PutParameter]
+              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/geovive/agents/run
+            - Effect: Allow
+              Action: dynamodb:Scan
+              Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/geovive-${Env}-agents-audit
       Events:
         # Public reads (visibility enforced in the handler)
         ListDatasets:     { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /v1/datasets, Auth: { Authorizer: NONE } } }

@@ -85,9 +85,9 @@ async function gate(status) {
 
 async function console_() {
   root.innerHTML = `<p class="muted">Loading…</p>`;
-  const [ov, ds, au] = await Promise.all([api("GET", "/v1/admin/overview"), api("GET", "/v1/admin/datasets"), api("GET", "/v1/admin/audit")]);
+  const [ov, ds, au, ag] = await Promise.all([api("GET", "/v1/admin/overview"), api("GET", "/v1/admin/datasets"), api("GET", "/v1/admin/audit"), api("GET", "/v1/admin/agents")]);
   if (!ov) return;
-  S.maps = ds.datasets; S.audit = au.entries;
+  S.maps = ds.datasets; S.audit = au.entries; S.agents = ag;
   const v = ov.mapsByVisibility || {};
   const cost = ov.cost?.error ? `<span class="muted">Cost unavailable (${esc(ov.cost.error)})</span>`
     : `<ul class="ad-cost">${(ov.cost.services || []).slice(0, 6).map(x => `<li>${esc(x.service)}: ${usd(x.usd)}</li>`).join("")}</ul>`;
@@ -110,9 +110,7 @@ async function console_() {
       <div id="ad-maps"></div>
     </section>
 
-    <section class="md-section"><h2>Agents</h2>
-      <p class="muted">${esc(ov.agents?.note || "")} Controls for on/off, limits, runs and spend against the $20/month cap appear here once they're deployed.</p>
-    </section>
+    <section class="md-section" id="ad-agents"></section>
 
     <section class="md-section"><h2>Apps</h2>
       ${ov.apps.length ? `<table class="ad-table"><thead><tr><th>App</th><th>Status</th><th>Term ends</th></tr></thead><tbody>
@@ -137,7 +135,7 @@ async function console_() {
   document.getElementById("ad-q").oninput = e => { S.f.q = e.target.value; renderMaps(); };
   document.getElementById("ad-vis").onchange = e => { S.f.vis = e.target.value; renderMaps(); };
   document.getElementById("ad-owner").onchange = e => { S.f.owner = e.target.value; renderMaps(); };
-  renderReview(); renderMaps(); renderAudit();
+  renderReview(); renderMaps(); renderAudit(); renderAgents();
 }
 
 const visBadge = v => `<span class="vis ${esc(v)}">${v === "review" ? "In review" : esc(v)}</span>`;
@@ -157,6 +155,32 @@ function mapRow(m, review) {
 }
 function table(rows) { return `<table class="ad-table"><thead><tr><th>Map</th><th>Owner</th><th>Visibility</th><th>Size</th><th></th></tr></thead><tbody>${rows}</tbody></table>`; }
 
+function renderAgents() {
+  const el = document.getElementById("ad-agents");
+  const a = S.agents || {};
+  if (!a.deployed) { el.innerHTML = `<h2>Agents</h2><p class="muted">The map agents aren't deployed yet.</p>`; return; }
+  const spend = a.monthToDateUsd == null ? "—" : usd(a.monthToDateUsd);
+  const over = a.monthToDateUsd != null && a.monthToDateUsd >= a.monthlyLimitUsd;
+  const runs = (a.recentRuns || []).slice(0, 10);
+  el.innerHTML = `<h2>Agents</h2>
+    <div class="md-cards">
+      <div class="md-card"><b>${a.runEnabled ? "On" : "Off"}</b><span>run switch</span></div>
+      <div class="md-card ${over ? "warn" : ""}"><b>${spend}</b><span>agents spend this month · $${a.monthlyLimitUsd} limit</span></div>
+    </div>
+    <p><button class="btn2 ${a.runEnabled ? "danger" : "primary"}" id="ad-agents-toggle">${a.runEnabled ? "Turn off (kill switch)" : "Turn on"}</button></p>
+    <h3 class="s">Recent runs</h3>
+    ${runs.length ? `<table class="ad-table"><thead><tr><th>When</th><th>Agent</th><th>Action</th><th>Detail</th></tr></thead><tbody>
+      ${runs.map(r => `<tr><td class="s">${esc(when(r.at))}</td><td>${esc(r.agent || "")}</td><td>${esc(r.action || "")}</td><td class="s">${esc(JSON.stringify(r.detail || {}))}</td></tr>`).join("")}
+      </tbody></table>` : `<p class="muted">No runs yet.</p>`}`;
+  document.getElementById("ad-agents-toggle").onclick = () => toggleAgentsRun(!a.runEnabled);
+}
+async function toggleAgentsRun(run) {
+  if (run && !confirm("Turn agents on? They'll start running on their normal schedule until you flip this off again.")) return;
+  S.agents = await api("PATCH", "/v1/admin/agents", { run });
+  renderAgents();
+}
+
+function renderReview() {
 function renderReview() {
   const q = S.maps.filter(m => m.visibility === "review");
   const el = document.getElementById("ad-review");

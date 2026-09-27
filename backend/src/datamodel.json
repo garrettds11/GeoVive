@@ -87,6 +87,14 @@
      "maxLength": 200,
      "description": "The pin's identifier in its source, if any (e.g. an NCES school ID)"
     },
+    "sourceClass": {
+     "type": "string",
+     "enum": [
+      "managed",
+      "unmanaged"
+     ],
+     "description": "How this pin was sourced. managed = a pre-approved, known datastore (a catalog, agency open-data file, Overture, AWS Location Service). unmanaged = an agent's web-search fallback reading unstructured content (a blog, article, or other narrative page) rather than a structured dataset. Per-pin, not per-dataset: a single map can mix managed and unmanaged pins when an agent fills gaps in an otherwise-structured topic with fallback-sourced records.\n"
+    },
     "icon": {
      "type": "string",
      "maxLength": 32,
@@ -407,6 +415,27 @@
      "type": "integer",
      "minimum": 0,
      "readOnly": true
+    },
+    "reviewStatus": {
+     "type": "string",
+     "enum": [
+      "pending",
+      "passed",
+      "failed"
+     ],
+     "readOnly": true,
+     "description": "Reviewer agent's accuracy/integrity verdict on an agent-built dataset (readiness doc item 9's three-agent pipeline). Only geo-library-owned datasets carry this. Set by Reviewer through the same public API as any write, never client-settable.\n"
+    },
+    "authStatus": {
+     "type": "string",
+     "enum": [
+      "pending",
+      "authorized",
+      "unauthorized",
+      "escalation_aborted"
+     ],
+     "readOnly": true,
+     "description": "Governor agent's safety/authorization verdict, set only after reviewStatus=passed. Governor never deletes records or auto-approves a dataset -- authorized still requires admin approval before public visibility. escalation_aborted means Governor's escalation tool (Section 4.2) hit its 3-per-dataset cap; the dataset is held for manual cleanup and will never reach the admin queue. Only geo-library-owned datasets carry this.\n"
     },
     "provenance": {
      "type": "array",

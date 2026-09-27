@@ -27,6 +27,7 @@ import * as linking from "./linking.mjs";
 import { validateFeature, validateDatasetFields, ModelError } from "./model.mjs";
 import * as admin from "./admin.mjs";
 import { CostExplorerClient, GetCostAndUsageCommand } from "@aws-sdk/client-cost-explorer";
+import { SSMClient, GetParameterCommand, PutParameterCommand } from "@aws-sdk/client-ssm";
 import { CognitoIdentityProviderClient, ListUsersCommand } from "@aws-sdk/client-cognito-identity-provider";
 import * as appconnect from "./appconnect.mjs";
 import { fetchLayerList, layerHash } from "./appcheck.mjs";
@@ -61,6 +62,11 @@ const verifier = CognitoJwtVerifier.create({
 });
 
 const VISIBILITIES = new Set(["public", "private"]);
+// geo-library (Section 3.4/3.5 of the agents readiness doc): the agents' service account.
+// Every dataset it creates is forced into "review" visibility, never what it asked for,
+// and it can never move a dataset out of "review" itself -- only an admin approval can.
+const GEO_LIBRARY_SUB = process.env.GEO_LIBRARY_SUB || "";
+const isGeoLibrary = caller => !!GEO_LIBRARY_SUB && caller?.sub === GEO_LIBRARY_SUB;
 
 // ------------------------------------------------------------------ helpers
 
@@ -139,7 +145,8 @@ export function datasetView(d) {
     datasetId: d.datasetId, name: d.name, description: d.description || "", tags: d.tags || [],
     visibility: d.visibility, ownerId: d.ownerId, source: d.source,
     origin: d.origin, referenceArea: d.referenceArea,
-    featureCount: d.featureCount || 0, provenance: d.imports, createdAt: d.createdAt, updatedAt: d.updatedAt
+    featureCount: d.featureCount || 0, provenance: d.imports, createdAt: d.createdAt, updatedAt: d.updatedAt,
+    reviewStatus: d.reviewStatus, authStatus: d.authStatus
   };
 }
 
@@ -292,14 +299,18 @@ async function createDataset(event) {
   const body = parseBody(event);
   if (!body.name || typeof body.name !== "string") throw new HttpError(400, "name is required");
   try { validateDatasetFields({ name: body.name.trim() }); } catch (e) { if (e instanceof ModelError) throw new HttpError(400, e.message); throw e; }
-  const visibility = body.visibility || "private";
-  if (!VISIBILITIES.has(visibility)) throw new HttpError(400, "visibility must be public or private");
+  const requestedVisibility = body.visibility || "private";
+  const visibility = isGeoLibrary(caller) ? "review" : requestedVisibility;
+  if (!isGeoLibrary(caller) && !VISIBILITIES.has(visibility)) throw new HttpError(400, "visibility must be public or private");
   const now = new Date().toISOString();
   const meta = metaFields(body);
   const item = {
     datasetId: randomUUID(), name: body.name.trim().slice(0, 120), description: meta.description || "", tags: meta.tags || [],
     visibility, ownerId: caller.sub, featureCount: 0, createdAt: now, updatedAt: now
   };
+  // Three-agent pipeline (readiness doc item 9): only geo-library datasets carry these statuses.
+  // Reviewer runs first, so authStatus stays unset until reviewStatus=passed.
+  if (isGeoLibrary(caller)) item.reviewStatus = "pending";
   item.searchText = searchTextOf(item);
   await ddb.send(new PutCommand({ TableName: DATASETS_TABLE, Item: item }));
   return datasetView(item);
@@ -310,12 +321,30 @@ async function updateDataset(event, datasetId) {
   const ds = await loadDataset(datasetId);
   assertOwner(ds, caller);
   const body = parseBody(event);
+  if (body.visibility !== undefined && isGeoLibrary(caller)) throw new HttpError(403, "geo-library datasets can only leave review visibility through admin approval");
   if (body.visibility !== undefined && !VISIBILITIES.has(body.visibility)) throw new HttpError(400, "visibility must be public or private");
+  // Three-agent pipeline (readiness doc item 9): reviewStatus/authStatus are set only by the
+  // Reviewer/Governor agents, writing as geo-library through this same public PATCH -- no
+  // separate internal route. Any other caller trying to set these is rejected outright.
+  if ((body.reviewStatus !== undefined || body.authStatus !== undefined) && !isGeoLibrary(caller)) {
+    throw new HttpError(403, "reviewStatus/authStatus are set by the agent pipeline only");
+  }
+  const REVIEW_STATUSES = new Set(["pending", "passed", "failed"]);
+  const AUTH_STATUSES = new Set(["pending", "authorized", "unauthorized", "escalation_aborted"]);
+  if (body.reviewStatus !== undefined && !REVIEW_STATUSES.has(body.reviewStatus)) throw new HttpError(400, "invalid reviewStatus");
+  if (body.authStatus !== undefined) {
+    if (!AUTH_STATUSES.has(body.authStatus)) throw new HttpError(400, "invalid authStatus");
+    if (body.authStatus !== "pending" && ds.reviewStatus !== "passed") {
+      throw new HttpError(409, "authStatus can only be set once reviewStatus=passed (Governor never re-checks accuracy)");
+    }
+  }
   const next = {
     ...ds,
     ...metaFields(body, ds),
     name: typeof body.name === "string" && body.name.trim() ? validateName(body.name.trim()) : ds.name,
     visibility: body.visibility ?? ds.visibility,
+    reviewStatus: body.reviewStatus ?? ds.reviewStatus,
+    authStatus: body.authStatus ?? ds.authStatus,
     updatedAt: new Date().toISOString()
   };
   next.searchText = searchTextOf(next);
@@ -944,6 +973,37 @@ async function monthCost() {
   } catch (e) { return { error: e.name }; }
 }
 
+const ssm = new SSMClient({});
+const AGENT_RUN_PARAM = process.env.AGENT_RUN_PARAM || "/geovive/agents/run";
+const AGENT_AUDIT_TABLE = process.env.AGENT_AUDIT_TABLE;
+const AGENT_MONTHLY_LIMIT_USD = Number(process.env.AGENT_MONTHLY_LIMIT_USD || 20);
+
+async function agentsMonthCost() {
+  const now = new Date(), start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+  const end = new Date(now.getTime() + 86400_000).toISOString().slice(0, 10);
+  try {
+    const r = await ce.send(new GetCostAndUsageCommand({ TimePeriod: { Start: start, End: end }, Granularity: "MONTHLY", Metrics: ["UnblendedCost"],
+      Filter: { Tags: { Key: "component", Values: ["agents"] } } }));
+    return Number(r.ResultsByTime?.[0]?.Total?.UnblendedCost?.Amount || 0);
+  } catch { return null; } // Cost Explorer can be briefly unavailable; the admin page shows "unknown" rather than erroring the whole overview
+}
+
+async function agentsStatus() {
+  const [runParam, monthToDateUsd] = await Promise.all([
+    ssm.send(new GetParameterCommand({ Name: AGENT_RUN_PARAM })).then(r => r.Parameter?.Value === "true").catch(() => false),
+    agentsMonthCost()
+  ]);
+  let recentRuns = [];
+  if (AGENT_AUDIT_TABLE) {
+    try {
+      const r = await ddb.send(new ScanCommand({ TableName: AGENT_AUDIT_TABLE, FilterExpression: "begins_with(#a, :p)",
+        ExpressionAttributeNames: { "#a": "action" }, ExpressionAttributeValues: { ":p": "run." }, Limit: 200 }));
+      recentRuns = (r.Items || []).sort((a, b) => (b.at || "").localeCompare(a.at || "")).slice(0, 20);
+    } catch (e) { console.warn("agent audit scan failed", e.name); }
+  }
+  return { deployed: true, runEnabled: !!runParam, monthToDateUsd, monthlyLimitUsd: AGENT_MONTHLY_LIMIT_USD, recentRuns };
+}
+
 async function allDatasets() {
   const items = []; let key;
   do { const r = await ddb.send(new ScanCommand({ TableName: DATASETS_TABLE, ExclusiveStartKey: key })); items.push(...(r.Items || [])); key = r.LastEvaluatedKey; } while (key);
@@ -980,13 +1040,23 @@ async function adminRoute(event, routeKey, p) {
   const actor = await admin.requireAdmin(event, { key: await adminKey() });
   switch (routeKey) {
     case "GET /v1/admin/overview": {
-      const [ds, users, cost, apps] = await Promise.all([allDatasets(), usersBySub(),
+      const [ds, users, cost, apps, agents] = await Promise.all([allDatasets(), usersBySub(),
         monthCost(), ddb.send(new ScanCommand({ TableName: process.env.APPS_TABLE, FilterExpression: "sk = :a", ExpressionAttributeValues: { ":a": "APP" },
-          ProjectionExpression: "appId, #n, #s, termEndsAt", ExpressionAttributeNames: { "#n": "name", "#s": "status" } }))]);
+          ProjectionExpression: "appId, #n, #s, termEndsAt", ExpressionAttributeNames: { "#n": "name", "#s": "status" } })), agentsStatus()]);
       const byVis = {}; let pins = 0;
       ds.forEach(d => { byVis[d.visibility] = (byVis[d.visibility] || 0) + 1; pins += d.featureCount || 0; });
       return { users: users.count, maps: ds.length, mapsByVisibility: byVis, pins, apps: (apps.Items || []).map(a => ({ appId: a.appId, name: a.name, status: a.status, termEndsAt: a.termEndsAt })),
-        cost, agents: { deployed: false, note: "The map agents aren't deployed yet." } };
+        cost, agents };
+    }
+    case "GET /v1/admin/agents": {
+      return agentsStatus();
+    }
+    case "PATCH /v1/admin/agents": {
+      const body = parseBody(event);
+      if (typeof body.run !== "boolean") throw new HttpError(400, "run must be true or false");
+      await ssm.send(new PutParameterCommand({ Name: AGENT_RUN_PARAM, Value: body.run ? "true" : "false", Type: "String", Overwrite: true }));
+      await audit(actor, "agents.run", "agents", { run: body.run });
+      return agentsStatus();
     }
     case "GET /v1/admin/datasets": {
       const [ds, users] = await Promise.all([allDatasets(), usersBySub()]);
