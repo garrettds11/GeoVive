@@ -98,8 +98,11 @@
       <li><strong>Reads</strong> need no token. Public datasets are returned to everyone. Private datasets are returned only to their owner, when a valid token is sent; everyone else gets <code>404</code>, so a private dataset's existence isn't revealed.</li>
       <li><strong>Writes</strong> (create, update, delete) always need a token, and only the dataset's owner may change it or its features.</li>
       <li>An invalid or expired token on a read returns <code>401</code> rather than being ignored.</li>
-      <li>Browser calls are accepted from GeoVivé's own sites. Server-to-server calls aren't limited by origin.</li>
+      <li>Browser calls are accepted from GeoVive's own sites. Server-to-server calls aren't limited by origin.</li>
     </ul>
+
+    <h2 id="admin">Admin API</h2>
+    <p><code>/v1/admin/*</code> is internal, not a public API surface: it's undocumented on purpose and returns <code>404</code> for anyone not in the <code>admins</code> Cognito group, so its existence isn't revealed to other signed-in users. Members still need to set up and verify an app-based TOTP authenticator (independent of Cognito MFA) to get a short-lived admin session before any admin route works. It backs the <a href="/admin/">/admin/</a> console: dataset review/visibility/delete with an audit log, platform overview, and (once built) agent controls. All routes are served by one API Gateway route (<code>ANY /v1/admin/{proxy+}</code>, dispatched internally) to stay under the Lambda's resource-policy size limit — a pattern worth reusing for any future route group here rather than adding many explicit routes.</p>
 
     <h2 id="datasets">Datasets</h2>
     <div class="table-wrap"><table>

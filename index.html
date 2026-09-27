@@ -850,6 +850,7 @@
     .all-maps-list { max-height: min(60vh, 480px); overflow-y: auto; }
     #all-maps-filter { width: 100%; padding: 0.45rem 0.55rem; border-radius: 0.5rem; border: 1px solid var(--border); background: #020617; color: inherit; font: inherit; font-size: 0.85rem; }
     #add-pin-btn.active { background: var(--accent1); color: #020617; }
+    #draw-line-btn.active, #draw-area-btn.active { background: var(--accent1); color: #020617; }
     /* Import dialog (scripts/importer.js) */
     .import-dialog {
       border: 1px solid var(--border); border-radius: 0.9rem; padding: 0;
@@ -991,6 +992,8 @@
               <div class="edit-actions">
                 <button type="button" id="add-pin-btn" class="btn primary" title="Add a pin: click the map to place it">📍 New</button>
                 <button type="button" id="pin-here-btn" class="btn" title="Pin my current location">📍 My location</button>
+                <button type="button" id="draw-line-btn" class="btn" title="Draw a line: click-drag on the map to trace it, release to finish">✏️ Line</button>
+                <button type="button" id="draw-area-btn" class="btn" title="Draw an area: click-drag on the map to trace its outline, release to finish">🔷 Area</button>
                 <button type="button" id="delete-map-btn" class="btn danger" title="Delete this map and all its pins">🗑️ Map</button>
               </div>
               <p class="hint" style="margin-top:0.35rem;">Click a pin, then ✏️ to edit or delete it.</p>

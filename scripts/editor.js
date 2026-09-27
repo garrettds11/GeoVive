@@ -14,6 +14,9 @@ const state = {
   user: null,        // oidc-client-ts user (null when signed out)
   datasets: [],      // datasets visible to this user
   addMode: false,
+  drawMode: null,     // null | "line" | "polygon" — freehand line/area drawing
+  drawPoints: [],
+  drawing: false,
   popup: null
 };
 
@@ -79,6 +82,7 @@ async function refreshDatasets() {
 async function deselectDataset() {
   closePopup();
   setAddMode(false);
+  cancelDraw();
   $("dataset-select").value = "";
   await window.GeoVive.applyDataset("");
   const form = $("map-details"); if (form) form.hidden = true;
@@ -171,13 +175,14 @@ function updateEditBar() {
   const ds = currentDataset();
   const editable = canEditCurrent();
   bar.hidden = !editable;
-  if (!editable) setAddMode(false);
+  if (!editable) { setAddMode(false); cancelDraw(); }
   if (editable) $("edit-bar-title").textContent = ds.name;
   document.querySelectorAll(".my-map-item").forEach(b =>
     b.classList.toggle("active", b.dataset.id === currentDatasetId()));
 }
 
 function setAddMode(on) {
+  if (on) cancelDraw();
   state.addMode = on;
   const btn = $("add-pin-btn");
   if (btn) {
@@ -414,14 +419,115 @@ function pinMyLocation() {
   }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
 }
 
+// ------------------------------------------------------------ freehand line/area drawing
+
+// A dashed preview of the line or polygon being traced, cleared once saved or cancelled.
+function ensureDrawLayer() {
+  const map = window.GeoVive.map;
+  if (map.getSource("GeoVive-draw-temp")) return;
+  map.addSource("GeoVive-draw-temp", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addLayer({ id: "GeoVive-draw-temp-fill", type: "fill", source: "GeoVive-draw-temp",
+    paint: { "fill-color": "#facc15", "fill-opacity": 0.15 }, filter: ["==", ["geometry-type"], "Polygon"] });
+  map.addLayer({ id: "GeoVive-draw-temp-line", type: "line", source: "GeoVive-draw-temp",
+    paint: { "line-color": "#facc15", "line-width": 2.5, "line-dasharray": [1, 1] } });
+}
+
+function updateDrawData() {
+  const map = window.GeoVive?.map;
+  const src = map?.getSource("GeoVive-draw-temp");
+  if (!src) return;
+  const pts = state.drawPoints;
+  if (pts.length < 2) { src.setData({ type: "FeatureCollection", features: [] }); return; }
+  const geometry = state.drawMode === "polygon"
+    ? { type: "Polygon", coordinates: [[...pts, pts[0]]] }
+    : { type: "LineString", coordinates: pts };
+  src.setData({ type: "FeatureCollection", features: [{ type: "Feature", geometry, properties: {} }] });
+}
+
+// Stops any drawing in progress and clears the preview. Safe to call any time.
+function cancelDraw() {
+  state.drawMode = null;
+  state.drawing = false;
+  state.drawPoints = [];
+  const map = window.GeoVive?.map;
+  if (map) {
+    map.dragPan.enable();
+    map.getSource("GeoVive-draw-temp")?.setData({ type: "FeatureCollection", features: [] });
+    const canvas = map.getCanvas();
+    if (canvas) canvas.style.cursor = state.addMode ? "crosshair" : "";
+  }
+  $("draw-line-btn")?.classList.remove("active");
+  $("draw-area-btn")?.classList.remove("active");
+}
+
+// mode is "line" or "polygon". Clicking the active button again turns drawing off.
+function setDrawMode(mode) {
+  if (state.drawMode === mode) { cancelDraw(); setStatus(""); return; }
+  setAddMode(false);
+  cancelDraw();
+  if (!canEditCurrent()) { setStatus("Select one of your own maps first."); return; }
+  state.drawMode = mode;
+  ensureDrawLayer();
+  const map = window.GeoVive.map;
+  map.dragPan.disable();
+  map.getCanvas().style.cursor = "crosshair";
+  $(mode === "polygon" ? "draw-area-btn" : "draw-line-btn")?.classList.add("active");
+  setStatus(mode === "polygon"
+    ? "Click and drag on the map to trace the area's outline, then release to finish (Esc cancels)."
+    : "Click and drag on the map to trace the line, then release to finish (Esc cancels).");
+}
+
+function finishDraw() {
+  const map = window.GeoVive.map;
+  map.dragPan.enable();
+  state.drawing = false;
+  const pts = state.drawPoints;
+  if (pts.length < 2) { state.drawPoints = []; updateDrawData(); setStatus("That was too short to save — try tracing it again.", true); return; }
+  const mode = state.drawMode;
+  const geometry = mode === "polygon"
+    ? { type: "Polygon", coordinates: [[...pts, pts[0]]] }
+    : { type: "LineString", coordinates: pts };
+  const mid = pts[Math.floor(pts.length / 2)];
+  cancelDraw();
+  openPinForm({ lng: mid[0], lat: mid[1] }, { geometry, properties: {} });
+}
+
 function wireMap() {
   const map = window.GeoVive.map;
   map.on("click", (e) => {
     if (!state.addMode || !canEditCurrent()) return;
     openPinForm(e.lngLat, null);
   });
+  map.on("mousedown", (e) => {
+    if (!state.drawMode || !canEditCurrent()) return;
+    if (e.originalEvent && e.originalEvent.button) return; // left button only
+    state.drawing = true;
+    state.drawPoints = [[e.lngLat.lng, e.lngLat.lat]];
+    updateDrawData();
+  });
+  map.on("mousemove", (e) => {
+    if (!state.drawing) return;
+    const pts = state.drawPoints;
+    const p = map.project(pts[pts.length - 1]), np = map.project(e.lngLat);
+    if (Math.hypot(np.x - p.x, np.y - p.y) < 4) return; // throttle by on-screen distance
+    pts.push([e.lngLat.lng, e.lngLat.lat]);
+    updateDrawData();
+  });
+  map.on("mouseup", () => { if (state.drawing) finishDraw(); });
+  map.on("touchstart", (e) => {
+    if (!state.drawMode || !canEditCurrent() || !e.lngLat) return;
+    state.drawing = true;
+    state.drawPoints = [[e.lngLat.lng, e.lngLat.lat]];
+    updateDrawData();
+  });
+  map.on("touchmove", (e) => {
+    if (!state.drawing || !e.lngLat) return;
+    state.drawPoints.push([e.lngLat.lng, e.lngLat.lat]);
+    updateDrawData();
+  });
+  map.on("touchend", () => { if (state.drawing) finishDraw(); });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") { setAddMode(false); closePopup(); }
+    if (e.key === "Escape") { setAddMode(false); cancelDraw(); closePopup(); }
   });
 }
 
@@ -442,6 +548,8 @@ async function init() {
   $("new-map-name")?.addEventListener("keydown", (e) => { if (e.key === "Enter") createMap(); });
   $("add-pin-btn")?.addEventListener("click", () => setAddMode(!state.addMode));
   $("pin-here-btn")?.addEventListener("click", pinMyLocation);
+  $("draw-line-btn")?.addEventListener("click", () => setDrawMode("line"));
+  $("draw-area-btn")?.addEventListener("click", () => setDrawMode("polygon"));
 
   $("map-details")?.addEventListener("submit", saveDetails);
   $("map-details")?.querySelector("[data-cancel]")?.addEventListener("click", () => { $("map-details").hidden = true; });
