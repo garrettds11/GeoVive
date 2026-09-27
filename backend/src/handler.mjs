@@ -1037,6 +1037,7 @@ const html = body => ({ statusCode: 200, headers: { "Content-Type": "text/html; 
 export const handler = async (event) => {
   const routeKey = event.routeKey; // e.g. "GET /v1/datasets/{datasetId}/features"
   const p = event.pathParameters || {};
+  if ((event.requestContext?.http?.method || "").toUpperCase() === "OPTIONS") return { statusCode: 204, headers: corsHeaders(event), body: "" };
   try {
     let result, status = 200;
     switch (routeKey) {

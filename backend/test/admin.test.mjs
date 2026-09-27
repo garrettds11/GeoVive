@@ -100,4 +100,9 @@ assert.equal(r.statusCode, 200);
 r = await handler({ routeKey: "ANY /v1/admin/{proxy+}", pathParameters: { proxy: "nope" }, headers: { "x-admin-session": session },
   requestContext: { http: { method: "GET" }, authorizer: { jwt: { claims: { sub: "admin1", "cognito:groups": "[admins]" } } } } });
 assert.equal(r.statusCode, 404);
+// OPTIONS (CORS preflight) is answered directly, with no auth required, so the
+// browser's preflight never hits the authorizer and gets a non-2xx status.
+r = await handler({ routeKey: "ANY /v1/admin/{proxy+}", pathParameters: { proxy: "overview" }, headers: {},
+  requestContext: { http: { method: "OPTIONS" } } });
+assert.equal(r.statusCode, 204);
 console.log("admin tests passed");

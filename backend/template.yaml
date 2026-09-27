@@ -434,6 +434,10 @@ Resources:
         LinkedDelFeat:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: DELETE, Path: "/v1/linked/datasets/{datasetId}/features/{featureId}", Auth: { Authorizer: NONE } } }
         # Admin (GeoVivé sign-in at the gateway; admins group + authenticator session checked in admin.mjs)
         AdminAll:         { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: ANY, Path: "/v1/admin/{proxy+}" } }
+        # A separate, unauthenticated route for the browser's CORS preflight: with ANY covering
+        # OPTIONS too, that preflight was hitting the Cognito authorizer and getting a 401 before
+        # the gateway's own CORS handling took over, which browsers reject (the response must be 2xx).
+        AdminOptions:     { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: OPTIONS, Path: "/v1/admin/{proxy+}", Auth: { Authorizer: NONE } } }
         DeleteFeature:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: DELETE, Path: "/v1/datasets/{datasetId}/features/{featureId}" } }
 
   # AppConnect connection checks, reports and emails (invoked asynchronously by the API)
