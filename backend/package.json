@@ -4,9 +4,10 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build-datamodel.mjs && esbuild src/handler.mjs --bundle --platform=node --target=node22 --format=esm --external:@aws-sdk/* --outfile=dist/index.mjs && esbuild src/importer.mjs --bundle --platform=node --target=node22 --format=esm --external:@aws-sdk/* --outfile=dist/importer.mjs && esbuild src/appworker.mjs --bundle --platform=node --target=node22 --format=esm --external:@aws-sdk/* --outfile=dist/appworker.mjs && cp src/presignup.mjs dist/presignup.mjs",
-    "test": "node test/geometry.test.mjs && node test/largeshape.test.mjs && node test/importer.test.mjs && node test/export.test.mjs && node test/overlays.test.mjs && node test/openapp.test.mjs && node test/presignup.test.mjs && node test/appstore.test.mjs && node test/appconnect.test.mjs && node test/safelog.test.mjs && node test/aireview.test.mjs && node test/search.test.mjs && node test/batch.test.mjs && node test/linking.test.mjs && node test/linkedapi.test.mjs && node test/datamodel.test.mjs"
+    "test": "node test/geometry.test.mjs && node test/largeshape.test.mjs && node test/importer.test.mjs && node test/export.test.mjs && node test/overlays.test.mjs && node test/openapp.test.mjs && node test/presignup.test.mjs && node test/appstore.test.mjs && node test/appconnect.test.mjs && node test/safelog.test.mjs && node test/aireview.test.mjs && node test/search.test.mjs && node test/batch.test.mjs && node test/linking.test.mjs && node test/linkedapi.test.mjs && node test/datamodel.test.mjs && node test/admin.test.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-cost-explorer": "^3.1141.0",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "aws-jwt-verify": "^5.1.0",

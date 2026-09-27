@@ -10,7 +10,7 @@ import "./safelog.mjs";   // first: keeps personal information out of logs
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
   DynamoDBDocumentClient, GetCommand, PutCommand, DeleteCommand,
-  QueryCommand, BatchWriteCommand, UpdateCommand
+  QueryCommand, BatchWriteCommand, UpdateCommand, ScanCommand
 } from "@aws-sdk/lib-dynamodb";
 import {
   S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand,
@@ -25,6 +25,8 @@ import { originAllowed } from "./apps.mjs";
 import { getActiveApp, getAppRecord, isActive } from "./appstore.mjs";
 import * as linking from "./linking.mjs";
 import { validateFeature, validateDatasetFields, ModelError } from "./model.mjs";
+import * as admin from "./admin.mjs";
+import { CostExplorerClient, GetCostAndUsageCommand } from "@aws-sdk/client-cost-explorer";
 import { CognitoIdentityProviderClient, ListUsersCommand } from "@aws-sdk/client-cognito-identity-provider";
 import * as appconnect from "./appconnect.mjs";
 import { fetchLayerList, layerHash } from "./appcheck.mjs";
@@ -907,6 +909,126 @@ async function linkedRoute(event, routeKey, p) {
   return undefined;
 }
 
+// ------------------------------------------------------------------ admin (/v1/admin/*)
+// Group + authenticator session checked in admin.mjs; every change is audited.
+
+const ce = new CostExplorerClient({ region: "us-east-1" });
+const adminKey = async () => (await appconnect.reviewSettings()).reviewKey;
+const audit = (actor, action, target, detail) => admin.writeAudit(ddb, actor, action, target, detail);
+
+let userCache = { at: 0, bySub: new Map(), count: 0 };
+async function usersBySub() {
+  if (Date.now() - userCache.at < 300_000) return userCache;
+  const bySub = new Map(); let token;
+  do {
+    const r = await cognito.send(new ListUsersCommand({ UserPoolId: process.env.USER_POOL_ID, PaginationToken: token, Limit: 60 }));
+    for (const u of r.Users || []) {
+      const a = Object.fromEntries((u.Attributes || []).map(x => [x.Name, x.Value]));
+      bySub.set(a.sub, { email: a.email, name: a.preferred_username || a.name || "", createdAt: u.UserCreateDate, status: u.UserStatus });
+    }
+    token = r.PaginationToken;
+  } while (token);
+  userCache = { at: Date.now(), bySub, count: bySub.size };
+  return userCache;
+}
+
+async function monthCost() {
+  const now = new Date(), start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+  const end = new Date(now.getTime() + 86400_000).toISOString().slice(0, 10);
+  try {
+    const r = await ce.send(new GetCostAndUsageCommand({ TimePeriod: { Start: start, End: end }, Granularity: "MONTHLY", Metrics: ["UnblendedCost"],
+      GroupBy: [{ Type: "DIMENSION", Key: "SERVICE" }] }));
+    const groups = r.ResultsByTime?.[0]?.Groups || [];
+    const services = groups.map(g => ({ service: g.Keys[0], usd: Number(g.Metrics.UnblendedCost.Amount) })).filter(x => x.usd >= 0.005).sort((a, b) => b.usd - a.usd);
+    return { from: start, totalUsd: services.reduce((t, x) => t + x.usd, 0), services };
+  } catch (e) { return { error: e.name }; }
+}
+
+async function allDatasets() {
+  const items = []; let key;
+  do { const r = await ddb.send(new ScanCommand({ TableName: DATASETS_TABLE, ExclusiveStartKey: key })); items.push(...(r.Items || [])); key = r.LastEvaluatedKey; } while (key);
+  return items;
+}
+
+// The gateway has one catch-all admin route (ANY /v1/admin/{proxy+}) to keep the Lambda's
+// resource policy under its size limit; this turns it back into the route keys below.
+export function adminRouteKey(event, routeKey, p = {}) {
+  if (!routeKey.startsWith("ANY ")) return { routeKey, p };
+  const method = (event.requestContext?.http?.method || "GET").toUpperCase();
+  const path = String(p.proxy || "").replace(/^\/+|\/+$/g, "");
+  let m;
+  if ((m = path.match(/^datasets\/([^/]+)\/features$/))) return { routeKey: `${method} /v1/admin/datasets/{datasetId}/features`, p: { datasetId: decodeURIComponent(m[1]) } };
+  if ((m = path.match(/^datasets\/([^/]+)$/))) return { routeKey: `${method} /v1/admin/datasets/{datasetId}`, p: { datasetId: decodeURIComponent(m[1]) } };
+  return { routeKey: `${method} /v1/admin/${path}`, p: {} };
+}
+
+async function adminRoute(event, routeKey, p) {
+  if (routeKey === "GET /v1/admin/me") {
+    const sub = admin.requireAdminUser(event);
+    const token = event.headers?.["x-admin-session"] || event.headers?.["X-Admin-Session"];
+    return { admin: true, authenticator: await admin.mfaStatus(ddb, sub), session: admin.verifySession(await adminKey(), token, sub) };
+  }
+  if (routeKey === "POST /v1/admin/mfa/setup") {
+    const sub = admin.requireAdminUser(event);
+    const users = await usersBySub();
+    return admin.mfaSetup(ddb, sub, users.bySub.get(sub)?.email);
+  }
+  if (routeKey === "POST /v1/admin/mfa/verify") {
+    const sub = admin.requireAdminUser(event);
+    return admin.mfaVerify(ddb, sub, parseBody(event).code, { key: await adminKey(), audit });
+  }
+  const actor = await admin.requireAdmin(event, { key: await adminKey() });
+  switch (routeKey) {
+    case "GET /v1/admin/overview": {
+      const [ds, users, cost, apps] = await Promise.all([allDatasets(), usersBySub(),
+        monthCost(), ddb.send(new ScanCommand({ TableName: process.env.APPS_TABLE, FilterExpression: "sk = :a", ExpressionAttributeValues: { ":a": "APP" },
+          ProjectionExpression: "appId, #n, #s, termEndsAt", ExpressionAttributeNames: { "#n": "name", "#s": "status" } }))]);
+      const byVis = {}; let pins = 0;
+      ds.forEach(d => { byVis[d.visibility] = (byVis[d.visibility] || 0) + 1; pins += d.featureCount || 0; });
+      return { users: users.count, maps: ds.length, mapsByVisibility: byVis, pins, apps: (apps.Items || []).map(a => ({ appId: a.appId, name: a.name, status: a.status, termEndsAt: a.termEndsAt })),
+        cost, agents: { deployed: false, note: "The map agents aren't deployed yet." } };
+    }
+    case "GET /v1/admin/datasets": {
+      const [ds, users] = await Promise.all([allDatasets(), usersBySub()]);
+      return { datasets: ds.map(d => ({ ...datasetView(d), owner: users.bySub.get(d.ownerId)?.email || (d.ownerId === "system" ? "GeoVivé" : "unknown") }))
+        .sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || "")) };
+    }
+    case "GET /v1/admin/datasets/{datasetId}/features": {
+      const qs = event.queryStringParameters || {};
+      const res = await ddb.send(new QueryCommand({ TableName: FEATURES_TABLE, KeyConditionExpression: "datasetId = :d", ExpressionAttributeValues: { ":d": p.datasetId },
+        Limit: parseLimit(qs.limit, 1000, 1000), ExclusiveStartKey: decodeToken(qs.nextToken) }));
+      const fc = { type: "FeatureCollection", features: (res.Items || []).map(i => toFeature(i)) };
+      const nt = encodeToken(res.LastEvaluatedKey); if (nt) fc.nextToken = nt;
+      return fc;
+    }
+    case "PATCH /v1/admin/datasets/{datasetId}": {
+      const ds = await loadDataset(p.datasetId);
+      const body = parseBody(event);
+      if (!["public", "private", "review"].includes(body.visibility)) throw new HttpError(400, "visibility must be public, private or review");
+      const before = ds.visibility;
+      await ddb.send(new UpdateCommand({ TableName: DATASETS_TABLE, Key: { datasetId: ds.datasetId }, UpdateExpression: "SET visibility = :v, updatedAt = :u",
+        ExpressionAttributeValues: { ":v": body.visibility, ":u": new Date().toISOString() } }));
+      await audit(actor, "map.visibility", ds.datasetId, { name: ds.name, from: before, to: body.visibility, reason: String(body.reason || "").slice(0, 300) });
+      return { datasetId: ds.datasetId, visibility: body.visibility };
+    }
+    case "DELETE /v1/admin/datasets/{datasetId}": {
+      const ds = await loadDataset(p.datasetId);
+      const body = event.body ? parseBody(event) : {};
+      if (body.confirm !== ds.name) throw new HttpError(400, "Type the map's exact name to confirm");
+      await deleteAllFeatures(ds.datasetId);
+      await deleteDatasetGeometry(ds.datasetId);
+      await ddb.send(new DeleteCommand({ TableName: DATASETS_TABLE, Key: { datasetId: ds.datasetId } }));
+      await audit(actor, "map.deleted", ds.datasetId, { name: ds.name, ownerId: ds.ownerId, pins: ds.featureCount || 0, visibility: ds.visibility, reason: String(body.reason || "").slice(0, 300) });
+      return { deleted: ds.datasetId };
+    }
+    case "GET /v1/admin/audit": {
+      const users = await usersBySub();
+      return { entries: (await admin.listAudit(ddb, 200)).map(e => ({ ...e, actorEmail: users.bySub.get(e.actor)?.email })) };
+    }
+  }
+  throw new HttpError(404, `No route for ${routeKey}`);
+}
+
 const html = body => ({ statusCode: 200, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store",
   "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action https://api.geovive.link", "X-Frame-Options": "DENY" }, body });
 
@@ -1001,6 +1123,7 @@ export const handler = async (event) => {
       case "POST /v1/appconnect/apps/{appId}/oauth/secret":
         result = await appconnect.rotateOAuthSecret(ddb, await getCaller(event, { required: true }), p.appId); break;
       default: {
+        if (routeKey.includes(" /v1/admin/")) { const a = adminRouteKey(event, routeKey, p); result = await adminRoute(event, a.routeKey, a.p); break; }
         if (routeKey.includes(" /v1/linked/")) {
           const out = await linkedRoute(event, routeKey, p);
           if (out === undefined) throw new HttpError(404, `No route for ${routeKey}`);
@@ -1012,7 +1135,7 @@ export const handler = async (event) => {
     }
     return respond(event, status, result);
   } catch (err) {
-    if (err instanceof HttpError || err instanceof appconnect.AppConnectError || err instanceof linking.LinkError || err instanceof ModelError) return respond(event, err.status, { message: err.message });
+    if (err instanceof HttpError || err instanceof appconnect.AppConnectError || err instanceof linking.LinkError || err instanceof ModelError || err instanceof admin.AdminError) return respond(event, err.status, { message: err.message, ...(err.code ? { code: err.code } : {}) });
     console.error("Unhandled error", err);
     return respond(event, 500, { message: "Internal error" });
   }

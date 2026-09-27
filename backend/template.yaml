@@ -123,7 +123,6 @@ Resources:
             Prefix: appconnect-pending/
             ExpirationInDays: 90
             NoncurrentVersionExpiration: { NoncurrentDays: 1 }
-            NoncurrentVersionExpiration: { NoncurrentDays: 1 }
       # The browser uploads import files straight to uploads/ with a presigned URL
       CorsConfiguration:
         CorsRules:
@@ -136,6 +135,26 @@ Resources:
         - { Key: env, Value: !Ref Env }
 
   # Connected apps (AppConnect): one record per app plus its setup history
+  # Admin: authenticator secrets for the admin second step, and the audit log of admin actions.
+  AdminTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub geovive-${Env}-admin
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      SSESpecification: { SSEEnabled: true }
+      Tags:
+        - { Key: project, Value: geovive }
+        - { Key: env, Value: !Ref Env }
+
   # Account linking: grants, one-time codes and tokens (hashed). Expired rows removed by TTL.
   LinksTable:
     Type: AWS::DynamoDB::Table
@@ -299,7 +318,7 @@ Resources:
           HostedZoneId: !Ref HostedZoneId
       CorsConfiguration:
         AllowOrigins: !Ref AllowedOrigins
-        AllowHeaders: [authorization, content-type]
+        AllowHeaders: [authorization, content-type, x-admin-session]
         AllowMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
         MaxAge: 600
       Auth:
@@ -331,6 +350,7 @@ Resources:
           ALLOWED_ORIGINS: !Join [",", !Ref AllowedOrigins]
           APPS_TABLE: !Ref AppsTable
           LINKS_TABLE: !Ref LinksTable
+          ADMIN_TABLE: !Ref AdminTable
           APPCHECK_FUNCTION: !Ref AppCheckFunction
           STRIPE_SECRET_ID: geovive/stripe
       Policies:
@@ -341,6 +361,7 @@ Resources:
         - LambdaInvokePolicy: { FunctionName: !Ref ImportFunction }
         - DynamoDBCrudPolicy: { TableName: !Ref AppsTable }
         - DynamoDBCrudPolicy: { TableName: !Ref LinksTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref AdminTable }
         - LambdaInvokePolicy: { FunctionName: !Ref AppCheckFunction }
         - Statement:
             - Effect: Allow
@@ -352,6 +373,9 @@ Resources:
               Action: [ses:SendEmail, ses:SendRawEmail]
               Resource: "*"
               Condition: { StringEquals: { "ses:FromAddress": appconnect@geovive.link } }
+            - Effect: Allow
+              Action: ce:GetCostAndUsage
+              Resource: "*"
             - Effect: Allow
               Action: cognito-idp:ListUsers
               Resource: !Sub arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}
@@ -408,6 +432,8 @@ Resources:
         LinkedAddFeat:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/linked/datasets/{datasetId}/features", Auth: { Authorizer: NONE } } }
         LinkedPutFeat:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: PUT, Path: "/v1/linked/datasets/{datasetId}/features/{featureId}", Auth: { Authorizer: NONE } } }
         LinkedDelFeat:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: DELETE, Path: "/v1/linked/datasets/{datasetId}/features/{featureId}", Auth: { Authorizer: NONE } } }
+        # Admin (GeoVivé sign-in at the gateway; admins group + authenticator session checked in admin.mjs)
+        AdminAll:         { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: ANY, Path: "/v1/admin/{proxy+}" } }
         DeleteFeature:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: DELETE, Path: "/v1/datasets/{datasetId}/features/{featureId}" } }
 
   # AppConnect connection checks, reports and emails (invoked asynchronously by the API)
