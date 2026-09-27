@@ -43,8 +43,16 @@ export function migrateProperties(props) {
     }
     if (k === "schoolLevel") { if (v !== "other") extras.unshift(`**Level:** ${String(v).replace(/-/g, " & ")}`); continue; }
     if (NCES.has(k)) { if (k === "NCESSCH") out.externalId ??= String(v); continue; }
-    if (k === "country") { extras.push(`**Country:** ${v}`); continue; }
+    if (["country", "capitalType", "countryCode", "isoA2", "population", "license", "note"].includes(k)) continue;   // capitals: written as a sentence below
     extras.push(`- **${k}:** ${String(typeof v === "object" ? JSON.stringify(v) : v).slice(0, 200)}`);
+  }
+  // World Capitals: one readable sentence instead of raw fields
+  if (props?.capitalType || props?.country) {
+    const kind = props.capitalType && props.capitalType !== "national" ? `${props.capitalType} capital` : "Capital";
+    const pop = Number(props.population);
+    const sentence = [`${kind[0].toUpperCase() + kind.slice(1)} of ${props.country || "—"}${props.countryCode ? ` (${props.countryCode})` : ""}.`,
+      pop > 0 ? `Population about ${pop.toLocaleString("en-US")}.` : "", props.note ? String(props.note) : ""].filter(Boolean).join(" ");
+    extras.unshift(sentence);
   }
   const raw = out.category;
   out.category = toCategory(raw);
