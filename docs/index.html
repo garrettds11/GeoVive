@@ -39,6 +39,7 @@
     <section class="tour" id="tour" aria-label="GeoVivé tour">
       <div class="tour-bar" role="tablist" aria-label="Tour steps"></div>
       <div class="stage" tabindex="-1">
+        <button type="button" class="tour-pause" data-act="play" aria-label="Play the tour"></button>
 
         <!-- 1 · Start -->
         <article class="scene">
@@ -90,7 +91,7 @@
                 <g class="slide-r"><circle cx="170" cy="120" r="46" fill="none" stroke="#3b82f6" stroke-width="3" opacity="0.7"/><circle cx="170" cy="120" r="46" fill="#3b82f6" opacity="0.08" class="pulse-ring"/>
                   <path d="M203 153l30 30" stroke="#3b82f6" stroke-width="8" stroke-linecap="round"/><path d="M152 120h36M170 102v36" stroke="#93c5fd" stroke-width="4" stroke-linecap="round"/></g>
                 <g transform="translate(62 62)"><circle r="24" fill="#0f172a" stroke="#475569" stroke-width="2"/><g class="needle"><path d="M0-17 6 0 0 17-6 0z" fill="#ef4444"/><path d="M0 0 6 0 0 17-6 0z" fill="#e2e8f0"/></g></g>
-                <g transform="translate(255 205)" class="float"><path d="M0 0 18-7 11 11 8 3z" fill="#60a5fa"/></g>
+                <g transform="translate(255 205)"><g class="float"><path d="M0 0 18-7 11 11 8 3z" fill="#60a5fa"/></g></g>
               </svg>
             </div>
           </div>
@@ -142,8 +143,7 @@
                 <g class="drop d2"><path d="M205 100c0 0-12-13-12-21a12 12 0 0 1 24 0c0 8-12 21-12 21z" fill="#3b82f6"/><circle cx="205" cy="79" r="4.5" fill="#0b1f44"/></g>
                 <rect x="88" y="174" width="120" height="10" rx="5" fill="#334155"/><rect x="88" y="194" width="84" height="10" rx="5" fill="#1f2937"/>
                 <g transform="translate(236 186)"><rect x="0" y="0" width="34" height="20" rx="10" fill="#22c55e"/><circle cx="24" cy="10" r="7" fill="#fff" class="slide-r"/></g>
-                <g transform="translate(26 150)" class="float"><circle r="30" fill="#0f172a" stroke="#22c55e" stroke-width="2.5"/><rect x="-11" y="-2" width="22" height="16" rx="3" fill="#22c55e"/><path d="M-6-2v-5a6 6 0 0 1 12 0v5" fill="none" stroke="#22c55e" stroke-width="3"/></g>
-                <g transform="translate(292 60)" class="float f2"><circle r="24" fill="#0f172a" stroke="#3b82f6" stroke-width="2.5"/><circle cy="-5" r="7" fill="#3b82f6"/><path d="M-12 14c3-8 21-8 24 0" fill="#3b82f6"/></g>
+                <g transform="translate(292 60)"><g class="hover-spin"><circle r="24" fill="#0f172a" stroke="#3b82f6" stroke-width="2.5"/><circle cy="-5" r="7" fill="#3b82f6"/><path d="M-12 14c3-8 21-8 24 0" fill="#3b82f6"/></g></g>
               </svg>
             </div>
           </div>
@@ -183,11 +183,8 @@
 
       <div class="tour-controls">
         <button type="button" data-act="prev" aria-label="Previous step"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.5"/></svg>Back</button>
-        <button type="button" data-act="play" aria-label="Play the tour"></button>
         <button type="button" data-act="next" class="primary" aria-label="Next step">Next<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.5"/></svg></button>
         <span class="tour-count" aria-live="polite"></span>
-        <span class="spacer"></span>
-        <a href="#faq">Skip to questions ↓</a>
       </div>
       <div class="tour-end" hidden><button type="button" class="cta" data-act="replay">Watch the tour again</button></div>
     </section>

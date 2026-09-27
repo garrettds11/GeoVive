@@ -44,10 +44,9 @@
     s.querySelectorAll(".drop").forEach(el => { el.style.animation = "none"; void el.getBoundingClientRect(); el.style.animation = ""; });
     segs.forEach((g, k) => {
       g.classList.toggle("done", k < i); g.classList.toggle("current", k === i);
-      g.firstChild.style.width = k < i ? "100%" : k === i ? "100%" : "0";
+      g.firstChild.style.width = k < i ? "100%" : "0";
       g.setAttribute("aria-current", k === i ? "step" : "false");
     });
-    setRing(1);
     fitStage();
     count.textContent = `${i + 1} / ${scenes.length}`;
   }
@@ -71,7 +70,6 @@
   function finish() {
     finished = true; setPlaying(false);
     segs.forEach(g => { g.classList.add("done"); g.classList.remove("current"); g.firstChild.style.width = "100%"; });
-    setRing(0);
     endCard.hidden = false;
     setTimeout(() => document.getElementById("faq")?.scrollIntoView({ behavior: "smooth", block: "start" }), 1400);
   }
@@ -79,9 +77,9 @@
   function setPlaying(on) {
     playing = on;
     tour.classList.toggle("paused", !on);
-    playBtn.innerHTML = ring(on ? ICON_PAUSE_P : ICON_PLAY_P) + (on ? "Pause" : finished ? "Replay" : "Play");
-    ringEl = playBtn.querySelector(".left");
-    playBtn.setAttribute("aria-label", on ? "Pause the tour" : "Play the tour");
+    playBtn.innerHTML = on ? ICON_PAUSE : finished ? ICON_REPLAY : ICON_PLAY;
+    playBtn.setAttribute("aria-label", on ? "Pause the tour" : finished ? "Replay the tour" : "Play the tour");
+    playBtn.title = on ? "Pause" : finished ? "Replay" : "Play";
     last = performance.now();
   }
 
@@ -90,20 +88,16 @@
     if (playing && !hold && !document.hidden) {
       elapsed += dt;
       const f = Math.min(1, elapsed / dur[idx]);
-      segs[idx].firstChild.style.width = ((1 - f) * 100).toFixed(2) + "%";   // drains toward the next step
-      setRing(1 - f);
+      segs[idx].firstChild.style.width = (f * 100).toFixed(2) + "%";   // fills left to right
       if (f >= 1) { if (idx < scenes.length - 1) go(idx + 1); else finish(); }
     }
     requestAnimationFrame(tick);
   }
 
-  // Thin ring around the play/pause icon: the time left in this step
-  const ICON_PLAY_P = '<path d="M10 8.5v7l5.5-3.5z"/>';
-  const ICON_PAUSE_P = '<path d="M9.5 8.5h1.8v7H9.5zM12.7 8.5h1.8v7h-1.8z"/>';
-  const C = 2 * Math.PI * 9;
-  let ringEl = null;
-  const ring = p => `<svg class="tour-ring" viewBox="0 0 24 24" aria-hidden="true"><circle class="track" cx="12" cy="12" r="9"/><circle class="left" cx="12" cy="12" r="9" stroke-dasharray="${C}" stroke-dashoffset="0"/>${p}</svg>`;
-  function setRing(left) { if (ringEl) ringEl.setAttribute("stroke-dashoffset", String(C * (1 - left))); }
+  const icon = d => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
+  const ICON_PLAY = icon("M8 5.5v13l10.5-6.5z");
+  const ICON_PAUSE = icon("M7 5h3.5v14H7zM13.5 5H17v14h-3.5z");
+  const ICON_REPLAY = icon("M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z");
 
   // Keep the stage as tall as the tallest step so the page doesn't jump
   function fitStage() {
