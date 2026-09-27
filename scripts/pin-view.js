@@ -82,7 +82,7 @@
         ${(() => { let f = props.savedFrom; if (typeof f === "string") { try { f = JSON.parse(f); } catch { f = null; } }
           return f?.datasetName ? `<div class="pin-from">Saved from ${esc(f.datasetName)}</div>` : ""; })()}
         <div class="pin-actions">
-          ${savable ? `<button type="button" class="pin-save" data-act="save" title="Save a copy to one of your maps">${ICONS.save}<span>Save to my map</span></button>` : ""}
+          ${savable ? `<button type="button" class="pin-save" data-act="save" title="Save a copy to one of your datasets">${ICONS.save}<span>Save to my dataset</span></button>` : ""}
           ${editable ? `<button type="button" class="pin-act" data-act="edit" title="Edit pin" aria-label="Edit pin">${ICONS.edit}</button>` : ""}
           <button type="button" class="pin-act" data-act="md" title="Copy as Markdown" aria-label="Copy as Markdown">${ICONS.md}</button>
           <button type="button" class="pin-act" data-act="json" title="Copy as JSON" aria-label="Copy as JSON">${ICONS.json}</button>
@@ -118,7 +118,7 @@
     const editable = !!window.GeoViveEditor?.canEdit?.(props);
     // Any pin you can't edit here can be copied into one of your own maps
     const savable = !editable && !!props.datasetId && !!window.GeoViveEditor?.saveTo;
-    const popup = new mapboxgl.Popup({ closeOnMove: false, maxWidth: "300px" })
+    const popup = new datasetboxgl.Popup({ closeOnMove: false, maxWidth: "300px" })
       .setLngLat(lngLat).setHTML(html(props, { editable, savable, category: opts.category })).addTo(map);
     bind(popup.getElement(), props, feature, {
       onEdit: () => { popup.remove(); window.GeoViveEditor.edit(feature); },

@@ -57,12 +57,12 @@ function render(info, user) {
     <p class="cx-sub">${esc(app.domain)} · a verified AppConnect app${grant ? " · <b>already linked</b>" : ""}</p>
     <div class="cx-h">It will be able to</div>
     <ul class="cx-scopes">${scopes.map(s => `<li>${esc(s.label)}</li>`).join("")}</ul>
-    <p class="cx-never">It won't see your email address or password, your other maps, or anything you don't share below. ${fromApp ? `You have ${fromApp} map${fromApp > 1 ? "s" : ""} it created.` : ""}</p>
+    <p class="cx-never">It won't see your email address or password, your other datasets, or anything you don't share below. ${fromApp ? `You have ${fromApp} map${fromApp > 1 ? "s" : ""} it created.` : ""}</p>
     ${readScope && shareable.length ? `
-      <div class="cx-h">Share other maps (optional, read-only)</div>
+      <div class="cx-h">Share other datasets (optional, read-only)</div>
       <div class="cx-maps">${shareable.map(m => `<label><input type="checkbox" value="${esc(m.datasetId)}" ${shared.has(m.datasetId) ? "checked" : ""}>
         <span class="n">${esc(m.name)}</span><span class="vis ${m.visibility}">${m.visibility === "public" ? "Public" : "Private"}</span></label>`).join("")}</div>
-      <p class="cx-note">The app can read these maps but not change them. You can change this later in My data.</p>` : ""}
+      <p class="cx-note">The app can read these datasets but not change them. You can change this later in My data.</p>` : ""}
     <div class="cx-actions">
       <button class="btn2" id="cx-deny">Cancel</button>
       <button class="btn2 primary" id="cx-allow">Allow</button>

@@ -29,6 +29,7 @@
     <nav class="toc">
       <a href="#overview">Overview</a>
       <a href="#auth">Authentication</a>
+      <a href="#data-model">Data model</a>
       <a href="#access">Access rules</a>
       <a href="#datasets">Datasets</a>
       <a href="#features">Features</a>
@@ -61,6 +62,36 @@
       <tr><td>Token</td><td>Access token (<code>token_use: access</code>); the user is identified by its <code>sub</code> claim</td></tr>
     </table></div>
     <p>These tokens are issued only to GeoVivé's own web app. Other apps get access to a user's maps through <a href="#account-linking">account linking</a>, with the user's consent.</p>
+
+    <h2 id="data-model">Data model</h2>
+    <p>GeoVivé stores <strong>datasets</strong> of <strong>features</strong> (standard GeoJSON) and displays <strong>layers</strong> it doesn't store. The authoritative definition is <a href="https://github.com/garrettds11/GeoVive/blob/main/datamodel.yaml"><code>datamodel.yaml</code></a> (JSON Schema). <code>openapi.yaml</code> references it, and every write is checked against it.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Concept</th><th>Data model</th><th>API</th><th>In the app</th><th>AppConnect</th></tr>
+      <tr><td><b>Feature</b></td><td><code>Feature</code> = geometry + <code>FeatureProperties</code></td><td><code>/v1/datasets/{id}/features</code></td><td>A pin (point) or shape (line or area)</td><td>Pins in a user's datasets</td></tr>
+      <tr><td><b>Dataset</b></td><td><code>Dataset</code> + its <code>FeatureCollection</code></td><td><code>/v1/datasets</code></td><td>The Dataset menu</td><td>Created for a user by an Open in GeoVivé link or account linking</td></tr>
+      <tr><td><b>Layer</b></td><td><code>LayerList</code>: a display contract (source, style, credits, license), not stored features</td><td><code>/v1/apps/{appId}/layers</code>, relay</td><td>The Layers panel</td><td>The app's own layers</td></tr>
+    </table></div>
+    <div class="table-wrap"><table>
+      <tr><th></th><th>Dataset</th><th>Layer</th></tr>
+      <tr><td>Whose data</td><td>Stored in GeoVivé, owned by a user or the GeoVivé library</td><td>A government agency's or an AppConnect app's</td></tr>
+      <tr><td>Editable</td><td>By its owner</td><td>No, display only</td></tr>
+      <tr><td>Geometry</td><td>Any: points, lines, areas</td><td>Any</td></tr>
+      <tr><td>Held to the data model</td><td>Yes, strictly</td><td>No: shown as published, after AppConnect's checks and approval</td></tr>
+    </table></div>
+    <h3>Feature properties</h3>
+    <div class="table-wrap"><table>
+      <tr><th>Field</th><th>Rules</th></tr>
+      <tr><td><code>name</code></td><td>Required, up to 200 characters</td></tr>
+      <tr><td><code>category</code></td><td>Required: <code>location</code> (a place), <code>event</code> (recorded activity) or <code>alert</code> (noteworthy activity)</td></tr>
+      <tr><td><code>description</code></td><td>Markdown, up to 5,000 characters. Anything specific (address, hours, level) goes here.</td></tr>
+      <tr><td><code>eventTime</code></td><td>When it happened; required for events and alerts</td></tr>
+      <tr><td><code>status</code></td><td><code>active</code> (default), <code>inactive</code> or <code>archived</code></td></tr>
+      <tr><td><code>severity</code></td><td>Alerts only: <code>info</code>, <code>warning</code> or <code>critical</code></td></tr>
+      <tr><td><code>source</code>, <code>externalId</code></td><td>Where the feature came from, and its ID there</td></tr>
+      <tr><td><code>icon</code>, <code>color</code></td><td>Optional display overrides (emoji or icon name; <code>#rrggbb</code>)</td></tr>
+      <tr><td><code>id</code>, <code>datasetId</code>, <code>createdAt</code>, <code>updatedAt</code></td><td>Set by the server</td></tr>
+    </table></div>
+    <p>No other properties are accepted. Tags describe datasets (up to 10, for search), never features.</p>
 
     <h2 id="access">Access rules</h2>
     <ul>

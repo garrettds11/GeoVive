@@ -1,4 +1,4 @@
-// My data: every pin you own, across your maps. Filter, review public exposure,
+// My data: every pin you own, across your datasets. Filter, review public exposure,
 // edit, create, delete, and bulk delete / move / copy (POST /features/batch).
 import { UserManager, WebStorageStateStore } from "oidc-client-ts";
 
@@ -84,23 +84,23 @@ function render() {
   const types = [...new Set([...TYPES, ...S.pins.map(p => p.f.properties.category).filter(Boolean)])];
   root.innerHTML = `
     <div class="md-cards">
-      <div class="md-card"><b>${S.maps.length}</b><span>maps</span></div>
+      <div class="md-card"><b>${S.maps.length}</b><span>datasets</span></div>
       <div class="md-card"><b>${S.pins.length}</b><span>pins in total</span></div>
-      <div class="md-card ${pubMaps.length ? "warn" : ""}"><b>${pubMaps.length}</b><span>public maps</span></div>
+      <div class="md-card ${pubMaps.length ? "warn" : ""}"><b>${pubMaps.length}</b><span>public datasets</span></div>
       <div class="md-card ${pubPins.length ? "warn" : ""}"><b>${pubPins.length}</b><span>pins anyone can see</span>
         ${pubPins.length ? `<div><button class="btn2" data-a="review-public">Review them</button></div>` : ""}</div>
     </div>
-    ${pubPins.length ? `<div class="md-alert"><span aria-hidden="true">⚠️</span><p><strong>${pubPins.length} pin${pubPins.length > 1 ? "s are" : " is"} public</strong> because ${pubMaps.length > 1 ? "their maps are" : "its map is"} public. Anyone can see ${pubPins.length > 1 ? "them" : "it"}, signed in or not. Check nothing personal is exposed: make the map private, or move the pins to a private map.</p></div>` : ""}
+    ${pubPins.length ? `<div class="md-alert"><span aria-hidden="true">⚠️</span><p><strong>${pubPins.length} pin${pubPins.length > 1 ? "s are" : " is"} public</strong> because ${pubMaps.length > 1 ? "their datasets are" : "its dataset is"} public. Anyone can see ${pubPins.length > 1 ? "them" : "it"}, signed in or not. Check nothing personal is exposed: make the dataset private, or move the pins to a private dataset.</p></div>` : ""}
 
     <section class="md-section">
-      <h2>Your maps</h2>
+      <h2>Your datasets</h2>
       ${S.maps.length ? `<div class="md-maps">${S.maps.map(m => `
         <div class="md-map">
           <div><div class="n">${esc(m.name)}</div><div class="s">${m.featureCount || 0} pins${m.tags?.length ? ` · ${m.tags.map(t => "#" + esc(t)).join(" ")}` : ""}</div></div>
           <span class="vis ${m.visibility}">${m.visibility === "public" ? "Public" : "Private"}</span>
-          <label class="switch" title="Anyone can view a public map"><input type="checkbox" data-a="vis" data-id="${esc(m.datasetId)}" ${m.visibility === "public" ? "checked" : ""}> Public</label>
+          <label class="switch" title="Anyone can view a public dataset"><input type="checkbox" data-a="vis" data-id="${esc(m.datasetId)}" ${m.visibility === "public" ? "checked" : ""}> Public</label>
           <span><button class="icon-btn" data-a="only" data-id="${esc(m.datasetId)}">Show pins</button><a class="icon-btn" href="/?dataset=${encodeURIComponent(m.datasetId)}">Open ↗</a></span>
-        </div>`).join("")}</div>` : `<p class="muted">No maps yet. <a href="/">Create one on the map.</a></p>`}
+        </div>`).join("")}</div>` : `<p class="muted">No datasets yet. <a href="/">Create one on the map.</a></p>`}
     </section>
 
     <section class="md-section" id="connected-apps">
@@ -120,9 +120,9 @@ function render() {
         <div class="wide" style="display:flex;gap:0.5rem;justify-content:flex-end"><button type="button" class="btn2" data-a="new-cancel">Cancel</button><button class="btn2 primary">Create pin</button></div>
       </form>
       <div class="md-toolbar">
-        <input type="search" id="md-q" placeholder="Search names, notes and maps" value="${esc(S.f.q)}">
-        <select id="md-map"><option value="">All maps</option>${S.maps.map(m => `<option value="${esc(m.datasetId)}" ${S.f.map === m.datasetId ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select>
-        <select id="md-vis"><option value="">Public and private</option><option value="public" ${S.f.vis === "public" ? "selected" : ""}>In public maps</option><option value="private" ${S.f.vis === "private" ? "selected" : ""}>In private maps</option></select>
+        <input type="search" id="md-q" placeholder="Search names, notes and datasets" value="${esc(S.f.q)}">
+        <select id="md-map"><option value="">All datasets</option>${S.maps.map(m => `<option value="${esc(m.datasetId)}" ${S.f.map === m.datasetId ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select>
+        <select id="md-vis"><option value="">Public and private</option><option value="public" ${S.f.vis === "public" ? "selected" : ""}>In public datasets</option><option value="private" ${S.f.vis === "private" ? "selected" : ""}>In private datasets</option></select>
         <select id="md-type"><option value="">All types</option>${types.map(t => `<option ${S.f.type === t ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>
       </div>
       <div class="md-bulk" ${S.sel.size ? "" : "hidden"}>
@@ -136,7 +136,7 @@ function render() {
       <div class="md-table-wrap"><table class="md-table">
         <thead><tr>
           <th><input type="checkbox" data-a="all" ${allOnPage ? "checked" : ""} aria-label="Select all on this page"></th>
-          <th data-sort="name">Pin${arrow("name")}</th><th data-sort="map">Map${arrow("map")}</th><th data-sort="type" class="hide-sm">Type${arrow("type")}</th>
+          <th data-sort="name">Pin${arrow("name")}</th><th data-sort="map">Dataset${arrow("map")}</th><th data-sort="type" class="hide-sm">Type${arrow("type")}</th>
           <th class="hide-sm">Location</th><th data-sort="updatedAt" class="hide-sm">Updated${arrow("updatedAt")}</th><th></th>
         </tr></thead>
         <tbody>${rows.length ? rows.map(rowHtml).join("") : `<tr><td colspan="7" class="md-empty">${S.pins.length ? "No pins match these filters." : "No pins yet."}</td></tr>`}</tbody>
@@ -147,7 +147,7 @@ function render() {
   bind();
 }
 
-const SCOPE_SHORT = { profile: "Your name", "maps:read": "Read its maps", "maps:write": "Edit its maps" };
+const SCOPE_SHORT = { profile: "Your name", "maps:read": "Read its datasets", "maps:write": "Edit its datasets" };
 function appHtml(c) {
   const shared = S.maps.filter(m => c.sharedDatasets.includes(m.datasetId));
   const made = S.maps.filter(m => m.origin?.appId === c.appId);
@@ -156,13 +156,13 @@ function appHtml(c) {
     <div class="md-map">
       <div><div class="n">${esc(c.appName)} <span class="s">${esc(c.appDomain || "")}</span></div>
         <div class="s">${c.scopes.map(x => SCOPE_SHORT[x] || x).join(" · ")} · linked ${new Date(c.createdAt).toLocaleDateString()} · ${used}</div>
-        <div class="s">${made.length} map${made.length === 1 ? "" : "s"} it created${shared.length ? ` · shared with it: ${shared.map(m => esc(m.name)).join(", ")}` : ""}</div></div>
+        <div class="s">${made.length} dataset${made.length === 1 ? "" : "s"} it created${shared.length ? ` · shared with it: ${shared.map(m => esc(m.name)).join(", ")}` : ""}</div></div>
       <span></span><span></span>
-      <span><button class="icon-btn" data-a="app-share">Shared maps</button><button class="icon-btn del" data-a="app-remove">Remove</button></span>
+      <span><button class="icon-btn" data-a="app-share">Shared datasets</button><button class="icon-btn del" data-a="app-remove">Remove</button></span>
     </div>
     ${S.appEdit === c.appId ? `<div class="md-appshare">
       <p class="s">Maps ${esc(c.appName)} can read (it can't change them). Maps it created are always available to it.</p>
-      ${S.maps.filter(m => m.origin?.appId !== c.appId).map(m => `<label><input type="checkbox" value="${esc(m.datasetId)}" ${c.sharedDatasets.includes(m.datasetId) ? "checked" : ""}> ${esc(m.name)} <span class="vis ${m.visibility}">${m.visibility === "public" ? "Public" : "Private"}</span></label>`).join("") || `<p class="s">You have no other maps.</p>`}
+      ${S.maps.filter(m => m.origin?.appId !== c.appId).map(m => `<label><input type="checkbox" value="${esc(m.datasetId)}" ${c.sharedDatasets.includes(m.datasetId) ? "checked" : ""}> ${esc(m.name)} <span class="vis ${m.visibility}">${m.visibility === "public" ? "Public" : "Private"}</span></label>`).join("") || `<p class="s">You have no other datasets.</p>`}
       <div class="row"><button class="btn2" data-a="app-share-cancel">Cancel</button><button class="btn2 primary" data-a="app-share-save">Save</button></div>
     </div>` : ""}
   </div>`;
@@ -262,7 +262,7 @@ async function onClick(e) {
   }
   if (a === "bulk-move" || a === "bulk-copy") {
     const target = document.getElementById("md-target").value;
-    if (!target) { msg("Choose a map to move or copy to.", "err"); return; }
+    if (!target) { msg("Choose a dataset to move or copy to.", "err"); return; }
     const t = S.maps.find(m => m.datasetId === target);
     if (t.visibility === "public" && !confirm(`"${t.name}" is public. Anyone will be able to see these pins. Continue?`)) return;
     await bulk(a === "bulk-move" ? "move" : "copy", target);
@@ -326,7 +326,7 @@ async function refresh(text, kind = "ok") { await load(); render(); msg(text, ki
   try {
     S.user = await users.getUser();
     if (!S.user || S.user.expired) {
-      root.innerHTML = `<h2>Sign in to see your data</h2><p class="muted">This page lists every pin in your maps so you can review, fix and tidy them.</p>
+      root.innerHTML = `<h2>Sign in to see your data</h2><p class="muted">This page lists every pin in your datasets so you can review, fix and tidy them.</p>
         <p><button class="btn2 primary" id="md-signin">Sign in</button></p>`;
       document.getElementById("md-signin").onclick = () => { sessionStorage.setItem("geovive:after-signin", "/mydata/"); users.signinRedirect({ prompt: "select_account" }); };
       return;

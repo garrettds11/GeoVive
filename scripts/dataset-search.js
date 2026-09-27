@@ -1,6 +1,6 @@
-// dataset-search.js — find public maps by name, description and tags.
+// dataset-search.js — find public datasets by name, description and tags.
 // Results come from GET /v1/datasets/search; picking one opens it and adds it
-// to the Dataset menu's "Public maps" (recently opened) list.
+// to the Dataset menu's "Public datasets" (recently opened) list.
 
 const input = document.getElementById("ds-search-input");
 const box = document.getElementById("ds-search-results");
@@ -44,7 +44,7 @@ async function run() {
         ${d.description ? `<div class="d">${mark(d.description, words)}</div>` : ""}
         ${d.tags?.length ? `<div class="tg">${d.tags.map(t => `<span>#${mark(t, words)}</span>`).join("")}</div>` : ""}
       </button>`).join("")
-      : `<div class="ds-empty">No public maps match${q ? ` “${esc(q)}”` : ""}${tag ? ` with #${esc(tag)}` : ""}.</div>`}
+      : `<div class="ds-empty">No public datasets match${q ? ` “${esc(q)}”` : ""}${tag ? ` with #${esc(tag)}` : ""}.</div>`}
     ${data.total > results.length ? `<div class="ds-more">Showing ${results.length} of ${data.total}. Add a word or pick a tag to narrow it down.</div>` : ""}`;
 }
 
