@@ -12,6 +12,7 @@
 // function's job and is not represented here at all.
 
 import { checkGate } from "./cost-gate.mjs";
+import { startSpan, endSpan } from "./otel.mjs";
 import { auditEvent } from "./audit.mjs";
 import { notify } from "./notify.mjs";
 import { converse, extractJson, MODELS } from "./bedrock.mjs";
@@ -90,10 +91,12 @@ async function reviewDataset(ds, budget) {
 }
 
 export const handler = async () => {
+  const rootSpan = startSpan("governor.run");
   const gate = await checkGate();
   if (!gate.allowed) {
     console.log("Governor run blocked:", gate.reason);
     await auditEvent({ action: "run.blocked", agent: "governor", detail: { reason: gate.reason } });
+    await endSpan(rootSpan, { attributes: { blocked: true, reason: gate.reason } });
     return { blocked: true, reason: gate.reason };
   }
 
@@ -106,6 +109,7 @@ export const handler = async () => {
 
   if (!passed.length) {
     await auditEvent({ action: "run.stopped", agent: "governor", detail: { reason: "no reviewStatus=passed datasets awaiting authorization" } });
+    await endSpan(rootSpan, { attributes: { outcome: "noop" } });
     return { blocked: false, note: "nothing to authorize" };
   }
 
@@ -147,6 +151,9 @@ export const handler = async () => {
     subject: `Governor run complete: ${summaries.length} dataset(s)`,
     bodyText: lines.join("\n") + `\n\nReminder: every authorized dataset above still needs your manual due-diligence approval before it goes public.`,
     reasonCode: "AUTHORIZED"
+  });
+  await endSpan(rootSpan, {
+    attributes: { outcome: "authorized_run", datasetsProcessed: summaries.length, tokensUsed: budget.tokensUsed }
   });
   return { blocked: false, authorized: summaries.length };
 };

@@ -6,6 +6,7 @@
 // than this module tracking any budget itself.
 
 import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
+import { withSpan } from "./otel.mjs";
 
 const bedrock = new BedrockRuntimeClient({});
 
@@ -18,18 +19,18 @@ export const MODELS = {
 // messages: [{ role: "user"|"assistant", content: string }]
 // Returns { text, inputTokens, outputTokens }.
 export async function converse({ modelId, system, messages, maxTokens = 2000, temperature = 0 }) {
-  const resp = await bedrock.send(new ConverseCommand({
-    modelId,
-    system: system ? [{ text: system }] : undefined,
-    messages: messages.map(m => ({ role: m.role, content: [{ text: m.content }] })),
-    inferenceConfig: { maxTokens, temperature }
-  }));
-  const text = (resp.output?.message?.content || []).map(c => c.text || "").join("");
-  return {
-    text,
-    inputTokens: resp.usage?.inputTokens || 0,
-    outputTokens: resp.usage?.outputTokens || 0
-  };
+  return withSpan("bedrock.converse", { modelId, maxTokens }, async () => {
+    const resp = await bedrock.send(new ConverseCommand({
+      modelId,
+      system: system ? [{ text: system }] : undefined,
+      messages: messages.map(m => ({ role: m.role, content: [{ text: m.content }] })),
+      inferenceConfig: { maxTokens, temperature }
+    }));
+    const text = (resp.output?.message?.content || []).map(c => c.text || "").join("");
+    const inputTokens = resp.usage?.inputTokens || 0;
+    const outputTokens = resp.usage?.outputTokens || 0;
+    return { text, inputTokens, outputTokens };
+  });
 }
 
 // Best-effort JSON extraction from a model response that may wrap JSON in prose or code fences.

@@ -9,6 +9,7 @@
 // sourceClass; a repeatedly-wrong unstructured source is left alone rather than promoted.
 
 import { checkGate } from "./cost-gate.mjs";
+import { startSpan, endSpan } from "./otel.mjs";
 import { auditEvent } from "./audit.mjs";
 import { notify } from "./notify.mjs";
 import { converse, extractJson, MODELS } from "./bedrock.mjs";
@@ -88,10 +89,12 @@ async function reviewDataset(ds, budget) {
 }
 
 export const handler = async () => {
+  const rootSpan = startSpan("reviewer.run");
   const gate = await checkGate();
   if (!gate.allowed) {
     console.log("Reviewer run blocked:", gate.reason);
     await auditEvent({ action: "run.blocked", agent: "reviewer", detail: { reason: gate.reason } });
+    await endSpan(rootSpan, { attributes: { blocked: true, reason: gate.reason } });
     return { blocked: true, reason: gate.reason };
   }
 
@@ -104,6 +107,7 @@ export const handler = async () => {
 
   if (!pending.length) {
     await auditEvent({ action: "run.stopped", agent: "reviewer", detail: { reason: "no reviewStatus=pending datasets" } });
+    await endSpan(rootSpan, { attributes: { outcome: "noop" } });
     return { blocked: false, note: "nothing to review" };
   }
 
@@ -127,6 +131,9 @@ export const handler = async () => {
     subject: `Reviewer run complete: ${summaries.length} dataset(s)`,
     bodyText: lines.join("\n"),
     reasonCode: "REVIEWED"
+  });
+  await endSpan(rootSpan, {
+    attributes: { outcome: "reviewed", datasetsReviewed: summaries.length, tokensUsed: budget.tokensUsed }
   });
   return { blocked: false, reviewed: summaries.length };
 };

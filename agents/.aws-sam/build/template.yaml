@@ -92,6 +92,29 @@ Resources:
       - Key: env
         Value:
           Ref: Env
+  GrafanaOtelCredentials:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: geovive/agents/grafana-otel-credentials
+      Description: 'Grafana Cloud OTLP endpoint + auth for agent Lambda tracing (build-order
+        item 10 / readiness doc Section 9.1 -- OpenTelemetry to Grafana Cloud, no
+        X-Ray, no CloudWatch dashboards). Value is a placeholder at stack creation;
+        Garrett creates a free-tier Grafana Cloud stack, then sets the real value
+        in the Secrets Manager console as JSON: {"otlpEndpoint":"https://otlp-gateway-<zone>.grafana.net/otlp","instanceId":"<stack
+        id>", "apiKey":"<a Cloud Access Policy token with metrics:write/traces:write>"}.
+        Until then otel.mjs sees the placeholder apiKey and every span export is a
+        silent no-op -- agent runs are never affected either way.
+
+        '
+      SecretString: '{"otlpEndpoint":"REPLACE_ME_IN_CONSOLE","instanceId":"REPLACE_ME_IN_CONSOLE","apiKey":"REPLACE_ME"}'
+      Tags:
+      - Key: project
+        Value: geovive
+      - Key: component
+        Value: agents
+      - Key: env
+        Value:
+          Ref: Env
   GeoLibraryAccountFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -358,6 +381,9 @@ Resources:
             Ref: ManagedSourcesTable
           SCOPE_CARDS_TABLE:
             Ref: ScopeCardsTable
+          OTEL_SERVICE_NAME: geovive-agents-curator
+          GRAFANA_OTEL_SECRET_ARN:
+            Ref: GrafanaOtelCredentials
       Policies:
       - Statement:
         - Effect: Allow
@@ -387,6 +413,7 @@ Resources:
           Resource:
           - Ref: TavilySearchKey
           - Ref: GeoLibraryCredentials
+          - Ref: GrafanaOtelCredentials
         - Effect: Allow
           Action:
           - cognito-idp:InitiateAuth
@@ -443,6 +470,9 @@ Resources:
             Ref: GeoViveApiBase
           MANAGED_SOURCES_TABLE:
             Ref: ManagedSourcesTable
+          OTEL_SERVICE_NAME: geovive-agents-reviewer
+          GRAFANA_OTEL_SECRET_ARN:
+            Ref: GrafanaOtelCredentials
       Policies:
       - Statement:
         - Effect: Allow
@@ -462,7 +492,8 @@ Resources:
         - Effect: Allow
           Action: secretsmanager:GetSecretValue
           Resource:
-            Ref: GeoLibraryCredentials
+          - Ref: GeoLibraryCredentials
+          - Ref: GrafanaOtelCredentials
         - Effect: Allow
           Action:
           - cognito-idp:InitiateAuth
@@ -511,6 +542,9 @@ Resources:
             Ref: UserPoolClientId
           GEOVIVE_API_BASE:
             Ref: GeoViveApiBase
+          OTEL_SERVICE_NAME: geovive-agents-governor
+          GRAFANA_OTEL_SECRET_ARN:
+            Ref: GrafanaOtelCredentials
       Policies:
       - Statement:
         - Effect: Allow
@@ -538,7 +572,8 @@ Resources:
         - Effect: Allow
           Action: secretsmanager:GetSecretValue
           Resource:
-            Ref: GeoLibraryCredentials
+          - Ref: GeoLibraryCredentials
+          - Ref: GrafanaOtelCredentials
         - Effect: Allow
           Action:
           - cognito-idp:InitiateAuth
@@ -642,6 +677,11 @@ Outputs:
   TavilySearchKeySecretArn:
     Value:
       Ref: TavilySearchKey
+  GrafanaOtelCredentialsSecretArn:
+    Description: Set the real Grafana Cloud OTLP endpoint/instanceId/apiKey here (build-order
+      item 10) before it does anything
+    Value:
+      Ref: GrafanaOtelCredentials
   RunFlagParameterName:
     Value:
       Ref: RunFlagParameter
