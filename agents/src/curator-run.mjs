@@ -7,6 +7,7 @@
 // edge cases) and is reported via one audit event + one status email, never partial retries.
 
 import { checkGate } from "./cost-gate.mjs";
+import { startSpan, endSpan } from "./otel.mjs";
 import { auditEvent } from "./audit.mjs";
 import { notify } from "./notify.mjs";
 import { converse, extractJson, MODELS } from "./bedrock.mjs";
@@ -96,10 +97,12 @@ async function toFeature(record) {
 }
 
 export const handler = async () => {
+  const rootSpan = startSpan("curator.run");
   const gate = await checkGate();
   if (!gate.allowed) {
     console.log("Curator run blocked:", gate.reason);
     await auditEvent({ action: "run.blocked", agent: "curator", detail: { reason: gate.reason } });
+    await endSpan(rootSpan, { attributes: { blocked: true, reason: gate.reason } });
     return { blocked: true, reason: gate.reason };
   }
 
@@ -113,6 +116,7 @@ export const handler = async () => {
   if (!pick) {
     await auditEvent({ action: "run.stopped", agent: "curator", detail: { reason: "no uncovered topic in candidate list" } });
     await notify({ subject: "Curator run: nothing to do", bodyText: "Every candidate topic already has a dataset.", reasonCode: "NOOP" });
+    await endSpan(rootSpan, { attributes: { outcome: "noop" } });
     return { blocked: false, note: "no uncovered topic" };
   }
 
@@ -152,6 +156,7 @@ export const handler = async () => {
         bodyText: `Curator tried ${sourceUsed.sourceClass === "managed" ? "the managed source" : "a web search fallback"} for "${pick.topic}" and extracted zero usable records. No dataset was created.`,
         reasonCode: "NO_DATA"
       });
+      await endSpan(rootSpan, { attributes: { outcome: "no_data", topic: pick.topic, sourceClass: sourceUsed.sourceClass, tokensUsed } });
       return { blocked: false, note: "no records extracted" };
     }
 
@@ -179,6 +184,9 @@ export const handler = async () => {
         `It now awaits Reviewer.`,
       reasonCode: "CURATED"
     });
+    await endSpan(rootSpan, {
+      attributes: { outcome: "curated", topic: pick.topic, datasetId: dataset.datasetId, written, sourceClass: sourceUsed.sourceClass, tokensUsed }
+    });
     return { blocked: false, datasetId: dataset.datasetId, written };
   } catch (err) {
     console.error("Curator run failed:", err);
@@ -188,6 +196,7 @@ export const handler = async () => {
       bodyText: `The run for "${pick.topic}" exited on an error and stopped, per the graceful-exit-only policy: ${String(err?.message || err)}`,
       reasonCode: "FAILED"
     });
+    await endSpan(rootSpan, { status: "ERROR", error: String(err?.message || err), attributes: { outcome: "failed", topic: pick.topic, tokensUsed } });
     return { blocked: false, error: String(err?.message || err) };
   }
 };
