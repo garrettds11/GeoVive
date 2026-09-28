@@ -181,7 +181,6 @@ async function toggleAgentsRun(run) {
 }
 
 function renderReview() {
-function renderReview() {
   const q = S.maps.filter(m => m.visibility === "review");
   const el = document.getElementById("ad-review");
   el.innerHTML = `<h2>Review queue</h2>` + (q.length ? table(q.map(m => mapRow(m, true)).join("")) : `<p class="muted">Nothing waiting for review.</p>`);
