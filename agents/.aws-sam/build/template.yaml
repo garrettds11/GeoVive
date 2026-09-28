@@ -1,0 +1,668 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'GeoVive agents infra -- a sidecar stack to geovive-dev-backend (readiness
+  doc Section 3.6). This piece (build-order item 2) is the control-plane shell: the
+  geo-library service account, its Secrets Manager credentials, the run kill-switch
+  (9.2), and a permissions boundary for every agent Lambda role to come. No Curator/reviewer
+  logic lives here yet -- that''s item 9.
+
+  '
+Parameters:
+  Env:
+    Type: String
+    Default: dev
+    AllowedValues:
+    - dev
+    - prod
+  UserPoolId:
+    Type: String
+    Default: us-east-1_cLqbEZJhi
+    Description: Same user pool as the app (infra/identity.yaml) -- geo-library is
+      a real user in it.
+  UserPoolClientId:
+    Type: String
+    Default: hfchi8fm98nberrcj43ge2ipu
+    Description: 'Same WebClient as the app (infra/identity.yaml) -- geo-library signs
+      in through it via USER_AUTH/PASSWORD, no client secret, no OAuth redirect (geo-library-api.mjs).
+
+      '
+  GeoViveApiBase:
+    Type: String
+    Default: https://api.geovive.link/v1
+    Description: Public API base every agent calls through geo-library-api.mjs --
+      the same path any human client uses.
+  GeoLibraryEmail:
+    Type: String
+    Default: geo-library@geovive.link
+    Description: 'The agents'' service account. Not a mailbox anyone reads -- it exists
+      so the account has a unique, obviously-a-service-account identity, same shape
+      as any human sign-up.
+
+      '
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures:
+    - arm64
+    MemorySize: 256
+    Timeout: 30
+    Tags:
+      project: geovive
+      component: agents
+      env:
+        Ref: Env
+Resources:
+  GeoLibraryCredentials:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: geovive/agents/geo-library-credentials
+      Description: geo-library's Cognito sign-in password (email lives alongside it
+        as a fixed field, not generated).
+      GenerateSecretString:
+        SecretStringTemplate:
+          Fn::Sub: '{"email":"${GeoLibraryEmail}"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludeCharacters: '"@/\`'' '
+      Tags:
+      - Key: project
+        Value: geovive
+      - Key: component
+        Value: agents
+      - Key: env
+        Value:
+          Ref: Env
+  TavilySearchKey:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: geovive/agents/tavily-search-key
+      Description: 'Tavily API key for the Curator''s unstructured-fallback web search
+        tool (2.6, Section 11 web-search-provider decision -- Tavily). Value is a
+        placeholder at stack creation; Garrett sets the real key manually in the Secrets
+        Manager console after the key is generated (Tavily key name: geovive-curator-agent,
+        Development tier, 1500/month usage limit).
+
+        '
+      SecretString: '{"apiKey":"REPLACE_ME_IN_CONSOLE"}'
+      Tags:
+      - Key: project
+        Value: geovive
+      - Key: component
+        Value: agents
+      - Key: env
+        Value:
+          Ref: Env
+  GeoLibraryAccountFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: geovive-${Env}-agents-geo-library-account
+      CodeUri: GeoLibraryAccountFunction
+      Handler: geo-library-account.handler
+      Timeout: 60
+      Policies:
+      - Statement:
+        - Effect: Allow
+          Action:
+          - cognito-idp:AdminCreateUser
+          - cognito-idp:AdminSetUserPassword
+          - cognito-idp:AdminGetUser
+          Resource:
+            Fn::Sub: arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}
+        - Effect: Allow
+          Action: secretsmanager:GetSecretValue
+          Resource:
+            Ref: GeoLibraryCredentials
+        - Effect: Allow
+          Action: ssm:PutParameter
+          Resource:
+            Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/geovive/agents/geo-library-sub
+    Metadata:
+      SamResourceId: GeoLibraryAccountFunction
+  GeoLibraryAccount:
+    Type: Custom::GeoLibraryAccount
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+        - GeoLibraryAccountFunction
+        - Arn
+      UserPoolId:
+        Ref: UserPoolId
+      Email:
+        Ref: GeoLibraryEmail
+      SecretArn:
+        Ref: GeoLibraryCredentials
+      SubParamName: /geovive/agents/geo-library-sub
+  RunFlagParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /geovive/agents/run
+      Type: String
+      Value: 'false'
+      Description: 'The agents'' kill switch (9.2). Checked alongside the cost gate
+        before any new run starts. Setting it to false blocks new runs only; an in-flight
+        run finishes or hits its own stop conditions (5.5).
+
+        '
+  AgentPermissionsBoundary:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName:
+        Fn::Sub: geovive-${Env}-agents-boundary
+      Description: Outer bound for every agent Lambda execution role. Allow-list,
+        not a blocklist.
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Sid: Logs
+          Effect: Allow
+          Action:
+          - logs:CreateLogGroup
+          - logs:CreateLogStream
+          - logs:PutLogEvents
+          Resource:
+            Fn::Sub: arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/geovive-${Env}-agents-*
+        - Sid: AgentSecrets
+          Effect: Allow
+          Action: secretsmanager:GetSecretValue
+          Resource:
+          - Fn::Sub: arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:geovive/agents/*
+        - Sid: GeoLibrarySignIn
+          Effect: Allow
+          Action:
+          - cognito-idp:InitiateAuth
+          - cognito-idp:RespondToAuthChallenge
+          Resource:
+            Fn::Sub: arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}
+        - Sid: AgentParameters
+          Effect: Allow
+          Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+          Resource:
+            Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/geovive/agents/*
+        - Sid: BedrockInvoke
+          Effect: Allow
+          Action:
+          - bedrock:InvokeModel
+          - bedrock:InvokeModelWithResponseStream
+          - bedrock:Converse
+          - bedrock:ConverseStream
+          Resource:
+            Fn::Sub: arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:*
+        - Sid: CostExplorerRead
+          Effect: Allow
+          Action: ce:GetCostAndUsage
+          Resource: '*'
+        - Sid: AgentAuditWrite
+          Effect: Allow
+          Action: dynamodb:PutItem
+          Resource:
+            Fn::GetAtt:
+            - AgentAuditTable
+            - Arn
+        - Sid: ManagedSourcesReadWrite
+          Effect: Allow
+          Action:
+          - dynamodb:GetItem
+          - dynamodb:PutItem
+          - dynamodb:Scan
+          - dynamodb:Query
+          Resource:
+            Fn::GetAtt:
+            - ManagedSourcesTable
+            - Arn
+        - Sid: ScopeCardsReadWrite
+          Effect: Allow
+          Action:
+          - dynamodb:GetItem
+          - dynamodb:PutItem
+          Resource:
+            Fn::GetAtt:
+            - ScopeCardsTable
+            - Arn
+        - Sid: AgentNotifyEmail
+          Effect: Allow
+          Action:
+          - ses:SendEmail
+          - ses:SendRawEmail
+          Resource: '*'
+          Condition:
+            StringEquals:
+              ses:FromAddress: agents@geovive.link
+        - Sid: LocationServicePlacesGeocode
+          Effect: Allow
+          Action: geo-places:Geocode
+          Resource: '*'
+  AgentAuditTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName:
+        Fn::Sub: geovive-${Env}-agents-audit
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+      - AttributeName: auditId
+        AttributeType: S
+      - AttributeName: at
+        AttributeType: S
+      KeySchema:
+      - AttributeName: auditId
+        KeyType: HASH
+      GlobalSecondaryIndexes:
+      - IndexName: byTime
+        KeySchema:
+        - AttributeName: at
+          KeyType: HASH
+        Projection:
+          ProjectionType: ALL
+      Tags:
+      - Key: project
+        Value: geovive
+      - Key: component
+        Value: agents
+      - Key: env
+        Value:
+          Ref: Env
+  ManagedSourcesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName:
+        Fn::Sub: geovive-${Env}-agents-managed-sources
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+      - AttributeName: sourceId
+        AttributeType: S
+      KeySchema:
+      - AttributeName: sourceId
+        KeyType: HASH
+      Tags:
+      - Key: project
+        Value: geovive
+      - Key: component
+        Value: agents
+      - Key: env
+        Value:
+          Ref: Env
+  ScopeCardsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName:
+        Fn::Sub: geovive-${Env}-agents-scope-cards
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+      - AttributeName: datasetId
+        AttributeType: S
+      KeySchema:
+      - AttributeName: datasetId
+        KeyType: HASH
+      Tags:
+      - Key: project
+        Value: geovive
+      - Key: component
+        Value: agents
+      - Key: env
+        Value:
+          Ref: Env
+  SchedulerInvokeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName:
+        Fn::Sub: geovive-${Env}-agents-scheduler
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: scheduler.amazonaws.com
+          Action: sts:AssumeRole
+      Policies:
+      - PolicyName: InvokeAgentFunctions
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action: lambda:InvokeFunction
+            Resource:
+            - Fn::GetAtt:
+              - CuratorRunFunction
+              - Arn
+            - Fn::GetAtt:
+              - ReviewerRunFunction
+              - Arn
+            - Fn::GetAtt:
+              - GovernorRunFunction
+              - Arn
+  CuratorRunFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: geovive-${Env}-agents-curator-run
+      CodeUri: CuratorRunFunction
+      Handler: curator-run.handler
+      PermissionsBoundary:
+        Ref: AgentPermissionsBoundary
+      Environment:
+        Variables:
+          AGENT_AUDIT_TABLE:
+            Ref: AgentAuditTable
+          MONTHLY_LIMIT_USD: '20'
+          TAVILY_SECRET_ARN:
+            Ref: TavilySearchKey
+          GEO_LIBRARY_CREDENTIALS_SECRET_ARN:
+            Ref: GeoLibraryCredentials
+          USER_POOL_CLIENT_ID:
+            Ref: UserPoolClientId
+          GEOVIVE_API_BASE:
+            Ref: GeoViveApiBase
+          MANAGED_SOURCES_TABLE:
+            Ref: ManagedSourcesTable
+          SCOPE_CARDS_TABLE:
+            Ref: ScopeCardsTable
+      Policies:
+      - Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          Resource:
+            Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/geovive/agents/run
+        - Effect: Allow
+          Action: ce:GetCostAndUsage
+          Resource: '*'
+        - Effect: Allow
+          Action: dynamodb:PutItem
+          Resource:
+            Fn::GetAtt:
+            - AgentAuditTable
+            - Arn
+        - Effect: Allow
+          Action:
+          - ses:SendEmail
+          - ses:SendRawEmail
+          Resource: '*'
+          Condition:
+            StringEquals:
+              ses:FromAddress: agents@geovive.link
+        - Effect: Allow
+          Action: secretsmanager:GetSecretValue
+          Resource:
+          - Ref: TavilySearchKey
+          - Ref: GeoLibraryCredentials
+        - Effect: Allow
+          Action:
+          - cognito-idp:InitiateAuth
+          - cognito-idp:RespondToAuthChallenge
+          Resource:
+            Fn::Sub: arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}
+        - Effect: Allow
+          Action:
+          - dynamodb:GetItem
+          - dynamodb:PutItem
+          - dynamodb:Scan
+          - dynamodb:Query
+          Resource:
+            Fn::GetAtt:
+            - ManagedSourcesTable
+            - Arn
+        - Effect: Allow
+          Action:
+          - dynamodb:GetItem
+          - dynamodb:PutItem
+          Resource:
+            Fn::GetAtt:
+            - ScopeCardsTable
+            - Arn
+        - Effect: Allow
+          Action: bedrock:InvokeModel
+          Resource:
+          - Fn::Sub: arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
+          - Fn::Sub: arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0
+        - Effect: Allow
+          Action: geo-places:Geocode
+          Resource: '*'
+    Metadata:
+      SamResourceId: CuratorRunFunction
+  ReviewerRunFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: geovive-${Env}-agents-reviewer-run
+      CodeUri: ReviewerRunFunction
+      Handler: reviewer-run.handler
+      PermissionsBoundary:
+        Ref: AgentPermissionsBoundary
+      Environment:
+        Variables:
+          AGENT_AUDIT_TABLE:
+            Ref: AgentAuditTable
+          MONTHLY_LIMIT_USD: '20'
+          GEO_LIBRARY_CREDENTIALS_SECRET_ARN:
+            Ref: GeoLibraryCredentials
+          USER_POOL_CLIENT_ID:
+            Ref: UserPoolClientId
+          GEOVIVE_API_BASE:
+            Ref: GeoViveApiBase
+          MANAGED_SOURCES_TABLE:
+            Ref: ManagedSourcesTable
+      Policies:
+      - Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          Resource:
+            Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/geovive/agents/run
+        - Effect: Allow
+          Action: ce:GetCostAndUsage
+          Resource: '*'
+        - Effect: Allow
+          Action: dynamodb:PutItem
+          Resource:
+            Fn::GetAtt:
+            - AgentAuditTable
+            - Arn
+        - Effect: Allow
+          Action: secretsmanager:GetSecretValue
+          Resource:
+            Ref: GeoLibraryCredentials
+        - Effect: Allow
+          Action:
+          - cognito-idp:InitiateAuth
+          - cognito-idp:RespondToAuthChallenge
+          Resource:
+            Fn::Sub: arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}
+        - Effect: Allow
+          Action:
+          - dynamodb:GetItem
+          - dynamodb:PutItem
+          - dynamodb:Scan
+          - dynamodb:Query
+          Resource:
+            Fn::GetAtt:
+            - ManagedSourcesTable
+            - Arn
+        - Effect: Allow
+          Action: dynamodb:GetItem
+          Resource:
+            Fn::GetAtt:
+            - ScopeCardsTable
+            - Arn
+        - Effect: Allow
+          Action: bedrock:InvokeModel
+          Resource:
+            Fn::Sub: arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
+    Metadata:
+      SamResourceId: ReviewerRunFunction
+  GovernorRunFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: geovive-${Env}-agents-governor-run
+      CodeUri: GovernorRunFunction
+      Handler: governor-run.handler
+      PermissionsBoundary:
+        Ref: AgentPermissionsBoundary
+      Environment:
+        Variables:
+          AGENT_AUDIT_TABLE:
+            Ref: AgentAuditTable
+          MONTHLY_LIMIT_USD: '20'
+          GEO_LIBRARY_CREDENTIALS_SECRET_ARN:
+            Ref: GeoLibraryCredentials
+          USER_POOL_CLIENT_ID:
+            Ref: UserPoolClientId
+          GEOVIVE_API_BASE:
+            Ref: GeoViveApiBase
+      Policies:
+      - Statement:
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          Resource:
+            Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/geovive/agents/run
+        - Effect: Allow
+          Action: ce:GetCostAndUsage
+          Resource: '*'
+        - Effect: Allow
+          Action: dynamodb:PutItem
+          Resource:
+            Fn::GetAtt:
+            - AgentAuditTable
+            - Arn
+        - Effect: Allow
+          Action:
+          - ses:SendEmail
+          - ses:SendRawEmail
+          Resource: '*'
+          Condition:
+            StringEquals:
+              ses:FromAddress: agents@geovive.link
+        - Effect: Allow
+          Action: secretsmanager:GetSecretValue
+          Resource:
+            Ref: GeoLibraryCredentials
+        - Effect: Allow
+          Action:
+          - cognito-idp:InitiateAuth
+          - cognito-idp:RespondToAuthChallenge
+          Resource:
+            Fn::Sub: arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}
+        - Effect: Allow
+          Action: bedrock:InvokeModel
+          Resource:
+            Fn::Sub: arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
+        - Effect: Allow
+          Action: bedrock:InvokeModel
+          Resource:
+            Fn::Sub: arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-4-5-20251101-v1:0
+    Metadata:
+      SamResourceId: GovernorRunFunction
+  CuratorSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name:
+        Fn::Sub: geovive-${Env}-agents-curator-daily
+      ScheduleExpression: rate(1 day)
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn:
+          Fn::GetAtt:
+          - CuratorRunFunction
+          - Arn
+        RoleArn:
+          Fn::GetAtt:
+          - SchedulerInvokeRole
+          - Arn
+  ReviewerSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name:
+        Fn::Sub: geovive-${Env}-agents-reviewer-4hourly
+      ScheduleExpression: rate(4 hours)
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn:
+          Fn::GetAtt:
+          - ReviewerRunFunction
+          - Arn
+        RoleArn:
+          Fn::GetAtt:
+          - SchedulerInvokeRole
+          - Arn
+  GovernorSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name:
+        Fn::Sub: geovive-${Env}-agents-governor-4hourly
+      ScheduleExpression: rate(4 hours)
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn:
+          Fn::GetAtt:
+          - GovernorRunFunction
+          - Arn
+        RoleArn:
+          Fn::GetAtt:
+          - SchedulerInvokeRole
+          - Arn
+  AgentsBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName:
+          Fn::Sub: geovive-${Env}-agents-monthly
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: '20'
+          Unit: USD
+        CostFilters:
+          TagKeyValue:
+          - user:component$agents
+      NotificationsWithSubscribers:
+      - Notification:
+          NotificationType: ACTUAL
+          ComparisonOperator: GREATER_THAN
+          Threshold: 100
+          ThresholdType: PERCENTAGE
+        Subscribers:
+        - SubscriptionType: EMAIL
+          Address: admin@geovive.link
+Outputs:
+  GeoLibrarySub:
+    Description: geo-library's Cognito sub (also written to SSM at /geovive/agents/geo-library-sub)
+    Value:
+      Fn::GetAtt:
+      - GeoLibraryAccount
+      - Sub
+  GeoLibraryCredentialsSecretArn:
+    Value:
+      Ref: GeoLibraryCredentials
+  TavilySearchKeySecretArn:
+    Value:
+      Ref: TavilySearchKey
+  RunFlagParameterName:
+    Value:
+      Ref: RunFlagParameter
+  AgentPermissionsBoundaryArn:
+    Value:
+      Ref: AgentPermissionsBoundary
+  AgentAuditTableName:
+    Value:
+      Ref: AgentAuditTable
+  CuratorScheduleName:
+    Value:
+      Ref: CuratorSchedule
+  ReviewerScheduleName:
+    Value:
+      Ref: ReviewerSchedule
+  GovernorScheduleName:
+    Value:
+      Ref: GovernorSchedule
+  ManagedSourcesTableName:
+    Value:
+      Ref: ManagedSourcesTable
+  ScopeCardsTableName:
+    Value:
+      Ref: ScopeCardsTable
