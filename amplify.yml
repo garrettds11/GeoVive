@@ -15,3 +15,7 @@ frontend:
       - assets/**/*
       - scripts/**/*
       - docs/**/*
+      - appconnect/**/*
+      - mydata/**/*
+      - connect/**/*
+      - admin/**/*

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin · GeoVivé</title>
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="icon" href="/assets/favicon-32x32.png" />
+  <link rel="stylesheet" href="/docs/docs.css" />
+  <link rel="stylesheet" href="/mydata/mydata.css" />
+  <link rel="stylesheet" href="/admin/admin.css" />
+  <script src="/config.js"></script>
+  <script type="importmap">{ "imports": {
+    "oidc-client-ts": "https://cdn.jsdelivr.net/npm/oidc-client-ts@3.4.1/+esm",
+    "qrcode": "https://cdn.jsdelivr.net/npm/qrcode@1.5.4/+esm" } }</script>
+</head>
+<body>
+  <main class="page wide">
+    <header>
+      <div class="top">
+        <a class="brand" href="/"><h1>Geo<span>Vivé</span> Admin</h1></a>
+        <span class="tagline">Platform overview, map review and the audit log</span>
+      </div>
+      <nav class="tabs" aria-label="GeoVivé">
+        <div class="tabs-main">
+          <a href="/admin/" class="active" aria-current="page">Admin</a>
+          <a href="/mydata/">My data</a>
+          <a href="/docs/">User guide</a>
+        </div>
+        <a class="tabs-map" href="/">Open the map →</a>
+      </nav>
+    </header>
+    <div id="ad-root"><p class="muted">Loading…</p></div>
+    <footer>GeoVivé admin · Every change here is recorded in the audit log.</footer>
+  </main>
+  <script type="module" src="/admin/admin.js"></script>
+</body>
+</html>

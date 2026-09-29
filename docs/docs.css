@@ -72,3 +72,27 @@ td { color: var(--muted); }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 999px; margin-right: 0.35rem; vertical-align: middle; }
 footer { margin-top: 2rem; font-size: 0.75rem; color: var(--muted); border-top: 1px solid var(--border); padding-top: 0.8rem; }
 @media (max-width: 600px) { .page { padding: 1.2rem 1rem 1.5rem; } }
+
+/* ---------- Shared header and flat nav (same on every docs page) ---------- */
+header .top { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem 1rem; flex-wrap: nowrap; min-height: 2rem; }
+header .brand { color: inherit; text-decoration: none; flex: none; }
+header .brand:hover { text-decoration: none; }
+header .tagline { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; text-align: right; }
+nav.tabs { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.9rem; flex-wrap: nowrap;
+  border-bottom: 1px solid var(--border); padding-bottom: 0.6rem; }
+nav.tabs .tabs-main { display: flex; gap: 0.35rem; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+nav.tabs .tabs-main::-webkit-scrollbar { display: none; }
+nav.tabs a { flex: none; font-size: 0.82rem; line-height: 1; padding: 0.45rem 0.85rem; border-radius: 999px;
+  border: 1px solid transparent; color: var(--muted); white-space: nowrap; transition: color 0.15s, background 0.15s, border-color 0.15s; }
+nav.tabs a:hover { color: var(--text); background: rgba(148,163,184,0.1); text-decoration: none; }
+nav.tabs a.active { color: var(--text); background: var(--accent-soft); border-color: rgba(34,197,94,0.45); }
+nav.tabs a.tabs-map { flex: none; color: #02130a; background: var(--accent); font-weight: 700; }
+nav.tabs a.tabs-map:hover { filter: brightness(1.08); background: var(--accent); color: #02130a; }
+.doc-meta { font-size: 0.8rem; color: var(--muted); margin: 0 0 0.6rem; }
+@media (max-width: 600px) {
+  header .tagline { display: none; }
+  nav.tabs { flex-wrap: wrap; }
+  nav.tabs .tabs-main { order: 2; flex-basis: 100%; flex-wrap: wrap; overflow: visible; gap: 0.3rem; }
+  nav.tabs .tabs-main a { padding: 0.42rem 0.62rem; font-size: 0.8rem; }
+  nav.tabs a.tabs-map { order: 1; margin-left: auto; }
+}

@@ -26,6 +26,7 @@
   <!--link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌎</text></svg>"-->
 
   <script src="./config.js"></script>
+  <script src="./scripts/pin-view.js"></script>
 
   <script type="importmap">
     {
@@ -65,12 +66,35 @@
         sans-serif;
     }
     
+    /* The page itself never scrolls, on any screen: the map pans and the tray
+       scrolls inside itself. (On phones 100vh is taller than the visible screen,
+       which used to let the page scroll into blank space.) */
     html, body {
       margin: 0;
       padding: 0;
       height: 100%;
-      overflow: auto;
+      overflow: hidden;
+      overscroll-behavior: none;
     }
+
+    /* Sidebar scrolling: a thin, dark scroll bar that appears on hover */
+    .tray-content {
+      scrollbar-width: thin;
+      scrollbar-color: transparent transparent;
+      scrollbar-gutter: stable;
+    }
+    .tray-content:hover, .tray-content:focus-within {
+      scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+    }
+    .tray-content::-webkit-scrollbar { width: 8px; }
+    .tray-content::-webkit-scrollbar-track { background: transparent; }
+    .tray-content::-webkit-scrollbar-thumb { background: transparent; border-radius: 8px; }
+    .tray-content:hover::-webkit-scrollbar-thumb,
+    .tray-content:focus-within::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.35); }
+    .tray-content::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.6); }
+
+    /* Reaching the end of the tray doesn't scroll the page behind it */
+    .tray-content { overscroll-behavior: contain; }
 
     .layout {
       display: grid;
@@ -86,7 +110,8 @@
     body {
       background: radial-gradient(circle at top left, #1e293b 0, #020617 40%, #000 100%);
       color: var(--text);
-      min-height: 100vh;
+      height: 100vh;
+      height: 100dvh;
       display: flex;
       flex-direction: column;
     }
@@ -123,15 +148,6 @@
 
     #title {
       padding: 0.25em 0.25em 1em 0.25em;
-    }
-
-    .badge {
-      padding: 0.2rem 0.75rem;
-      border-radius: 999px;
-      border: 1px solid var(--accent-soft);
-      background: rgba(15, 23, 42, 0.9);
-      font-size: 0.75rem;
-      color: var(--muted);
     }
 
     main {
@@ -305,6 +321,7 @@
         z-index: 1000;
 
         max-height: 80vh;
+        max-height: 80dvh;
         display: flex;
         flex-direction: column;
       }
@@ -351,7 +368,7 @@
       .map-wrapper {
         grid-column: 1 / -1;
         grid-row: 1;
-        min-height: 100vh;
+        min-height: 0;   /* the layout is exactly the visible screen */
       }
     }
 
@@ -569,9 +586,10 @@
       .map-status {
         top: auto;
         bottom: 2.25rem;
+        flex-direction: column-reverse;   /* the wider "Mapbox connected" pill sits lowest */
       }
       .map-wrapper {
-        min-height: 70vh;  /* keep at least half the screen for the map */
+        min-height: 0;  /* fills the layout, which is exactly the visible screen */
       }
     }
 
@@ -627,6 +645,71 @@
       box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6);
     }
 
+    .pin-card .md p { margin: 0.25rem 0; }
+    .pin-card .md ul, .pin-card .md ol { margin: 0.25rem 0; padding-left: 1.1rem; }
+    .pin-card .md code { background: rgba(148,163,184,0.18); padding: 0 0.25rem; border-radius: 3px; }
+    .pin-card .md a { color: var(--accent1); }
+    .pin-card .md-h { font-weight: 700; margin: 0.35rem 0 0.15rem; }
+    .pin-actions { display: flex; align-items: center; gap: 0.35rem; margin-top: 0.5rem; border-top: 1px solid rgba(148,163,184,0.2); padding-top: 0.4rem; }
+    .pin-act { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px;
+      border: 1px solid rgba(148,163,184,0.35); background: transparent; color: inherit; cursor: pointer; padding: 0; }
+    .pin-act:hover { border-color: var(--accent1); color: var(--accent1); }
+    .pin-act svg { width: 17px; height: 17px; }
+    .pin-form .field-row { display: flex; gap: 0.3rem; align-items: stretch; }
+    .pin-form .field-row > input, .pin-form .field-row > textarea { flex: 1; min-width: 0; }
+    .emoji-btn { flex: none; width: 32px; border-radius: 6px; border: 1px solid rgba(148,163,184,0.35); background: transparent; cursor: pointer; font-size: 16px; padding: 0; }
+    .emoji-btn:hover { border-color: var(--accent1); }
+    .emoji-pop { margin-top: 0.3rem; border: 1px solid rgba(148,163,184,0.3); border-radius: 8px; padding: 0.35rem; background: rgba(15,23,42,0.97); max-height: 180px; overflow-y: auto; }
+    .emoji-pop input { width: 100%; box-sizing: border-box; margin-bottom: 0.3rem; font-size: 12px; }
+    .emoji-pop .emoji-cat { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0.25rem 0 0.1rem; }
+    .emoji-pop .emoji-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
+    .emoji-pop .emoji-grid button { border: 0; background: transparent; font-size: 18px; line-height: 1; padding: 3px 0; cursor: pointer; border-radius: 4px; }
+    .emoji-pop .emoji-grid button:hover, .emoji-pop .emoji-grid button:focus { background: rgba(148,163,184,0.2); outline: none; }
+    .pin-copied { font-size: 0.75rem; color: var(--accent1); margin-left: 0.2rem; }
+    .pin-save { display: inline-flex; align-items: center; gap: 0.3rem; height: 28px; padding: 0 0.6rem; border-radius: 6px; cursor: pointer;
+      border: 1px solid var(--accent1); background: rgba(34,197,94,0.12); color: var(--accent1); font: inherit; font-size: 0.78rem; font-weight: 600; margin-right: auto; }
+    .pin-save:hover { background: rgba(34,197,94,0.22); }
+    .pin-save svg { width: 16px; height: 16px; }
+    .pin-save-panel { margin-top: 0.5rem; border-top: 1px solid rgba(148,163,184,0.2); padding-top: 0.5rem; display: grid; gap: 0.4rem; }
+    .pin-save-panel[hidden] { display: none; }
+    .pin-save-label { display: grid; gap: 0.25rem; font-size: 0.75rem; color: var(--muted); }
+    .pin-save-panel select, .pin-save-panel input { width: 100%; box-sizing: border-box; padding: 0.35rem 0.45rem; border-radius: 6px; font: inherit; font-size: 0.85rem; }
+    .pin-save-row { display: flex; gap: 0.4rem; }
+    .pin-save-row .btn { padding: 0.3rem 0.7rem; font-size: 0.8rem; }
+    .pin-save-note { font-size: 0.78rem; margin: 0; color: var(--muted); }
+    .pin-save-note.ok { color: var(--accent1); }
+    /* Dataset search */
+    .ds-search { position: relative; margin-bottom: 0.45rem; }
+    .ds-search input { width: 100%; box-sizing: border-box; background: #020617; color: #e5e7eb; border: 1px solid #1f2937; border-radius: 0.5rem;
+      padding: 0.45rem 0.6rem 0.45rem 1.9rem; font-size: 0.85rem;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5' fill='none' stroke='%239ca3af' stroke-width='2'/%3E%3Cpath d='M15.5 15.5 21 21' stroke='%239ca3af' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-size: 15px; background-position: 0.55rem center; }
+    .ds-search input:focus { outline: none; border-color: var(--accent1); }
+    .ds-search-results { margin-top: 0.35rem; border: 1px solid #1f2937; border-radius: 0.6rem; background: #030b1c; max-height: 320px; overflow-y: auto; }
+    .ds-search-results[hidden] { display: none; }
+    .ds-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; padding: 0.45rem 0.5rem 0.2rem; }
+    .ds-tag { font: inherit; font-size: 0.7rem; border-radius: 999px; padding: 0.12rem 0.5rem; cursor: pointer;
+      border: 1px solid #334155; background: transparent; color: #cbd5e1; }
+    .ds-tag.on, .ds-tag:hover { border-color: var(--accent1); color: var(--accent1); }
+    .ds-result { display: block; width: 100%; text-align: left; font: inherit; color: inherit; background: transparent; border: 0;
+      border-top: 1px solid #111827; padding: 0.5rem 0.6rem; cursor: pointer; }
+    .ds-result:first-of-type { border-top: 0; }
+    .ds-result:hover, .ds-result[aria-selected=true] { background: rgba(34,197,94,0.08); }
+    .ds-result .t { font-size: 0.85rem; font-weight: 600; color: #e5e7eb; display: flex; justify-content: space-between; gap: 0.4rem; }
+    .ds-result .t small { font-weight: 400; color: var(--muted); white-space: nowrap; }
+    .ds-result .d { font-size: 0.75rem; color: var(--muted); margin-top: 0.1rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .ds-result .tg { margin-top: 0.2rem; display: flex; flex-wrap: wrap; gap: 0.2rem; }
+    .ds-result .tg span { font-size: 0.66rem; color: #93c5fd; background: rgba(59,130,246,0.12); border-radius: 999px; padding: 0.05rem 0.4rem; }
+    .ds-result mark { background: rgba(34,197,94,0.25); color: inherit; border-radius: 2px; }
+    .ds-empty { padding: 0.6rem; font-size: 0.8rem; color: var(--muted); }
+    .ds-more { padding: 0.35rem 0.6rem 0.5rem; font-size: 0.72rem; color: var(--muted); }
+    .manage-data-link { display: inline-block; font-size: 0.78rem; margin: 0.2rem 0 0.4rem; color: var(--accent1); }
+    .map-details { display: grid; gap: 0.45rem; margin-top: 0.5rem; padding: 0.6rem; border: 1px solid #1f2937; border-radius: 0.6rem; }
+    .map-details[hidden] { display: none; }
+    .map-details label { display: grid; gap: 0.2rem; font-size: 0.78rem; color: var(--muted); }
+    .map-details input:not([type=checkbox]), .map-details textarea { background: #020617; color: #e5e7eb; border: 1px solid #1f2937; border-radius: 0.4rem; padding: 0.35rem 0.5rem; font: inherit; font-size: 0.85rem; }
+    .map-details .new-map-public { display: flex; gap: 0.4rem; align-items: center; }
+    .pin-from { font-size: 0.72rem; color: var(--muted); margin-top: 0.3rem; font-style: italic; }
     .popup-title {
       font-weight: 600;
       margin-bottom: 0.2rem;
@@ -661,13 +744,28 @@
 
     /* ---------- North lock control ---------- */
     .north-lock-btn { display: flex; align-items: center; justify-content: center; color: #374151; }
-    .north-lock-btn .shackle { transition: transform 0.2s ease; transform-origin: 16px 11px; }
-    .north-lock-btn:not(.is-locked) .shackle { transform: translateY(-2px) rotate(20deg); }
+    .ctrl-emoji { font-size: 17px; line-height: 1; font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
+    .north-lock-btn:not(.is-locked) .ctrl-emoji { opacity: 0.45; filter: grayscale(1); }
+    /* Compass: the needle turns with the map */
+    .mapboxgl-ctrl button.mapboxgl-ctrl-compass .mapboxgl-ctrl-icon { background-image: none !important; display: flex; align-items: center; justify-content: center; }
+    .mapboxgl-ctrl button.mapboxgl-ctrl-compass .mapboxgl-ctrl-icon::before { content: "🧭"; font-size: 17px; line-height: 1; font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
+    /* My location: a navigation arrow (blue when showing your location) */
+    .mapboxgl-ctrl button.mapboxgl-ctrl-geolocate .mapboxgl-ctrl-icon,
+    .mapboxgl-ctrl button.mapboxgl-ctrl-geolocate.mapboxgl-ctrl-geolocate-active .mapboxgl-ctrl-icon,
+    .mapboxgl-ctrl button.mapboxgl-ctrl-geolocate.mapboxgl-ctrl-geolocate-background .mapboxgl-ctrl-icon {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20.5 3.5 3.8 10.6c-.8.3-.7 1.4.1 1.6l6.6 1.5 1.5 6.6c.2.8 1.3.9 1.6.1L20.5 3.5z' fill='%23374151'/%3E%3C/svg%3E") !important;
+      background-size: 18px 18px; background-position: center; background-repeat: no-repeat;
+    }
+    .mapboxgl-ctrl button.mapboxgl-ctrl-geolocate.mapboxgl-ctrl-geolocate-active .mapboxgl-ctrl-icon,
+    .mapboxgl-ctrl button.mapboxgl-ctrl-geolocate.mapboxgl-ctrl-geolocate-background .mapboxgl-ctrl-icon {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20.5 3.5 3.8 10.6c-.8.3-.7 1.4.1 1.6l6.6 1.5 1.5 6.6c.2.8 1.3.9 1.6.1L20.5 3.5z' fill='%232563eb'/%3E%3C/svg%3E") !important;
+    }
     .north-lock-btn.is-locked { color: #fff; background: #16a34a; }
     .north-lock-btn.is-locked:hover { background: #15803d; }
-    .three-d-btn { font-weight: 700; font-size: 12px; color: #374151; }
-    .three-d-btn.is-on { color: #fff; background: #2563eb; }
-    .three-d-btn.is-on:hover { background: #1d4ed8; }
+    .three-d-btn { display: flex; align-items: center; justify-content: center; }
+    .three-d-btn { color: #6b7280; }
+    .three-d-btn.is-on { color: #2563eb; }
+    .three-d-btn.is-on:hover { color: #1d4ed8; }
     /* On phones the tray handle sits over the top of the map */
     @media (max-width: 850px) { .mapboxgl-ctrl-top-left { top: 56px; } }
 
@@ -675,6 +773,27 @@
 
     /* ---------- Layers panel ---------- */
     .layer-group-title { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0.6rem 0 0.3rem; }
+    details.layer-group > summary.layer-group-title { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 0.35rem; }
+    details.layer-group > summary.layer-group-title::-webkit-details-marker { display: none; }
+    details.layer-group > summary.layer-group-title::before {
+      content: ""; width: 0.35rem; height: 0.35rem; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
+      transform: rotate(-45deg); transition: transform 0.15s ease; flex: none;
+    }
+    details.layer-group[open] > summary.layer-group-title::before { transform: rotate(45deg); }
+    details.layer-group > summary .legend-count { text-transform: none; letter-spacing: 0; color: var(--accent1); }
+    .layer-actions { display: flex; align-items: center; gap: 0.5rem; font-size: 0.72rem; margin-top: 0.15rem; }
+    .layer-status { color: var(--muted); }
+    .layer-app-title { font-size: 0.72rem; color: var(--muted, #9ca3af); margin: 0.2rem 0 0.3rem; }
+    .layer-subgroup-title { font-size: 0.75rem; font-weight: 600; color: var(--accent1); margin: 0.5rem 0 0.1rem; text-transform: none; }
+    .layer-status[data-kind=error] { color: #f87171; }
+    .layer-toggle .legend-swatch { margin-right: 0.3rem; }
+    /* Overlay popups (scripts/vector-overlays.js) */
+    .ov-table { border-collapse: collapse; margin-top: 0.35rem; font-size: 0.75rem; width: 100%; }
+    .ov-table th { text-align: left; font-weight: 600; padding: 0.1rem 0.5rem 0.1rem 0; vertical-align: top; white-space: nowrap; opacity: 0.75; }
+    .ov-table td { padding: 0.1rem 0; vertical-align: top; overflow-wrap: anywhere; }
+    .ov-table details summary { cursor: pointer; }
+    .ov-table a { color: var(--accent1); }
+    .ov-source { margin-top: 0.45rem; font-size: 0.68rem; opacity: 0.65; }
     .layer-row { border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.35rem 0.5rem; margin-bottom: 0.35rem; }
     .layer-row label.layer-toggle { display: flex; align-items: center; gap: 0.4rem; font-size: 0.83rem; cursor: pointer; }
     .layer-meta { font-size: 0.72rem; color: var(--muted); margin: 0.2rem 0 0 1.35rem; }
@@ -685,7 +804,13 @@
     .layer-legend .legend-swatch { width: 8px; height: 8px; margin-right: 0.2rem; }
 
     /* ---------- Dataset view controls ---------- */
-    .dataset-actions { display: flex; gap: 0.35rem; margin-top: 0.45rem; }
+    .dataset-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin-top: 0.45rem; }
+    .export-format {
+      padding: 0.22rem 0.4rem; border-radius: 0.5rem; border: 1px solid var(--border);
+      background: #020617; color: inherit; font: inherit; font-size: 0.78rem;
+    }
+    .export-status { font-size: 0.75rem; color: var(--muted); }
+    .export-help { flex-basis: 100%; margin: 0.1rem 0 0; font-size: 0.72rem; }
     .dataset-actions .btn { padding: 0.25rem 0.7rem; font-size: 0.78rem; }
     .data-view-hint { font-size: 0.75rem; color: #fbbf24; margin-top: 0.4rem; }
     .data-view-hint[hidden] { display: none; }
@@ -704,12 +829,51 @@
     .new-map-row input[type=text], .pin-form input, .pin-form select, .pin-form textarea {
       width: 100%; background: var(--bg-alt); color: var(--text); border: 1px solid var(--border);
       border-radius: 0.4rem; padding: 0.35rem 0.5rem; font: inherit; font-size: 0.82rem; }
+    .my-map-item { display: flex; flex-direction: row; align-items: stretch; gap: 0; padding: 0 !important; }
+    .my-map-open { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; text-align: left;
+      background: none; border: 0; color: inherit; font: inherit; padding: 0.45rem 0.6rem; cursor: pointer; }
+    .my-map-edit { background: none; border: 0; border-left: 1px solid rgba(148,163,184,0.15); padding: 0 0.6rem; cursor: pointer; font-size: 0.85rem;
+      opacity: 0.55; transition: opacity 0.15s; }
+    .my-map-item:hover .my-map-edit, .my-map-edit:focus-visible { opacity: 1; }
+    .map-details { margin: 0.4rem 0 0.6rem; }
+    .also-show { margin-top: 0.5rem; font-size: 0.8rem; }
+    .also-show summary { cursor: pointer; color: var(--muted); }
+    .also-show summary:hover { color: var(--text); }
     .new-map-public { font-size: 0.75rem; color: var(--muted); display: flex; gap: 0.3rem; align-items: center; margin-top: 0.3rem; }
     #edit-bar { border: 1px solid var(--accent-strong); border-radius: 0.6rem; padding: 0.5rem 0.6rem; margin-top: 0.5rem; }
     #edit-bar .edit-title { font-size: 0.8rem; color: var(--muted); margin-bottom: 0.4rem; }
     #edit-bar .edit-title strong { color: var(--text); }
     .edit-actions { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+    .all-maps-btn { width: 100%; margin-bottom: 0.2rem; }
+    .all-maps-btn[hidden] { display: none; }
+    .all-maps-head { display: flex; justify-content: space-between; align-items: center; }
+    .all-maps-list { max-height: min(60vh, 480px); overflow-y: auto; }
+    #all-maps-filter { width: 100%; padding: 0.45rem 0.55rem; border-radius: 0.5rem; border: 1px solid var(--border); background: #020617; color: inherit; font: inherit; font-size: 0.85rem; }
     #add-pin-btn.active { background: var(--accent1); color: #020617; }
+    #draw-line-btn.active, #draw-area-btn.active { background: var(--accent1); color: #020617; }
+    /* Import dialog (scripts/importer.js) */
+    .import-dialog {
+      border: 1px solid var(--border); border-radius: 0.9rem; padding: 0;
+      background: #0b1220; color: #e5e7eb; width: min(460px, calc(100vw - 32px));
+    }
+    .import-dialog::backdrop { background: rgba(2, 6, 23, 0.6); }
+    .import-form { display: flex; flex-direction: column; gap: 0.6rem; padding: 1rem; }
+    .import-form h3 { font-size: 0.95rem; margin: 0; }
+    .import-sources { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 0.25rem 0.9rem; font-size: 0.85rem; }
+    .import-form input[type=url], .import-form input[type=text], .import-form input[type=file] {
+      width: 100%; padding: 0.45rem 0.55rem; border-radius: 0.5rem; border: 1px solid var(--border);
+      background: #020617; color: inherit; font: inherit; font-size: 0.85rem; margin-bottom: 0.3rem;
+    }
+    .import-options { font-size: 0.82rem; }
+    .import-options summary { cursor: pointer; color: var(--muted); margin-bottom: 0.4rem; }
+    .import-options label { display: flex; flex-direction: column; gap: 0.2rem; margin-bottom: 0.4rem; }
+    .import-options label.inline { flex-direction: row; align-items: center; gap: 0.4rem; }
+    .import-status { font-size: 0.82rem; min-height: 1.2em; color: var(--muted); margin: 0; }
+    .import-status[data-kind=ok] { color: #4ade80; }
+    .import-status[data-kind=warn] { color: #facc15; }
+    .import-status[data-kind=error] { color: #f87171; }
+    .import-actions { display: flex; justify-content: flex-end; gap: 0.4rem; }
+
     .btn.danger { background: #7f1d1d; border-color: #991b1b; }
     #editor-status { font-size: 0.75rem; margin-top: 0.35rem; min-height: 1em; }
     .pin-form { display: flex; flex-direction: column; gap: 0.45rem; color: #111827; }
@@ -791,11 +955,10 @@
             <div id="legend-items"><p class="hint">Loading…</p></div>
           </div>
 
-          <!-- Extra datasets and external overlays (scripts/layers.js) -->
+          <!-- Outside layers: government agencies and connected apps (scripts/layers.js) -->
           <details class="filter-group collapsible" id="layers-panel">
             <summary><h3>Layers</h3></summary>
-            <p class="hint">Show more datasets and outside map layers on top of the active dataset.</p>
-            <div id="layers-datasets"></div>
+            <p class="hint">Outside data shown on top of the map, from government agencies and connected apps. Layers are view-only.</p>
             <div id="layers-overlays"></div>
           </details>
 
@@ -803,37 +966,65 @@
           <div id="my-maps" class="filter-group" hidden>
             <h3>My maps</h3>
             <div id="my-maps-list" class="my-maps-list"></div>
+            <button type="button" id="all-maps-btn" class="btn all-maps-btn" hidden>📂 All my maps</button>
+            <dialog id="all-maps-dialog" class="import-dialog all-maps-dialog" aria-labelledby="all-maps-title">
+              <div class="import-form">
+                <div class="all-maps-head"><h3 id="all-maps-title">My maps</h3><button type="button" class="btn" data-close aria-label="Close">✕</button></div>
+                <input type="search" id="all-maps-filter" placeholder="Find a map" autocomplete="off" aria-label="Find one of my maps">
+                <div id="all-maps-list" class="my-maps-list all-maps-list"></div>
+              </div>
+            </dialog>
+            <form id="map-details" class="map-details" hidden>
+              <label>Name<input name="name" maxlength="120" required></label>
+              <label>Description<textarea name="description" rows="3" maxlength="1000" placeholder="What's on this map, and who is it for?"></textarea></label>
+              <label>Tags <span class="hint">(comma-separated, up to 10; help people find public maps)</span><input name="tags" placeholder="hiking, colorado, trailheads"></label>
+              <label class="new-map-public"><input type="checkbox" name="public"> Public (anyone can find and view it)</label>
+              <div class="edit-actions"><button type="submit" class="btn primary">Save details</button><button type="button" class="btn" data-cancel>Cancel</button></div>
+            </form>
             <div class="new-map-row">
               <input type="text" id="new-map-name" placeholder="New map name" maxlength="120" />
               <button type="button" id="create-map-btn" class="btn primary">Create</button>
             </div>
             <label class="new-map-public"><input type="checkbox" id="new-map-public" /> Public (anyone can view)</label>
+            <a class="manage-data-link" href="/mydata/">Review &amp; manage all my pins →</a>
             <div id="edit-bar" hidden>
               <div class="edit-title">Editing <strong id="edit-bar-title"></strong></div>
               <div class="edit-actions">
-                <button type="button" id="add-pin-btn" class="btn primary">+ Add pin</button>
-                <button type="button" id="delete-map-btn" class="btn danger">Delete map</button>
+                <button type="button" id="add-pin-btn" class="btn primary" title="Add a pin: click the map to place it">📍 New</button>
+                <button type="button" id="pin-here-btn" class="btn" title="Pin my current location">📍 My location</button>
+                <button type="button" id="draw-line-btn" class="btn" title="Draw a line: click-drag on the map to trace it, release to finish">✏️ Line</button>
+                <button type="button" id="draw-area-btn" class="btn" title="Draw an area: click-drag on the map to trace its outline, release to finish">🔷 Area</button>
+                <button type="button" id="delete-map-btn" class="btn danger" title="Delete this map and all its pins">🗑️ Map</button>
               </div>
-              <p class="hint" style="margin-top:0.35rem;">Click a pin to edit or delete it.</p>
+              <p class="hint" style="margin-top:0.35rem;">Click a pin, then ✏️ to edit or delete it.</p>
             </div>
             <div id="editor-status"></div>
           </div>
 
           <!-- Dataset selector -->
           <div class="filter-group" style="margin-top: 0.5rem;">
-            <h3>Dataset</h3>
+            <h3>Map</h3>
+            <div class="ds-search" id="ds-search">
+              <input type="search" id="ds-search-input" placeholder="Search public maps (name, description, tags)" autocomplete="off" aria-label="Search public maps" aria-controls="ds-search-results">
+              <div class="ds-search-results" id="ds-search-results" role="listbox" hidden></div>
+            </div>
             <select id="dataset-select" style="width:100%; background:#020617; color:#e5e7eb; border:1px solid #1f2937; border-radius:0.5rem; padding:0.35rem 0.5rem; font-size:0.85rem;">
                 <option value="">Loading…</option>
             </select>
             <div class="dataset-actions">
               <button type="button" id="zoom-to-data" class="btn">Zoom to data</button>
             </div>
+            <details class="also-show">
+              <summary>Also show other maps</summary>
+              <p class="hint">Draw more of your maps, or public ones you've opened, on top of this one.</p>
+              <div id="layers-datasets"></div>
+            </details>
             <p id="data-view-hint" class="data-view-hint" hidden>
               <span></span>
               <button type="button" class="link-btn" id="data-view-hint-zoom">Show them</button>
             </p>
             <p class="hint" style="margin-top:0.4rem;">
-                Choose which dataset GeoVivé displays. Switching keeps your current view.
+                Choose which map GeoVivé displays. Switching keeps your current view.
             </p>
             <br>
 
@@ -871,7 +1062,6 @@
         <div class="status-pill" id="status-zoom">
           Zoom: <span id="zoom-value">–</span>
         </div>
-        <div class="badge">v0.1 · beta</div>
       </div>
     </section>
   </main>
@@ -1005,28 +1195,61 @@
       return { geojson: { type: "FeatureCollection", features }, categories };
     }
 
+    // The dataset menu lists your maps and the public maps you've opened recently.
+    // Public maps are found with the search box (scripts/dataset-search.js), so the
+    // menu stays short however many public maps there are.
+    const RECENT_KEY = "geovive:recentDatasets";
+    function recentIds() { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]"); } catch { return []; } }
+    function rememberDataset(id) {
+      if (!id) return;
+      const ids = [id, ...recentIds().filter(x => x !== id)].slice(0, 8);
+      try { localStorage.setItem(RECENT_KEY, JSON.stringify(ids)); } catch { /* ignore */ }
+    }
+
     async function refreshDatasetOptions() {
       const select = document.getElementById("dataset-select");
       try {
-        const { datasets } = await apiGet("/v1/datasets");
+        const current = select.value;
+        const want = [...new Set([DEFAULT_DATASET_ID, ...recentIds(), current.startsWith("api:") ? current.slice(4) : ""].filter(Boolean))];
+        const { datasets } = await apiGet(`/v1/datasets?scope=mine&ids=${encodeURIComponent(want.join(","))}`);
         datasetMeta = new Map(datasets.map(d => [d.datasetId, d]));
         window.dispatchEvent(new CustomEvent("geovive:datasets-listed", { detail: { datasets } }));
-        const current = select.value;
+        const me = window.userManager ? (await window.userManager.getUser())?.profile?.sub : null;
+        const mine = datasets.filter(d => me && d.ownerId === me);
+        const order = new Map(want.map((id, i) => [id, i]));
+        const others = datasets.filter(d => !mine.includes(d)).sort((a, b) => (order.get(a.datasetId) ?? 99) - (order.get(b.datasetId) ?? 99));
         select.innerHTML = "";
-        datasets.forEach(d => {
-          const opt = document.createElement("option");
-          opt.value = `api:${d.datasetId}`;
-          opt.textContent = `${d.name}${d.visibility === "private" ? " (private)" : ""}`;
-          select.appendChild(opt);
-        });
+        const group = (label, list) => {
+          if (!list.length) return;
+          const g = document.createElement("optgroup"); g.label = label;
+          list.forEach(d => {
+            const opt = document.createElement("option");
+            opt.value = `api:${d.datasetId}`;
+            opt.textContent = `${d.name}${d.visibility === "private" ? " (private)" : ""}`;
+            g.appendChild(opt);
+          });
+          select.appendChild(g);
+        };
+        group("Your maps", mine);
+        group("Public maps", others);
         if ([...select.options].some(o => o.value === current)) select.value = current;
         return datasets;
       } catch (e) {
         console.warn("Dataset list unavailable", e);
-        select.innerHTML = '<option value="">No datasets available</option>';
+        select.innerHTML = '<option value="">No maps available</option>';
         return [];
       }
     }
+
+    // Open any dataset by id (from search or a link): add it to the menu, then show it.
+    async function openDataset(datasetId, opts = {}) {
+      rememberDataset(datasetId);
+      await refreshDatasetOptions();
+      const key = `api:${datasetId}`;
+      document.getElementById("dataset-select").value = key;
+      await applyDataset(key, opts);
+    }
+
 
     let loadedCategories = [];
 
@@ -1209,6 +1432,7 @@
       applyFilters();
 
       currentGeojson = geojson;
+      if (key.startsWith("api:")) rememberDataset(key.slice(4));
       window.dispatchEvent(new CustomEvent("geovive:dataset-applied", { detail: { key } }));
 
       // The view only moves when explicitly asked (first visit, or "Zoom to data")
@@ -1251,7 +1475,7 @@
       }).length;
       hint.hidden = inView > 0;
       hint.querySelector("span").textContent =
-        `None of this dataset's ${total} place${total === 1 ? "" : "s"} are in view.`;
+        `None of this map's ${total} place${total === 1 ? "" : "s"} are in view.`;
     }
     GeoVivéMap.on("moveend", updateInViewHint);
 
@@ -1277,9 +1501,10 @@
       features.forEach((feature) => {
         const props = feature.properties || {};
         const id = props.id || (crypto.randomUUID?.() ?? String(Math.random()));
-        const name = escapeHtml(props.name || "Untitled");
+        const uni = window.GeoVivePin?.uni || (v => v);
+        const name = escapeHtml(uni(props.name || "Untitled"));
         const category = escapeHtml(props.category || "location");
-        const description = escapeHtml(props.description || props.country || "");
+        const description = escapeHtml(uni(props.description || props.country || "").replace(/[#*`_>\[\]]/g, "").replace(/\s+/g, " ").slice(0, 140));
 
         const item = document.createElement("div");
         item.className = "feature-list-item";
@@ -1310,14 +1535,7 @@
           // Zoom in to the pin, never out from the current view
           GeoVivéMap.flyTo({ center: [lng, lat], zoom: Math.max(GeoVivéMap.getZoom(), PIN_ZOOM), essential: true });
 
-          new mapboxgl.Popup({ closeOnMove: true })
-            .setLngLat([lng, lat])
-            .setHTML(`
-              <div class="popup-title">${name}</div>
-              <div class="popup-category">${category.toUpperCase()}</div>
-              <div class="popup-desc">${description}</div>
-            `)
-            .addTo(GeoVivéMap);
+          window.GeoVivePin.show(GeoVivéMap, [lng, lat], props, feature);
         });
 
         itemsContainer.appendChild(item);
@@ -1325,8 +1543,8 @@
     }
 
     // ---- Categories: defined by each dataset ----------------------------------
-    // A dataset's categories come from its pin types (featureTypes, set by a
-    // connected app) or, failing that, from the category values its places use.
+    // Every pin is a location, an event or an alert (datamodel.yaml); the legend
+    // shows those three with counts.
     const CATEGORY_PALETTE = ["#3b82f6", "#22c55e", "#f97316", "#a855f7", "#ef4444", "#14b8a6", "#eab308", "#ec4899", "#64748b"];
 
     function titleCase(v) {
@@ -1357,9 +1575,8 @@
         counts.set(c, (counts.get(c) || 0) + 1);
       });
       const cats = [];
-      // A dataset's own types first; people's maps (no source) get the default pin types
-      const types = meta?.featureTypes?.length ? meta.featureTypes
-        : (meta && !meta.source ? DEFAULT_PIN_TYPES : []);
+      // Every dataset uses the data model's three categories (datamodel.yaml)
+      const types = DEFAULT_PIN_TYPES;
       types.forEach(t => cats.push({ key: t.key, label: t.label, color: t.color }));
       [...counts.keys()].sort().forEach(k => {
         if (!cats.some(c => c.key === k)) cats.push({ key: k, label: titleCase(k), color: categoryColor[k] });
@@ -1391,7 +1608,7 @@
     function renderLegend(cats) {
       const box = document.getElementById("legend-items");
       if (!box) return;
-      if (!cats.length) { box.innerHTML = '<p class="hint">No places in this dataset yet.</p>'; return; }
+      if (!cats.length) { box.innerHTML = '<p class="hint">No places on this map yet.</p>'; return; }
       box.innerHTML = "";
       cats.forEach(c => {
         const row = document.createElement("div");
@@ -1449,18 +1666,7 @@
         if (isPoint && window.GeoViveEditor?.onFeatureClick?.(feature, e)) return;
 
         const props = feature.properties || {};
-        const name = escapeHtml(props.name || "Untitled");
-        const category = escapeHtml(props.category || "location");
-        const description = escapeHtml(props.description || props.country || "");
-
-        new mapboxgl.Popup({ closeOnMove: true })
-          .setLngLat(isPoint ? feature.geometry.coordinates : e.lngLat)
-          .setHTML(`
-            <div class="popup-title">${name}</div>
-            <div class="popup-category">${category.toUpperCase()}</div>
-            <div class="popup-desc">${description}</div>
-          `)
-          .addTo(GeoVivéMap);
+        window.GeoVivePin.show(GeoVivéMap, isPoint ? feature.geometry.coordinates : e.lngLat, props, feature);
         showFullDetail(props);
       });
       resolveGeoViveReady();
@@ -1469,6 +1675,14 @@
     // Map scale (bottom-left): miles/feet and kilometers/meters
     GeoVivéMap.addControl(new mapboxgl.ScaleControl({ maxWidth: 120, unit: "imperial" }), "bottom-left");
     GeoVivéMap.addControl(new mapboxgl.ScaleControl({ maxWidth: 120, unit: "metric" }), "bottom-left");
+
+    // My location (top-left): centers on the device's location and shows it as a dot.
+    // The location stays in the browser; nothing is saved unless the user adds a pin.
+    const geolocate = new mapboxgl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: true }, trackUserLocation: false, showAccuracyCircle: true,
+      fitBoundsOptions: { maxZoom: 15 }
+    });
+    GeoVivéMap.addControl(geolocate, "top-left");
 
     // Compass (top-left): the needle shows the map's rotation; click to reset
     // to north-up and flat.
@@ -1488,14 +1702,8 @@
         this.button = document.createElement("button");
         this.button.type = "button";
         this.button.className = "north-lock-btn";
-        this.button.innerHTML = `
-          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none"
-               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="5" y="11" width="14" height="10" rx="2"></rect>
-            <path class="shackle" d="M8 11V7a4 4 0 0 1 8 0v4"></path>
-            <text x="12" y="19" text-anchor="middle" font-size="7" font-weight="700"
-                  fill="currentColor" stroke="none">N</text>
-          </svg>`;
+        this.button.innerHTML = `<span class="ctrl-emoji" aria-hidden="true">🔒</span>`;
+        this.button.title = "Lock north up";
         this.button.addEventListener("click", () => this.set(!this.locked));
         this.container.appendChild(this.button);
         let saved = false;
@@ -1576,7 +1784,10 @@
         this.button = document.createElement("button");
         this.button.type = "button";
         this.button.className = "three-d-btn";
-        this.button.textContent = "3D";
+        this.button.innerHTML = `<svg class="ctrl-3d" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <rect x="2" y="3" width="20" height="18" rx="4" fill="currentColor"/>
+          <text x="12" y="16.6" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#fff">3D</text></svg>`;
+        this.button.setAttribute("aria-label", "3D terrain and buildings");
         this.button.addEventListener("click", () => this.set(!this.on, { move: true }));
         this.container.appendChild(this.button);
         let saved = false;
@@ -1624,6 +1835,7 @@
       zoomToData,
       loadDatasetFeatures,
       get datasets() { return [...datasetMeta.values()]; },
+      openDataset,
       refreshDatasetOptions,
       get currentDataset() { return currentDataset; },
       ready: new Promise(r => (resolveGeoViveReady = r))
@@ -1656,7 +1868,7 @@
       } catch (e) {
         console.error(e);
         const hint = datasetSelect.parentElement.querySelector(".hint");
-        if (hint) hint.textContent = `Could not load dataset: ${e.message}`;
+        if (hint) hint.textContent = `Could not load map: ${e.message}`;
       }
     });
     
@@ -1668,6 +1880,10 @@
 <script type="module" src="./scripts/editor.js"></script>
 <script type="module" src="./scripts/open.js"></script>
   <script type="module" src="./scripts/layers.js"></script>
+  <script type="module" src="./scripts/importer.js"></script>
+  <script type="module" src="./scripts/exporter.js"></script>
+  <script type="module" src="./scripts/app-layers.js"></script>
+  <script type="module" src="./scripts/dataset-search.js"></script>
 
 
 </body>

@@ -7,9 +7,15 @@
 // Choices are remembered per browser and survive map style changes.
 
 import { CATALOG, tileUrl } from "./catalog.js";
+import { loadVector, addVector, removeVector, setVectorOpacity, boundsOf } from "./vector-overlays.js";
 
 const STATE_KEY = "geovive:layers";
-const state = loadState();          // { datasets: [id], overlays: { id: { on, opacity } } }
+const state = loadState();          // { datasets: [id], overlays: { id: { on, opacity } }, groups: { name: open } }
+const GROUPS_OPEN_BY_DEFAULT = new Set(["Base & terrain", "Water", "Land & boundaries"]);
+const status = new Map();           // overlay id -> "loading" | error message
+let appEntries = [];                // layers brought by a connected app (scripts/app-layers.js)
+let appInfo = null;                 // { appId, appName, error }
+const allEntries = () => CATALOG.concat(appEntries);
 const loaded = new Map();          // datasetId -> { geojson, categories }
 const listening = new Set();                 // layer ids with click/hover handlers
 
@@ -46,11 +52,27 @@ function beforeLabels() {
 
 const overlaySource = (id) => `overlay-${id}`;
 
+const opacityOf = (entry) => state.overlays[entry.id]?.opacity ?? entry.opacity ?? 0.9;
+
+// Vector overlays load through the relay first, then draw (unless turned off meanwhile).
+async function addVectorOverlay(entry) {
+  status.set(entry.id, "loading"); updateRow(entry);
+  try {
+    const fc = await loadVector(entry);
+    status.delete(entry.id);
+    if (state.overlays[entry.id]?.on && map().isStyleLoaded()) addVector(map(), entry, fc, opacityOf(entry));
+  } catch (e) {
+    console.error(e);
+    status.set(entry.id, e.message || "Couldn't load this layer.");
+  }
+  updateRow(entry);
+}
+
 function addOverlay(entry) {
   const m = map();
   if (!m.isStyleLoaded()) return;
-  const cfg = state.overlays[entry.id] || {};
-  const opacity = cfg.opacity ?? entry.opacity;
+  if (entry.type === "vector") { addVectorOverlay(entry); return; }
+  const opacity = opacityOf(entry);
   if (!m.getSource(overlaySource(entry.id))) {
     m.addSource(overlaySource(entry.id), {
       type: "raster",
@@ -71,6 +93,7 @@ function addOverlay(entry) {
 
 function removeOverlay(entry) {
   const m = map();
+  if (entry.type === "vector") { removeVector(m, entry); status.delete(entry.id); updateRow(entry); return; }
   if (m.getLayer(overlaySource(entry.id))) m.removeLayer(overlaySource(entry.id));
   if (m.getSource(overlaySource(entry.id))) m.removeSource(overlaySource(entry.id));
 }
@@ -84,6 +107,7 @@ function setOverlay(entry, on) {
 function setOverlayOpacity(entry, opacity) {
   state.overlays[entry.id] = { ...(state.overlays[entry.id] || {}), opacity };
   saveState();
+  if (entry.type === "vector") { setVectorOpacity(map(), entry, opacity); return; }
   if (map().getLayer(overlaySource(entry.id))) {
     map().setPaintProperty(overlaySource(entry.id), "raster-opacity", opacity);
   }
@@ -178,8 +202,8 @@ function renderDatasets() {
   if (!box) return;
   const active = activeDatasetId();
   const others = window.GeoVive.datasets.filter(d => d.datasetId !== active);
-  if (!others.length) { box.innerHTML = ""; return; }
-  box.innerHTML = `<div class="layer-group-title">More datasets</div>`;
+  if (!others.length) { box.innerHTML = `<p class="hint">No other maps yet. Create one, or open a public one with search.</p>`; return; }
+  box.innerHTML = "";
   others.forEach(d => {
     const on = state.datasets.includes(d.datasetId);
     const cats = loaded.get(d.datasetId)?.categories || [];
@@ -196,43 +220,114 @@ function renderDatasets() {
   });
 }
 
+const rowEls = new Map();            // overlay id -> row element
+
+// Status line and Zoom button of a vector overlay row
+function updateRow(entry) {
+  const row = rowEls.get(entry.id);
+  if (!row) return;
+  const st = status.get(entry.id);
+  const el = row.querySelector(".layer-status");
+  if (el) {
+    el.textContent = st === "loading" ? "Loading…" : (st || "");
+    el.dataset.kind = st && st !== "loading" ? "error" : "";
+  }
+  const zoom = row.querySelector(".layer-zoom");
+  if (zoom) zoom.hidden = !(state.overlays[entry.id]?.on && !st);
+}
+
+function groupCount(g) {
+  return allEntries().filter(e => e.group === g && state.overlays[e.id]?.on).length;
+}
+
 function renderOverlays() {
   const box = $("layers-overlays");
   if (!box) return;
   box.innerHTML = "";
-  const groups = [...new Set(CATALOG.map(e => e.group))];
-  groups.forEach(g => {
-    const title = document.createElement("div");
-    title.className = "layer-group-title";
-    title.textContent = g;
-    box.appendChild(title);
-    CATALOG.filter(e => e.group === g).forEach(entry => {
-      const cfg = state.overlays[entry.id] || {};
-      const on = !!cfg.on;
-      const opacity = cfg.opacity ?? entry.opacity;
+  rowEls.clear();
+  state.groups = state.groups || {};
+  const groups = [...new Set(allEntries().map(e => e.group))];
+  if (appInfo?.error) {
+    const note = document.createElement("p");
+    note.className = "hint layer-status";
+    note.dataset.kind = "error";
+    note.textContent = `Layers from this app couldn't be loaded: ${appInfo.error}`;
+    box.appendChild(note);
+  }
+  // Connected apps share one AppConnect section, whatever app handed layers over.
+  if (appEntries.length) box.appendChild(groupSection("AppConnect", appEntries, {
+    app: true, intro: `From ${appInfo?.appName || "a connected app"} · shown for this visit only`
+  }));
+  groups.filter(g => g !== "AppConnect").forEach(g => box.appendChild(groupSection(g, allEntries().filter(e => e.group === g))));
+}
+
+function groupSection(g, entries, { app = false, intro } = {}) {
+  const details = document.createElement("details");
+  details.className = "layer-group" + (app ? " layer-appconnect" : "");
+  const count = document.createElement("span");
+  count.className = "legend-count";
+  const setCount = () => { const n = entries.filter(e => state.overlays[e.id]?.on).length; count.textContent = n ? `${n} on` : ""; };
+  details.open = state.groups[g] ?? (GROUPS_OPEN_BY_DEFAULT.has(g) || (app && entries.some(e => state.overlays[e.id]?.on)));
+  const summary = document.createElement("summary");
+  summary.className = "layer-group-title";
+  summary.append(document.createTextNode(g + " "), count);
+  details.appendChild(summary);
+  details.addEventListener("toggle", () => { state.groups[g] = details.open; saveState(); });
+  if (intro) {
+    const p = document.createElement("div");
+    p.className = "layer-app-title";
+    p.textContent = intro;
+    details.appendChild(p);
+  }
+  let sub = null;
+  entries.forEach(entry => {
+    if (app && entry.subgroup !== sub) {
+      sub = entry.subgroup;
+      const h = document.createElement("div");
+      h.className = "layer-subgroup-title";
+      h.textContent = sub;
+      details.appendChild(h);
+    }
+    details.appendChild(layerRow(entry, setCount));
+  });
+  setCount();
+  return details;
+}
+
+function layerRow(entry, setCount) {
+      const on = !!state.overlays[entry.id]?.on;
       const row = document.createElement("div");
       row.className = "layer-row";
       row.innerHTML = `
-        <label class="layer-toggle"><input type="checkbox" ${on ? "checked" : ""} /> ${esc(entry.name)}</label>
+        <label class="layer-toggle"><input type="checkbox" ${on ? "checked" : ""} />
+          ${entry.color ? `<span class="legend-swatch" style="background:${esc(entry.color)}"></span>` : ""}${esc(entry.name)}</label>
         <div class="layer-meta">${esc(entry.description)}
-          <a href="${esc(entry.source)}" target="_blank" rel="noopener">Source</a> · ${esc(entry.license)}</div>
+          ${entry.source ? `<a href="${esc(entry.source)}" target="_blank" rel="noopener">Source</a> · ` : (entry.publisher ? `${esc(entry.publisher)} · ` : "")}${esc(entry.license)}</div>
+        ${entry.type === "vector" ? `<div class="layer-actions"><span class="layer-status"></span>
+          <button type="button" class="link-btn layer-zoom" hidden>Zoom to layer</button></div>` : ""}
         <div class="layer-opacity" ${on ? "" : "hidden"}>
-          Opacity <input type="range" min="0.1" max="1" step="0.05" value="${opacity}" aria-label="${esc(entry.name)} opacity" />
+          Opacity <input type="range" min="0.1" max="1" step="0.05" value="${opacityOf(entry)}" aria-label="${esc(entry.name)} opacity" />
         </div>`;
       const [toggle, slider] = row.querySelectorAll("input");
       toggle.addEventListener("change", () => {
         setOverlay(entry, toggle.checked);
         row.querySelector(".layer-opacity").hidden = !toggle.checked;
+        setCount();
+        updateRow(entry);
       });
       slider.addEventListener("input", () => setOverlayOpacity(entry, Number(slider.value)));
-      box.appendChild(row);
-    });
-  });
+      row.querySelector(".layer-zoom")?.addEventListener("click", async () => {
+        const b = boundsOf(await loadVector(entry));
+        if (!b.isEmpty()) map().fitBounds(b, { padding: 40 });
+      });
+      rowEls.set(entry.id, row);
+      queueMicrotask(() => updateRow(entry));
+      return row;
 }
 
 // Re-create everything after a style switch (setStyle drops custom layers).
 function reapplyAll() {
-  CATALOG.forEach(e => { if (state.overlays[e.id]?.on) addOverlay(e); });
+  allEntries().forEach(e => { if (state.overlays[e.id]?.on) addOverlay(e); });
   state.datasets.forEach(id => drawDataset(id));
 }
 
@@ -247,6 +342,21 @@ async function init() {
   reapplyAll();
 
   m.on("style.load", () => setTimeout(reapplyAll, 0));
+
+  // A connected app's layers come and go with the app (scripts/app-layers.js)
+  window.addEventListener("geovive:app-layers", (e) => {
+    const { appId, appName, entries = [], turnOn = [], error } = e.detail || {};
+    appEntries.forEach(old => { if (!entries.some(n => n.id === old.id)) removeOverlay(old); });
+    appEntries = entries;
+    appInfo = appId ? { appId, appName, error } : null;
+    if (turnOn.length) {
+      turnOn.forEach(id => { state.overlays[id] = { ...(state.overlays[id] || {}), on: true }; });
+      saveState();
+    }
+    renderOverlays();
+    appEntries.forEach(entry => { if (state.overlays[entry.id]?.on) addOverlay(entry); });
+    if (turnOn.length) { const panel = document.getElementById("layers-panel"); if (panel) panel.open = true; }
+  });
 
   // Dataset list changes (sign-in, new maps): drop layers the user can no longer see
   window.addEventListener("geovive:datasets-listed", async (e) => {

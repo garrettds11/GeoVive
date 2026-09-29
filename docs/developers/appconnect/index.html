@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AppConnect Requirements · GeoVivé</title>
+  <link rel="icon" href="/assets/favicon-32x32.png" />
+  <link rel="stylesheet" href="/docs/docs.css" />
+</head>
+<body>
+  <main class="page">
+    <header>
+      <div class="top">
+        <a class="brand" href="/docs/"><h1>Geo<span>Vivé</span> Docs</h1></a>
+        <span class="tagline">AppConnect · what to bring</span>
+      </div>
+      <nav class="tabs" aria-label="Documentation">
+        <div class="tabs-main">
+          <a href="/docs/">User guide</a>
+          <a href="/docs/developers/">Developers</a>
+          <a href="/docs/developers/appconnect/" class="active" aria-current="page">AppConnect</a>
+          <a href="/docs/terms/appconnect/">Terms</a>
+          <a href="/docs/security/">Security</a>
+        </div>
+        <a class="tabs-map" href="/">Open the map →</a>
+      </nav>
+    </header>
+
+    <nav class="toc">
+      <a href="#what">What AppConnect is</a>
+      <a href="#checklist">Checklist</a>
+      <a href="#domain">1. Your domain</a>
+      <a href="#list">2. A layer list</a>
+      <a href="#sources">3. Data sources</a>
+      <a href="#display">4. What people see</a>
+      <a href="#rights">5. Credits and rights</a>
+      <a href="#origins">6. Return addresses</a>
+      <a href="#process">How connecting works</a>
+      <a href="#leaving">Leaving</a>
+      <a href="#rules">Ongoing rules</a>
+    </nav>
+
+    <h2 id="what">What AppConnect is</h2>
+    <p>GeoVivé is a shared map canvas. It keeps no subject-matter layers of its own. Your app brings its layers when your users open GeoVivé from your app, and GeoVivé shows them in the <strong>AppConnect</strong> section of the Layers panel for that visit only.</p>
+    <ul>
+      <li><strong>Your data stays yours.</strong> GeoVivé doesn't list your layers for other users or other apps, and doesn't offer them for download.</li>
+      <li><strong>No code changes on our side.</strong> You describe your layers in a file on your own site. Change the file and GeoVivé picks up the change.</li>
+      <li><strong>No meetings needed.</strong> Signing up is semi-self-service: automated checks, then approval.</li>
+    </ul>
+
+    <h2 id="checklist">Checklist</h2>
+    <p>Have all of these ready before you sign up. Signup stops at the first missing item.</p>
+    <div class="table-wrap"><table>
+      <tr><th></th><th>You need</th><th>How GeoVivé checks it</th></tr>
+      <tr><td>1</td><td>A domain you control, served over HTTPS</td><td>You publish a token we give you (DNS record or file)</td></tr>
+      <tr><td>2</td><td>A layer list file hosted on that domain</td><td>We read and validate it</td></tr>
+      <tr><td>3</td><td>Public HTTPS data sources for every layer</td><td>We fetch each one and check it returns shapes</td></tr>
+      <tr><td>4</td><td>A label and chosen fields for every layer</td><td>We check the label fills in on real features</td></tr>
+      <tr><td>5</td><td>Attribution and license text for every layer</td><td>Required fields; you confirm you have the right to show the data</td></tr>
+      <tr><td>6</td><td>The addresses your users return to</td><td>Must be on your verified domain</td></tr>
+      <tr><td>7</td><td>A contact email for problems</td><td>We send a confirmation link</td></tr>
+    </table></div>
+
+    <h2 id="domain">1. Your domain</h2>
+    <p>Everything you connect is tied to one verified domain, for example <code>hunt.example.com</code>. To verify it you'll publish a token we give you at signup, in either place:</p>
+<pre><code>DNS TXT record:  _geovive.hunt.example.com  →  geovive-verify=&lt;token&gt;
+or a file:       https://hunt.example.com/.well-known/geovive.txt  →  &lt;token&gt;</code></pre>
+    <p>Keep it in place while you're connected. If it disappears, your app goes back to sandbox.</p>
+
+    <h2 id="list">2. A layer list</h2>
+    <p>A JSON file on your verified domain that describes each layer: where the data comes from, how to label it and which fields to show. The full format is in the <a href="/docs/developers/#layer-lists">developer docs</a>. Limits:</p>
+    <ul>
+      <li>Up to 200 layers per list and up to 40 shown fields per layer.</li>
+      <li>Layer IDs use letters, numbers, <code>-</code> or <code>_</code>, and stay the same over time (your links use them).</li>
+      <li>Every layer needs <code>id</code>, <code>name</code>, <code>group</code>, <code>source</code>, <code>label</code>, <code>attribution</code> and <code>license</code>.</li>
+    </ul>
+
+    <h2 id="sources">3. Data sources</h2>
+    <ul>
+      <li>Types: ArcGIS FeatureServer/MapServer layers, OGC WFS 2.0, or GeoJSON files.</li>
+      <li>HTTPS on a public host. Private networks, local addresses and sources behind a login are refused.</li>
+      <li>Each source must answer quickly and return real shapes. Empty or broken sources fail the check.</li>
+      <li>Choose a delivery for each layer:
+        <ul>
+          <li><strong>Relay:</strong> GeoVivé fetches the data, simplifies it for display and keeps a short-lived cached copy. Your source address isn't shown to browsers.</li>
+          <li><strong>Direct:</strong> the user's browser loads the source itself; GeoVivé keeps no copy. Use this when the data's terms don't allow caching. The source must allow browser (CORS) requests from <code>https://geovive.link</code>.</li>
+        </ul>
+      </li>
+    </ul>
+
+    <h2 id="display">4. What people see</h2>
+    <p>Decide this before you sign up. We won't approve an app that doesn't know what it's showing.</p>
+    <ul>
+      <li><strong>Label:</strong> the text on each shape, built from your fields, for example <code>GMU {GMUID}</code>. It must fill in on your real data.</li>
+      <li><strong>Fields:</strong> the few fields shown when someone clicks a shape, with readable names. Nothing else is shown.</li>
+      <li><strong>Name, group, color and description</strong> for each layer, as they should appear in AppConnect.</li>
+      <li>No personal information about individuals in labels or fields.</li>
+    </ul>
+
+    <h2 id="rights">5. Credits and rights</h2>
+    <ul>
+      <li>Every layer needs <code>attribution</code> (who made the data) and <code>license</code> (the terms you show it under). Both are shown to users.</li>
+      <li>At signup you confirm you have the right to display each source this way, and that relay caching is allowed for any layer you set to relay.</li>
+    </ul>
+
+    <h2 id="origins">6. Return addresses</h2>
+    <p>List the addresses on your site that GeoVivé may send users back to, and that may host outlines you pass with <code>area=</code>. They must be on your verified domain. Links pointing anywhere else are refused.</p>
+
+    <h2 id="process">How connecting works</h2>
+    <div class="card">
+      <p style="margin-top:0"><strong>Ready?</strong> <a href="/appconnect/">Register your app on the AppConnect page</a>. You'll get your domain token right away, and a PDF report each time the checks run.</p>
+    </div>
+    <ol>
+      <li><strong>Register:</strong> app name, contact email, domain and layer list address. You get an app ID.</li>
+      <li><strong>Verify your domain</strong> with the token.</li>
+      <li><strong>Automated checks</strong> on your layer list and every source. You get a pass/fail report and a preview link showing your layers on the map.</li>
+      <li><strong>Sandbox:</strong> your links work from your verified domain with limited use, so you can test your real “Open in GeoVivé” button.</li>
+      <li><strong>Accept the <a href="/docs/terms/appconnect/">AppConnect terms</a> and pay the yearly fee.</strong> Your validation report includes the payment link.</li>
+      <li><strong>Live</strong> for one year. You get a “your connection is live” notice with your term end date.</li>
+    </ol>
+
+    <h2 id="leaving">Leaving AppConnect</h2>
+    <p>Leaving is structured, not a slow fade. From your AppConnect page choose <strong>Leave AppConnect</strong>, pick <strong>now</strong> or <strong>at the end of your term</strong>, and type your app ID to confirm.</p>
+    <ol>
+      <li>Your layers stop showing immediately (or at term end).</li>
+      <li>GeoVivé deletes its display, relay and review copies of your data.</li>
+      <li>Checks, reminders and notices stop.</li>
+      <li>You receive a <strong>disconnection certificate</strong> (PDF) listing what was deleted and what's kept, plus a JSON export of your settings and history.</li>
+      <li>You can reconnect for 90 days. After that, reports and history are deleted and your app ID stays reserved for you.</li>
+    </ol>
+    <p>If a term lapses and isn't renewed within 90 days, GeoVivé runs the same disconnection automatically, so nothing is left half-connected.</p>
+
+    <h2 id="rules">Ongoing rules</h2>
+    <ul>
+      <li>Connections and terms renew every year with payment. We email you 30 and 7 days before your term ends; if it lapses, your layers stop showing until you renew.</li>
+      <li>Checks include automated rules and, when enabled, an AI review of each layer's text values on Amazon Bedrock. You're told about findings so you can fix them at the source: urgent ones immediately, the rest weekly. See <a href="/docs/security/">Trust &amp; Security</a> for exactly what's sent, kept and for how long.</li>
+      <li>GeoVivé re-checks your list when it changes and on a schedule. If it breaks, points to sources that aren't allowed, or your domain token is gone, your app returns to sandbox and we email your contact.</li>
+      <li>Layers only appear for users who arrive through your links or open maps your app created.</li>
+      <li><strong>Account linking</strong> (optional): with a user's consent your app can read and add to maps it created for them. See <a href="/docs/developers/#account-linking">account linking</a>. Leaving AppConnect ends every user's link.</li>
+      <li><strong>New and changed layers are approved before they show.</strong> When you publish a change, GeoVivé checks just the new or changed layers. Passing layers go live within minutes; anything a person must look at is reviewed within 5 business days; failing layers aren't shown. You get a report each time, and the previously approved version keeps showing until a change is approved.</li>
+      <li>GeoVivé can suspend an app that shows data it has no right to show or misleads users.</li>
+    </ul>
+
+    <footer>GeoVivé AppConnect · <a href="/docs/developers/">Developer docs</a></footer>
+  </main>
+</body>
+</html>

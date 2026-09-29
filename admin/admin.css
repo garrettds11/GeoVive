@@ -1,0 +1,29 @@
+.ad-gate { max-width: 420px; margin: 2rem auto; text-align: center; }
+.ad-gate img { background: #fff; padding: 8px; border-radius: 8px; margin: 0.8rem auto; display: block; }
+.ad-gate code { word-break: break-all; font-size: 0.8rem; }
+.ad-code { font: inherit; font-size: 1.4rem; letter-spacing: 0.4em; text-align: center; width: 9em; padding: 0.4rem; border-radius: 0.5rem;
+  border: 1px solid var(--border); background: #020617; color: var(--text); }
+.ad-err { color: #f87171; min-height: 1.2em; font-size: 0.85rem; }
+.ad-bar { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 0.6rem; }
+.ad-bar input, .ad-bar select { font: inherit; font-size: 0.82rem; padding: 0.35rem 0.55rem; border-radius: 0.5rem; border: 1px solid var(--border); background: #020617; color: var(--text); }
+.ad-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+.ad-table th, .ad-table td { text-align: left; padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+.ad-table th { color: var(--muted); font-weight: 600; font-size: 0.75rem; }
+.ad-table .n { font-weight: 600; color: var(--text); }
+.ad-table .s { font-size: 0.75rem; color: var(--muted); }
+.ad-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; justify-content: flex-end; }
+.vis.review { color: #93c5fd; background: rgba(59,130,246,0.14); border: 1px solid rgba(59,130,246,0.45); }
+.ad-preview td { background: rgba(15,23,42,0.5); }
+.ad-preview ul { margin: 0; padding-left: 1.1rem; columns: 2; font-size: 0.8rem; }
+.ad-links { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.ad-cost li { font-size: 0.82rem; }
+dialog.ad-dlg { border: 1px solid var(--border); border-radius: 0.9rem; background: #0b1220; color: var(--text); width: min(440px, calc(100vw - 32px)); }
+dialog.ad-dlg::backdrop { background: rgba(2,6,23,0.6); }
+dialog.ad-dlg input { width: 100%; font: inherit; padding: 0.4rem 0.55rem; border-radius: 0.5rem; border: 1px solid var(--border); background: #020617; color: var(--text); margin: 0.2rem 0 0.6rem; box-sizing: border-box; }
+@media (max-width: 720px) {
+  .ad-table thead { display: none; }
+  .ad-table tr, .ad-table td { display: block; border: 0; padding: 0.15rem 0; }
+  .ad-table tr { border-bottom: 1px solid var(--border); padding: 0.5rem 0; }
+  .ad-actions { justify-content: flex-start; }
+  .ad-preview ul { columns: 1; }
+}

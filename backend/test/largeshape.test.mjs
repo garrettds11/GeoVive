@@ -41,7 +41,7 @@ const call = async (...a) => { const r = await handler(ev(...a)); return { statu
 
 const big = bigPolygon();
 const created = await call("POST /v1/datasets/{datasetId}/features", { datasetId: "ds1" },
-  { type: "Feature", geometry: big, properties: { name: "Unit 61", category: "unit" } });
+  { type: "Feature", geometry: big, properties: { name: "Unit 61", category: "location" } });
 assert.equal(created.status, 201, JSON.stringify(created.body).slice(0, 200));
 const id = created.body.id;
 assert.equal(Object.keys(objects).length, 1, "full shape stored in S3");
@@ -51,9 +51,9 @@ assert.equal(created.body.properties.geometryDetail, "simplified");
 assert.equal(created.body.bbox.length, 4);
 
 await call("POST /v1/datasets/{datasetId}/features", { datasetId: "ds1" },
-  { type: "Feature", geometry: { type: "Point", coordinates: [-105, 39] }, properties: { name: "P1" } });
+  { type: "Feature", geometry: { type: "Point", coordinates: [-105, 39] }, properties: { name: "P1", category: "location" } });
 await call("POST /v1/datasets/{datasetId}/features", { datasetId: "ds1" },
-  { type: "Feature", geometry: { type: "Point", coordinates: [-104, 38] }, properties: { name: "P2" } });
+  { type: "Feature", geometry: { type: "Point", coordinates: [-104, 38] }, properties: { name: "P2", category: "location" } });
 const list = await call("GET /v1/datasets/{datasetId}/features", { datasetId: "ds1" });
 assert.equal(list.body.features.find(f => f.id === id).properties.geometryDetail, "simplified");
 // Every feature in a list keeps its own geometry (regression: map index leaked in as "full")
@@ -66,14 +66,14 @@ assert.equal(one.body.geometry.coordinates[0].length, big.coordinates[0].length,
 
 // Replace with a small shape: S3 copy removed
 const small = await call("PUT /v1/datasets/{datasetId}/features/{featureId}", { datasetId: "ds1", featureId: id },
-  { type: "Feature", geometry: { type: "Polygon", coordinates: [[[-106, 39], [-105, 39], [-105, 40], [-106, 39]]] }, properties: { name: "Unit 61" } });
+  { type: "Feature", geometry: { type: "Polygon", coordinates: [[[-106, 39], [-105, 39], [-105, 40], [-106, 39]]] }, properties: { name: "Unit 61", category: "location" } });
 assert.equal(small.status, 200);
 assert.equal(Object.keys(objects).length, 0);
 assert.equal(small.body.properties.geometryDetail, undefined);
 
 // Big again, then delete the feature: S3 copy removed
 await call("PUT /v1/datasets/{datasetId}/features/{featureId}", { datasetId: "ds1", featureId: id },
-  { type: "Feature", geometry: big, properties: { name: "Unit 61" } });
+  { type: "Feature", geometry: big, properties: { name: "Unit 61", category: "location" } });
 assert.equal(Object.keys(objects).length, 1);
 await call("DELETE /v1/datasets/{datasetId}/features/{featureId}", { datasetId: "ds1", featureId: id });
 assert.equal(Object.keys(objects).length, 0);
