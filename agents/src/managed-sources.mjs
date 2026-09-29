@@ -31,12 +31,26 @@ export async function listManagedSources() {
 // fallback every run).
 const normalize = s => String(s || "").toLowerCase().replace(/[-_]/g, " ");
 
+// geoMatches() -- catalog geography values are free-text descriptions ("US + territories",
+// "US, coverage varies by state...", "Global"), not the plain lowercase tokens CANDIDATE_TOPICS
+// uses ("us", "global"). Strict equality against those never matched anything but a literal
+// "global" (bug found alongside the tag-normalization one above, same 2026-09-29 pass): every US
+// source's geography failed the check even after the topicTags fix, so Curator kept falling
+// through to the Tavily/websearch fallback. Do a case-insensitive substring check instead, with
+// "global" on either side acting as a wildcard.
+function geoMatches(candidateGeo, sourceGeo) {
+  if (!candidateGeo || !sourceGeo) return true;
+  const c = String(candidateGeo).toLowerCase();
+  const s = String(sourceGeo).toLowerCase();
+  return c === "global" || s.includes("global") || s.includes(c) || c.includes(s);
+}
+
 export async function findManagedSource(topic, geography) {
   const all = await listManagedSources();
   const topicNorm = normalize(topic);
   return all.find(s =>
     (s.topicTags || []).some(t => topicNorm.includes(normalize(t))) &&
-    (!geography || !s.geography || s.geography === "global" || s.geography === geography)
+    geoMatches(geography, s.geography)
   ) || null;
 }
 
