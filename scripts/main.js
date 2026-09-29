@@ -16,6 +16,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const signedIn = await handleRedirectCallback();
   // Remove ?code=&state= from the address bar after a successful sign-in
   if (signedIn) history.replaceState(null, "", window.location.pathname);
+  // Pages outside the map (e.g. /appconnect/) sign in through here and ask to come back
+  const after = signedIn && sessionStorage.getItem("geovive:after-signin");
+  if (after) { sessionStorage.removeItem("geovive:after-signin"); if (after.startsWith("/") && !after.startsWith("//")) { window.location.replace(after); return; } }
   resolveAuthReady();
 
   // 2) Initialize the auth UI (header buttons, status)

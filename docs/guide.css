@@ -1,0 +1,198 @@
+/* User guide: animated tutorial + FAQ, on top of docs.css */
+.guide p, .guide li { font-size: 0.95rem; line-height: 1.7; }
+.guide h2 { font-size: 1.35rem; }
+
+/* ---------- Hero ---------- */
+.hero { position: relative; overflow: hidden; border-radius: 1rem; border: 1px solid var(--border); padding: 2.4rem 1.6rem 2rem; margin: 0.5rem 0 1.4rem;
+  background:
+    radial-gradient(600px 220px at 85% -10%, rgba(59,130,246,0.25), transparent 60%),
+    radial-gradient(500px 240px at 0% 120%, rgba(34,197,94,0.22), transparent 60%),
+    repeating-linear-gradient(0deg, rgba(148,163,184,0.06) 0 1px, transparent 1px 38px),
+    repeating-linear-gradient(90deg, rgba(148,163,184,0.06) 0 1px, transparent 1px 38px),
+    #030b1c; }
+.hero h2 { font-size: 2rem; line-height: 1.2; margin: 0 0 0.6rem; }
+.hero h2 em { font-style: normal; background: linear-gradient(90deg, #22c55e, #3b82f6); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.hero p { font-size: 1.04rem; color: #cbd5e1; max-width: 56ch; margin-bottom: 1.3rem; }
+.cta { display: inline-flex; align-items: center; gap: 0.5rem; background: var(--accent); color: #02130a !important; font-weight: 700; border: 0; cursor: pointer;
+  padding: 0.7rem 1.25rem; border-radius: 999px; text-decoration: none !important; font-size: 0.98rem; box-shadow: 0 0 0 0 rgba(34,197,94,0.6); animation: ctaPulse 2.4s ease-out infinite; }
+.cta:hover { filter: brightness(1.08); }
+.cta svg { width: 18px; height: 18px; }
+@keyframes ctaPulse { 0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.55); } 70% { box-shadow: 0 0 0 14px rgba(34,197,94,0); } 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); } }
+
+/* ---------- Tutorial stage ---------- */
+.tour { position: relative; margin: 0 0 2.2rem; scroll-margin-top: 1rem; }
+.tour-bar { display: flex; gap: 6px; margin-bottom: 0.7rem; }
+.tour-seg { flex: 1; height: 3px; border: 0; padding: 0; border-radius: 999px; background: rgba(148,163,184,0.22); cursor: pointer; overflow: hidden; position: relative; }
+/* Done steps are full; the current step drains like a story reel; later steps are empty */
+.tour-seg i { position: absolute; inset: 0; width: 0; background: linear-gradient(90deg, #22c55e, #3b82f6); border-radius: inherit; }
+.tour-seg.done i { width: 100%; background: rgba(148,163,184,0.55); }
+.tour-seg.current i { width: 0; }
+.tour.paused .tour-seg.current i { opacity: 0.55; }
+.tour-controls { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.7rem; flex-wrap: wrap; }
+.tour-controls button, .tour-controls a { display: inline-flex; align-items: center; gap: 0.35rem; font: inherit; font-size: 0.82rem; color: var(--muted);
+  background: rgba(15,23,42,0.6); border: 1px solid var(--border); border-radius: 999px; padding: 0.35rem 0.75rem; cursor: pointer; text-decoration: none; }
+.tour-controls button:hover, .tour-controls a:hover { color: var(--text); border-color: var(--accent); text-decoration: none; }
+.tour-controls svg { width: 14px; height: 14px; }
+.tour-controls .spacer { flex: 1; }
+/* Play/pause shows the time left in the step as a thin shrinking ring */
+.tour-controls [data-act=play] { position: relative; padding-left: 0.45rem; }
+.tour-ring { width: 20px; height: 20px; flex: none; }
+.tour-ring circle { fill: none; stroke-width: 2; }
+.tour-ring .track { stroke: rgba(148,163,184,0.25); }
+.tour-ring .left { stroke: #22c55e; stroke-linecap: round; transform: rotate(-90deg); transform-origin: center; }
+.tour-ring path { fill: currentColor; }
+.tour-controls button.primary { color: #02130a; background: var(--accent); border-color: var(--accent); font-weight: 700; }
+.tour-controls button.primary:hover { color: #02130a; filter: brightness(1.08); }
+.tour-count { font-size: 0.8rem; color: var(--muted); }
+
+.stage { position: relative; min-height: 520px; }
+/* Glowing, slowly rotating edge */
+@property --ang { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
+.scene { position: relative; border-radius: 1.1rem; padding: 2px; background: conic-gradient(from var(--ang), #22c55e, #3b82f6, #a855f7, #22c55e);
+  animation: spin 7s linear infinite; box-shadow: 0 0 34px rgba(34,197,94,0.18), 0 0 60px rgba(59,130,246,0.12); }
+.scene > .panel { border-radius: calc(1.1rem - 2px); background: radial-gradient(circle at top left, #0b1a33 0, #050c1d 55%, #020617 100%); padding: 1.8rem 1.8rem 1.6rem;
+  display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 1.6rem; align-items: center; min-height: 500px; }
+@keyframes spin { to { --ang: 360deg; } }
+.scene .kicker { font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); font-weight: 700; margin-bottom: 0.4rem; }
+.scene h2 { margin: 0 0 0.6rem; font-size: 1.6rem; line-height: 1.25; }
+.scene .body > p { color: #cbd5e1; margin-bottom: 0.8rem; }
+.scene ul.points { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
+.scene ul.points li { display: flex; gap: 0.6rem; align-items: flex-start; margin: 0; color: var(--muted); }
+.scene ul.points li b { color: var(--text); }
+.scene ul.points .dotico { flex: none; width: 1.55rem; height: 1.55rem; border-radius: 0.45rem; display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(34,197,94,0.14); border: 1px solid rgba(34,197,94,0.35); color: #4ade80; margin-top: 0.1rem; }
+.scene ul.points .dotico svg { width: 15px; height: 15px; }
+.scene .art { display: flex; align-items: center; justify-content: center; }
+.scene .art svg { width: 100%; max-width: 330px; height: auto; overflow: visible; }
+.duo2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-top: 0.8rem; }
+.duo2 > div { border: 1px solid var(--border); border-radius: 0.7rem; padding: 0.7rem 0.8rem; background: rgba(2,6,23,0.55); }
+.duo2 h4 { font-size: 0.92rem; margin-bottom: 0.2rem; color: var(--text); }
+.duo2 p { margin: 0; font-size: 0.86rem; }
+kbd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.78rem; padding: 0.1rem 0.4rem; border-radius: 0.3rem;
+  border: 1px solid #334155; border-bottom-width: 2px; background: #0f172a; color: var(--text); white-space: nowrap; }
+
+/* Scene transitions (JS mode): slide + wipe, staggered contents */
+.tour.js .scene { position: absolute; inset: 0 0 auto 0; visibility: hidden; }
+.tour.js .scene.active { position: relative; visibility: visible; }
+.tour.js .scene.enter { animation: spin 7s linear infinite, sceneIn 0.9s cubic-bezier(.2,.8,.2,1) both; }
+.tour.js .scene.leave { visibility: visible; animation: spin 7s linear infinite, sceneOut 0.7s cubic-bezier(.6,0,.4,1) both; z-index: 2; }
+@keyframes sceneIn { from { opacity: 0; transform: translateX(60px) scale(0.98); clip-path: inset(0 0 0 100% round 1.1rem); }
+  to { opacity: 1; transform: none; clip-path: inset(0 0 0 0 round 1.1rem); } }
+@keyframes sceneOut { from { opacity: 1; transform: none; clip-path: inset(0 0 0 0 round 1.1rem); }
+  to { opacity: 0; transform: translateX(-60px) scale(0.98); clip-path: inset(0 100% 0 0 round 1.1rem); } }
+.tour.js .scene.enter .stagger > * { animation: rise 0.7s cubic-bezier(.2,.8,.2,1) both; }
+.tour.js .scene.enter .stagger > *:nth-child(1) { animation-delay: 0.25s; }
+.tour.js .scene.enter .stagger > *:nth-child(2) { animation-delay: 0.4s; }
+.tour.js .scene.enter .stagger > *:nth-child(3) { animation-delay: 0.55s; }
+.tour.js .scene.enter .stagger > *:nth-child(4) { animation-delay: 0.7s; }
+.tour.js .scene.enter .stagger > *:nth-child(5) { animation-delay: 0.85s; }
+.tour.js .scene.enter .stagger > *:nth-child(6) { animation-delay: 1s; }
+.tour.js .scene.enter .art { animation: artIn 1.1s 0.2s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+@keyframes artIn { from { opacity: 0; transform: translateX(40px) rotate(-3deg) scale(0.92); } to { opacity: 1; transform: none; } }
+
+/* Illustration motion */
+.drop { animation: drop 1.2s cubic-bezier(.3,1.4,.5,1) both; }
+.drop.d2 { animation-delay: 0.35s; } .drop.d3 { animation-delay: 0.7s; }
+@keyframes drop { from { transform: translateY(-40px); opacity: 0; } 60% { opacity: 1; } to { transform: none; opacity: 1; } }
+.pulse-ring { transform-box: fill-box; transform-origin: center; animation: ring 2.2s ease-out infinite; }
+@keyframes ring { from { transform: scale(0.4); opacity: 0.9; } to { transform: scale(2.2); opacity: 0; } }
+.float { animation: float 4s ease-in-out infinite; }
+.float.f2 { animation-delay: -1.3s; } .float.f3 { animation-delay: -2.6s; }
+@keyframes float { 50% { transform: translateY(-8px); } }
+.dash { stroke-dasharray: 6 6; animation: dash 1.2s linear infinite; }
+@keyframes dash { to { stroke-dashoffset: -12; } }
+.needle { transform-box: fill-box; transform-origin: center; animation: needle 5s ease-in-out infinite; }
+@keyframes needle { 0%,100% { transform: rotate(-18deg); } 50% { transform: rotate(22deg); } }
+.slide-l { animation: slideL 3.2s ease-in-out infinite; } .slide-r { animation: slideR 3.2s ease-in-out infinite; }
+@keyframes slideL { 0%,100% { transform: translateX(0); } 50% { transform: translateX(-10px); } }
+@keyframes slideR { 0%,100% { transform: translateX(0); } 50% { transform: translateX(10px); } }
+/* The profile badge: rise gently, hold, turn once like a coin, settle, repeat */
+.hover-spin { transform-box: fill-box; transform-origin: center; animation: hoverSpin 6s ease-in-out infinite; }
+@keyframes hoverSpin {
+  0%   { transform: translateY(0) rotateY(0deg); }
+  25%  { transform: translateY(-6px) rotateY(0deg); }
+  50%  { transform: translateY(-6px) rotateY(0deg); }
+  70%  { transform: translateY(-6px) rotateY(360deg); }
+  100% { transform: translateY(0) rotateY(360deg); }
+}
+
+/* End card */
+.tour-end { text-align: center; padding: 1rem 0 0; }
+.tour-end[hidden] { display: none; }
+
+/* ---------- FAQ ---------- */
+.faq { scroll-margin-top: 1rem; margin-top: 1rem; }
+.dl { margin: 1.4rem 0 1.6rem; scroll-margin-top: 1rem; }
+.dl td:first-child { color: var(--text); white-space: nowrap; }
+@media (max-width: 600px) { .dl td:first-child { white-space: normal; } }
+.faq > h2 { display: flex; align-items: center; gap: 0.6rem; font-size: 1.5rem; margin-bottom: 0.3rem; }
+.faq .lede { color: var(--muted); margin-bottom: 1rem; }
+.faq h3 { font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin: 1.4rem 0 0.4rem; }
+.faq details { border: 1px solid var(--border); border-radius: 0.7rem; margin: 0.45rem 0; background: rgba(15,23,42,0.5); transition: border-color 0.2s; }
+.faq details[open] { border-color: rgba(34,197,94,0.45); }
+.faq summary { cursor: pointer; padding: 0.8rem 1rem; font-weight: 600; color: var(--text); list-style: none; display: flex; justify-content: space-between; gap: 1rem; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: "+"; color: var(--accent); font-weight: 800; }
+.faq details[open] summary::after { content: "–"; }
+.faq details > div { padding: 0 1rem 0.85rem; }
+.faq details p { margin: 0 0 0.4rem; }
+.faq details ul, .faq details ol { margin: 0.2rem 0 0.4rem 1.2rem; }
+
+/* ---------- Small screens and reduced motion ---------- */
+@media (max-width: 720px) {
+  .tour-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+  .tour-controls [data-act=prev], .tour-controls [data-act=next] { justify-content: center; padding: 0.7rem 0.9rem; font-size: 0.95rem; }
+  .tour-controls .tour-count, .tour-controls .spacer { display: none; }
+  .tour-controls a { grid-column: 1 / -1; justify-content: center; }
+  .scene .kicker { font-size: 0.68rem; }
+  .scene h2 { font-size: 1.3rem; }
+  .scene > .panel { grid-template-columns: 1fr; padding: 1.3rem 1.1rem; min-height: 0; gap: 0.8rem; }
+  .scene .art { order: -1; } .scene .art svg { max-width: 220px; }
+  .stage { min-height: 0; }
+  .duo2 { grid-template-columns: 1fr; }
+  .hero { padding: 1.7rem 1.1rem 1.4rem; } .hero h2 { font-size: 1.55rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scene, .cta, .drop, .pulse-ring, .float, .hover-spin, .dash, .needle, .slide-l, .slide-r { animation: none !important; }
+  .tour.js .scene.enter, .tour.js .scene.leave, .tour.js .scene.enter .stagger > *, .tour.js .scene.enter .art { animation: none !important; }
+}
+/* Without JS (or reduced motion): scenes simply stack */
+.tour:not(.js) .scene { margin-bottom: 1.2rem; }
+.tour:not(.js) .tour-bar, .tour:not(.js) .tour-controls { display: none; }
+
+/* Back / Next: clear, tappable navigation */
+.tour-controls [data-act=prev], .tour-controls [data-act=next] {
+  font-size: 0.9rem; font-weight: 700; padding: 0.55rem 1.1rem; border-radius: 999px; gap: 0.45rem;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease; }
+.tour-controls [data-act=prev] { color: var(--text); background: rgba(15,23,42,0.85); border: 1px solid #334155; }
+.tour-controls [data-act=prev]:hover { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.18); }
+.tour-controls [data-act=next] { color: #02130a; border: 0; background: linear-gradient(90deg, #22c55e, #16a34a 55%, #3b82f6);
+  box-shadow: 0 6px 18px rgba(34,197,94,0.28), inset 0 1px 0 rgba(255,255,255,0.25); }
+.tour-controls [data-act=next]:hover { color: #02130a; transform: translateY(-1px); box-shadow: 0 10px 24px rgba(34,197,94,0.38), inset 0 1px 0 rgba(255,255,255,0.3); }
+.tour-controls [data-act=prev]:active, .tour-controls [data-act=next]:active { transform: translateY(1px) scale(0.98); }
+.tour-controls [data-act=prev] svg, .tour-controls [data-act=next] svg { width: 16px; height: 16px; transition: transform 0.15s ease; }
+.tour-controls [data-act=next]:hover svg { transform: translateX(3px); }
+.tour-controls [data-act=prev]:hover svg { transform: translateX(-3px); }
+.tour-controls [data-act=prev]:focus-visible, .tour-controls [data-act=next]:focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; }
+@media (max-width: 720px) {
+  .tour-controls [data-act=prev], .tour-controls [data-act=next] { padding: 0.8rem 1rem; font-size: 1rem; }
+}
+/* Every step fills the stage, so the controls stay in one place */
+.tour.js .scene { display: flex; }
+.tour.js .scene > .panel { flex: 1; }
+.tour.js .scene.active { min-height: inherit; }
+/* Pause / play: an icon button in the top-right corner of the step */
+.tour-pause { position: absolute; top: 12px; right: 12px; z-index: 3; width: 34px; height: 34px; border-radius: 50%; display: none;
+  align-items: center; justify-content: center; padding: 0; cursor: pointer; color: #e2e8f0;
+  background: rgba(2,6,23,0.55); border: 1px solid rgba(148,163,184,0.35); backdrop-filter: blur(4px); transition: background 0.2s, border-color 0.2s; }
+.tour.js .tour-pause { display: inline-flex; }
+.tour-pause:hover { background: rgba(15,23,42,0.9); border-color: var(--accent); }
+.tour-pause:focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; }
+.tour-pause svg { width: 16px; height: 16px; fill: currentColor; }
+/* Phones: each step is its own height (they're taller than the screen anyway),
+   with the picture and text packed at the top, so there's no stretched gap */
+@media (max-width: 720px) {
+  .scene > .panel { align-content: start; }
+  .tour.js .scene.active { min-height: 0; }
+}

@@ -16,14 +16,80 @@ security: []
 tags:
   - name: Datasets
   - name: Features
+  - name: Imports
+  - name: Exports
+  - name: Overlays
 
 paths:
+  /v1/datasets/{datasetId}/features/batch:
+    parameters:
+      - $ref: "#/components/parameters/datasetId"
+    post:
+      tags: [Features]
+      summary: Delete, move or copy up to 100 features
+      description: Owner only (and owner of the target for move/copy). Moves and copies keep full geometry, with new IDs.
+      security: [{ cognito: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, ids]
+              properties:
+                action: { type: string, enum: [delete, move, copy] }
+                ids: { type: array, minItems: 1, maxItems: 100, items: { type: string } }
+                targetDatasetId: { type: string }
+      responses:
+        "200":
+          description: Per-feature results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  action: { type: string }
+                  done: { type: array, items: { type: string } }
+                  failed: { type: array, items: { type: object, properties: { id: { type: string }, message: { type: string } } } }
+                  targetDatasetId: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/datasets/search:
+    get:
+      tags: [Datasets]
+      summary: Search public datasets by name, description and tags
+      security: [{}]
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 100 }, description: Words that must all appear (accents ignored) }
+        - { name: tag, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        "200":
+          description: Ranked matches and the tags among them
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer }
+                  complete: { type: boolean }
+                  results: { type: array, items: { $ref: "#/components/schemas/Dataset" } }
+                  tags:
+                    type: array
+                    items: { type: object, properties: { name: { type: string }, count: { type: integer } } }
+
   /v1/datasets:
     get:
       tags: [Datasets]
       summary: List datasets
-      description: Public datasets, plus the caller's private datasets when a valid token is sent.
+      description: |
+        Without parameters: every public dataset plus the caller's own.
+        With scope=mine: the caller's own datasets, plus up to 25 readable datasets named in ids.
       security: [{}, { cognito: [] }]
+      parameters:
+        - { name: scope, in: query, schema: { type: string, enum: [mine] } }
+        - { name: ids, in: query, schema: { type: string }, description: Comma-separated dataset ids (with scope=mine) }
       responses:
         "200":
           description: Datasets visible to the caller, sorted by name
@@ -152,7 +218,16 @@ paths:
     get:
       tags: [Features]
       summary: Get a feature
+      description: |
+        Returns the full-detail geometry. Large shapes are simplified in list
+        responses (properties.geometryDetail = "simplified"); fetch the feature
+        here for full detail, or pass detail=simplified to get the preview.
       security: [{}, { cognito: [] }]
+      parameters:
+        - name: detail
+          in: query
+          required: false
+          schema: { type: string, enum: [full, simplified], default: full }
       responses:
         "200":
           description: The feature
@@ -190,8 +265,392 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /v1/apps/{appId}/layers:
+    parameters:
+      - name: appId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Overlays]
+      summary: A connected app's layers
+      description: |
+        Layers the app brings to GeoVivé: only approved versions of the layers in its
+        registered layer list (new or changed layers are checked before they show).
+        Display settings for every layer; source details only for layers with delivery "direct".
+      security: [{}]
+      responses:
+        "200":
+          description: The app's layers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  appId: { type: string }
+                  appName: { type: string }
+                  title: { type: string }
+                  layers: { type: array, items: { type: object } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502": { description: The app's layer list couldn't be loaded or is invalid }
+
+  /v1/relay/{appId}/{layerId}:
+    parameters:
+      - name: appId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: layerId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Overlays]
+      summary: Relay one of an app's layers
+      description: |
+        Returns a one-hour link to a cached, simplified GeoJSON copy of the layer (each feature has
+        properties._label plus the listed fields). Only layers with delivery "relay" in the app's list.
+      security: [{}]
+      responses:
+        "200":
+          description: Link to the layer file
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  appId: { type: string }
+                  layerId: { type: string }
+                  url: { type: string, format: uri }
+                  fetchedAt: { type: string, format: date-time }
+                  count: { type: integer, description: Present when the layer was just refreshed }
+        "400": { description: The layer loads directly from its source }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502": { description: The source didn't respond }
+
+  /v1/datasets/{datasetId}/exports:
+    parameters:
+      - $ref: "#/components/parameters/datasetId"
+    post:
+      tags: [Exports]
+      summary: Export a dataset as GeoJSON, KML or GPX
+      description: |
+        Anyone who can read the dataset can export it (public maps without signing in).
+        The file has full-detail geometry and is returned as a download link valid for an hour.
+        GPX has no areas: polygons become tracks along their outer boundaries.
+      security: [{}, { cognito: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                format: { type: string, enum: [geojson, kml, gpx], default: geojson }
+      responses:
+        "200":
+          description: Download link
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  format: { type: string }
+                  fileName: { type: string }
+                  featureCount: { type: integer }
+                  bytes: { type: integer }
+                  url: { type: string, format: uri }
+                  expiresAt: { type: string, format: date-time }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/datasets/{datasetId}/imports/upload-url:
+    parameters:
+      - $ref: "#/components/parameters/datasetId"
+    post:
+      tags: [Imports]
+      summary: Get a presigned URL to upload a GeoJSON file for import (owner only)
+      description: PUT the file to uploadUrl with the given Content-Type within 15 minutes, then start an import with source.type "upload".
+      security: [{ cognito: [] }]
+      responses:
+        "200":
+          description: Upload target
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key: { type: string }
+                  uploadUrl: { type: string, format: uri }
+                  contentType: { type: string }
+                  maxBytes: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/datasets/{datasetId}/imports:
+    parameters:
+      - $ref: "#/components/parameters/datasetId"
+    post:
+      tags: [Imports]
+      summary: Start an import into a dataset (owner only)
+      description: |
+        Runs in the background; poll the returned import until status is succeeded or failed.
+        Up to 20,000 features and 50 MB per import. GeoJSON must be WGS 84; ArcGIS layers are
+        requested in WGS 84. Features are validated like POST …/features; invalid ones are skipped.
+      security: [{ cognito: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ImportRequest" }
+      responses:
+        "202":
+          description: Import queued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Import" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/datasets/{datasetId}/imports/{importId}:
+    parameters:
+      - $ref: "#/components/parameters/datasetId"
+      - name: importId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Imports]
+      summary: Import status (the owner who started it)
+      security: [{ cognito: [] }]
+      responses:
+        "200":
+          description: The import
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Import" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+
+  /v1/appconnect/apps:
+    get:
+      tags: [AppConnect]
+      summary: Your connected apps
+      responses:
+        "200": { description: "{ apps: [...] } with each app's stage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [AppConnect]
+      summary: Register an app
+      description: The caller becomes the owner. Returns the domain-verification token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [appId, name, domain, layersUrl, contactEmail, acceptTerms]
+              properties:
+                appId: { type: string, pattern: "^[a-z0-9][a-z0-9-]{2,40}$" }
+                name: { type: string }
+                domain: { type: string, example: trails.example.com }
+                layersUrl: { type: string, format: uri }
+                returnOrigins: { type: array, items: { type: string } }
+                contactEmail: { type: string, format: email }
+                acceptTerms: { type: boolean, const: true }
+      responses:
+        "201": { description: "The app, stage registered, with verification details" }
+        "400": { description: Invalid details }
+        "409": { description: App ID taken }
+        "429": { description: Too many apps for this owner }
+
+  /v1/appconnect/apps/{appId}:
+    parameters:
+      - { name: appId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [AppConnect]
+      summary: One of your apps, with layer states and history
+      responses:
+        "200": { description: The app }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/appconnect/apps/{appId}/checks:
+    parameters:
+      - { name: appId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [AppConnect]
+      summary: Run the connection checks
+      description: Runs in the background; the PDF report is emailed and listed on the app.
+      responses:
+        "202": { description: Checks started }
+        "409": { description: "Already running, or the app is suspended" }
+        "429": { description: Checks ran moments ago }
+
+  /v1/appconnect/apps/{appId}/reports/{reportId}:
+    parameters:
+      - { name: appId, in: path, required: true, schema: { type: string } }
+      - { name: reportId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [AppConnect]
+      summary: A 10-minute link to a report or notice PDF
+      responses:
+        "200": { description: "{ url, expiresIn }" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+
+  /v1/appconnect/apps/{appId}/disconnect:
+    parameters:
+      - { name: appId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [AppConnect]
+      summary: Disconnect now or at the end of the term
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirm]
+              properties:
+                confirm: { type: string, description: Must equal the app ID }
+                when: { type: string, enum: [now, term_end], default: now }
+                reason: { type: string, enum: [not_needed, cost, another_platform, missing_features, business_closed, other] }
+                note: { type: string, maxLength: 500 }
+      responses:
+        "200": { description: "Disconnected ({ status, certId, deleted, purgeAt }) or scheduled ({ scheduled })" }
+        "400": { description: Confirmation didn't match }
+        "409": { description: Already disconnected }
+    delete:
+      tags: [AppConnect]
+      summary: Cancel a scheduled disconnection
+      responses:
+        "200": { description: Cancelled }
+
+  /v1/appconnect/apps/{appId}/reconnect:
+    parameters:
+      - { name: appId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [AppConnect]
+      summary: Reconnect within 90 days of disconnecting (checks and payment start again)
+      responses:
+        "200": { description: "The app, stage registered" }
+
+  /v1/appconnect/apps/{appId}/export:
+    parameters:
+      - { name: appId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [AppConnect]
+      summary: Your app's settings and history as JSON
+      responses:
+        "200": { description: "{ exportedAt, app, history }" }
+
+  /v1/oauth/token:
+    post:
+      tags: [Account linking]
+      summary: Swap an authorization code (with PKCE verifier) or a refresh token for tokens
+      description: Server-to-server. Client credentials in the body or HTTP Basic. Refresh tokens rotate on every use; reusing one ends the link.
+      security: []
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [grant_type, client_id, client_secret]
+              properties:
+                grant_type: { type: string, enum: [authorization_code, refresh_token] }
+                code: { type: string }
+                code_verifier: { type: string }
+                redirect_uri: { type: string }
+                refresh_token: { type: string }
+                client_id: { type: string, description: Your app ID }
+                client_secret: { type: string }
+      responses:
+        "200": { description: "{ access_token, token_type: Bearer, expires_in: 3600, refresh_token, scope }" }
+        "400": { description: "{ error: invalid_grant | invalid_request | unsupported_grant_type, error_description }" }
+        "401": { description: "{ error: invalid_client }" }
+
+  /v1/oauth/revoke:
+    post:
+      tags: [Account linking]
+      summary: Revoke an access or refresh token (RFC 7009)
+      security: []
+      responses:
+        "200": { description: "Always, even for unknown tokens" }
+
+  /v1/oauth/authorize:
+    get:
+      tags: [Account linking]
+      summary: (GeoVivé consent page) check a link request; returns the app, scopes and the user's maps
+    post:
+      tags: [Account linking]
+      summary: "(GeoVivé consent page) approve or decline: { params, approve, sharedDatasets } → { redirect }"
+
+  /v1/connections:
+    get:
+      tags: [Account linking]
+      summary: The signed-in user's linked apps
+  /v1/connections/{appId}:
+    parameters:
+      - { name: appId, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [Account linking]
+      summary: "Change which maps are shared with the app: { sharedDatasets: [datasetId] }"
+    delete:
+      tags: [Account linking]
+      summary: Remove the link; every token stops at once
+      responses:
+        "204": { description: Removed }
+
+  /v1/linked/me:
+    get:
+      tags: [Linked API]
+      summary: "{ userId (per app), scopes, displayName (with profile) }"
+      security: [{ linked: [] }]
+  /v1/linked/datasets:
+    get:
+      tags: [Linked API]
+      summary: Maps the app created for this user, and maps the user shared with it (maps:read)
+      security: [{ linked: [] }]
+    post:
+      tags: [Linked API]
+      summary: "Create a private map { name, description?, tags?, externalRef? } (maps:write)"
+      security: [{ linked: [] }]
+  /v1/linked/datasets/{datasetId}:
+    parameters: [{ $ref: "#/components/parameters/datasetId" }]
+    get: { tags: [Linked API], summary: One visible map (maps:read), security: [{ linked: [] }] }
+  /v1/linked/datasets/{datasetId}/features:
+    parameters: [{ $ref: "#/components/parameters/datasetId" }]
+    get: { tags: [Linked API], summary: Pins in a visible map (maps:read), security: [{ linked: [] }] }
+    post: { tags: [Linked API], summary: Add a pin to a map the app created (maps:write), security: [{ linked: [] }] }
+  /v1/linked/datasets/{datasetId}/features/{featureId}:
+    parameters: [{ $ref: "#/components/parameters/datasetId" }, { $ref: "#/components/parameters/featureId" }]
+    get: { tags: [Linked API], summary: One pin (maps:read), security: [{ linked: [] }] }
+    put: { tags: [Linked API], summary: Replace a pin in a map the app created (maps:write), security: [{ linked: [] }] }
+    delete: { tags: [Linked API], summary: Delete a pin in a map the app created (maps:write), security: [{ linked: [] }] }
+
+  /v1/appconnect/apps/{appId}/oauth:
+    parameters:
+      - { name: appId, in: path, required: true, schema: { type: string } }
+    put:
+      tags: [AppConnect]
+      summary: "Set account-linking redirect URIs { redirectUris: [https URLs on your domain] }"
+  /v1/appconnect/apps/{appId}/oauth/secret:
+    parameters:
+      - { name: appId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [AppConnect]
+      summary: Create or replace the client secret (returned once)
+
 components:
   securitySchemes:
+    linked:
+      type: http
+      scheme: bearer
+      description: Account-linking access token (gva_…) from /v1/oauth/token. Only for /v1/linked/*.
     cognito:
       type: http
       scheme: bearer
@@ -236,6 +695,8 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
 
+  # Datasets, features and geometry are defined once, in datamodel.yaml (the data model).
+  # These entries point there so the API spec and the model can't disagree.
   schemas:
     Error:
       type: object
@@ -243,101 +704,65 @@ components:
       properties:
         message: { type: string }
 
-    Visibility:
-      type: string
-      enum: [public, private]
+    Visibility: { $ref: "datamodel.yaml#/$defs/Dataset/properties/visibility" }
 
-    Dataset:
-      type: object
-      required: [datasetId, name, visibility, ownerId, featureCount, createdAt, updatedAt]
-      properties:
-        datasetId: { type: string }
-        name: { type: string }
-        description: { type: string }
-        visibility: { $ref: "#/components/schemas/Visibility" }
-        ownerId:
-          type: string
-          description: Cognito `sub` of the owner, or `system` for curated datasets
-        source: { type: string, description: Where the data came from }
-        featureCount: { type: integer }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
+    Dataset: { $ref: "datamodel.yaml#/$defs/Dataset" }
 
     DatasetCreate:
       type: object
       required: [name]
       properties:
-        name: { type: string, minLength: 1 }
-        description: { type: string }
-        visibility:
-          allOf: [{ $ref: "#/components/schemas/Visibility" }]
-          default: private
-        source: { type: string }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, maxLength: 1000 }
+        tags: { type: array, maxItems: 10, items: { type: string, maxLength: 32 } }
+        visibility: { type: string, enum: [private, public], default: private }
 
     DatasetUpdate:
       type: object
       properties:
-        name: { type: string, minLength: 1 }
-        description: { type: string }
-        visibility: { $ref: "#/components/schemas/Visibility" }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, maxLength: 1000 }
+        tags: { type: array, maxItems: 10, items: { type: string, maxLength: 32 } }
+        visibility: { type: string, enum: [private, public] }
 
-    Geometry:
-      type: object
-      description: GeoJSON geometry (RFC 7946). Coordinates are [longitude, latitude].
-      required: [type, coordinates]
-      properties:
-        type:
-          type: string
-          enum: [Point, MultiPoint, LineString, MultiLineString, Polygon, MultiPolygon]
-        coordinates:
-          type: array
-          items: {}
+    Geometry: { $ref: "datamodel.yaml#/$defs/Geometry" }
 
-    FeatureInputProperties:
-      type: object
-      required: [name]
-      properties:
-        name: { type: string, minLength: 1 }
-        category:
-          type: string
-          description: event, location and alert are styled on the map; other values are stored as-is
-        description: { type: string }
-      additionalProperties: true
+    FeatureInputProperties: { $ref: "datamodel.yaml#/$defs/FeatureProperties" }
 
-    FeatureInput:
-      type: object
-      required: [type, geometry, properties]
-      properties:
-        type: { type: string, const: Feature }
-        geometry: { $ref: "#/components/schemas/Geometry" }
-        properties: { $ref: "#/components/schemas/FeatureInputProperties" }
+    FeatureInput: { $ref: "datamodel.yaml#/$defs/Feature" }
 
-    Feature:
-      type: object
-      required: [type, id, geometry, properties]
-      properties:
-        type: { type: string, const: Feature }
-        id: { type: string }
-        geometry: { $ref: "#/components/schemas/Geometry" }
-        properties:
-          allOf:
-            - $ref: "#/components/schemas/FeatureInputProperties"
-            - type: object
-              required: [id, datasetId, createdAt, updatedAt]
-              properties:
-                id: { type: string }
-                datasetId: { type: string }
-                createdAt: { type: string, format: date-time }
-                updatedAt: { type: string, format: date-time }
+    Feature: { $ref: "datamodel.yaml#/$defs/Feature" }
 
-    FeatureCollection:
+    ImportRequest:
       type: object
-      required: [type, features]
+      required: [source]
       properties:
-        type: { type: string, const: FeatureCollection }
-        features:
-          type: array
-          items: { $ref: "#/components/schemas/Feature" }
-        nextToken:
-          type: string
-          description: Present when more features are available
+        source:
+          type: object
+          required: [type]
+          properties:
+            type: { type: string, enum: [upload, url, arcgis] }
+            key: { type: string, description: "upload: key from …/imports/upload-url" }
+            fileName: { type: string }
+            url: { type: string, format: uri, description: "url: https link to GeoJSON; arcgis: layer URL ending in FeatureServer/<n> or MapServer/<n>" }
+            where: { type: string, description: "arcgis: optional SQL filter, e.g. STATE = 'CO'" }
+        mode: { type: string, enum: [append, replace], default: append }
+        nameField: { type: string, description: Property to use as the feature name (case-insensitive); automatic when omitted }
+        categoryField: { type: string, description: Property to copy into properties.category }
+
+    Import:
+      type: object
+      properties:
+        importId: { type: string }
+        datasetId: { type: string }
+        status: { type: string, enum: [queued, running, succeeded, failed] }
+        source: { type: object }
+        mode: { type: string }
+        imported: { type: integer }
+        skipped: { type: integer }
+        errors: { type: array, items: { type: string }, description: First few skipped-feature reasons }
+        message: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    FeatureCollection: { $ref: "datamodel.yaml#/$defs/FeatureCollection" }

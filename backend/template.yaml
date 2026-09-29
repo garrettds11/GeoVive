@@ -13,9 +13,10 @@ Parameters:
   UserPoolClientId:
     Type: String
     Default: hfchi8fm98nberrcj43ge2ipu
+  # Deployed value also includes the Amplify branch addresses (kept out of the repo)
   AllowedOrigins:
     Type: CommaDelimitedList
-    Default: https://geovive.link,https://www.geovive.link,https://dev.geovive.link,https://dev.d24kp6zzj6jjwt.amplifyapp.com,http://localhost:8080
+    Default: https://geovive.link,https://www.geovive.link,https://stage.geovive.link,http://localhost:8080
   ApiDomainName:
     Type: String
     Default: api.geovive.link
@@ -25,6 +26,13 @@ Parameters:
   HostedZoneId:
     Type: String
     Default: Z0318749XVX1CEI14FGK
+  GeoLibrarySub:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /geovive/agents/geo-library-sub
+    Description: >
+      The geo-library service account's Cognito sub, read from Parameter Store (written by the
+      agents/ stack when it creates the account). Datasets created by this caller are forced into
+      review visibility and can't self-escalate out of it -- see handler.mjs.
 
 Globals:
   Function:
@@ -84,6 +92,224 @@ Resources:
         - { Key: project, Value: geovive }
         - { Key: env, Value: !Ref Env }
 
+  # Full geometry of large shapes (the features table keeps a simplified preview)
+  GeometryBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub geovive-${Env}-geometry-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
+      VersioningConfiguration: { Status: Enabled }
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-versions
+            Status: Enabled
+            NoncurrentVersionExpiration: { NoncurrentDays: 30 }
+            AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 }
+          - Id: expire-exports
+            Status: Enabled
+            Prefix: exports/
+            ExpirationInDays: 1
+            NoncurrentVersionExpiration: { NoncurrentDays: 1 }
+          - Id: expire-import-uploads
+            Status: Enabled
+            Prefix: uploads/
+            ExpirationInDays: 1
+          - Id: expire-appconnect-pending
+            Status: Enabled
+            Prefix: appconnect-pending/
+            ExpirationInDays: 90
+            NoncurrentVersionExpiration: { NoncurrentDays: 1 }
+      # The browser uploads import files straight to uploads/ with a presigned URL
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [PUT, GET]
+            AllowedOrigins: !Ref AllowedOrigins
+            AllowedHeaders: [content-type]
+            MaxAge: 600
+      Tags:
+        - { Key: project, Value: geovive }
+        - { Key: env, Value: !Ref Env }
+
+  # Connected apps (AppConnect): one record per app plus its setup history
+  # Admin: authenticator secrets for the admin second step, and the audit log of admin actions.
+  AdminTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub geovive-${Env}-admin
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      SSESpecification: { SSEEnabled: true }
+      Tags:
+        - { Key: project, Value: geovive }
+        - { Key: env, Value: !Ref Env }
+
+  # Account linking: grants, one-time codes and tokens (hashed). Expired rows removed by TTL.
+  LinksTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub geovive-${Env}-links
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+        - { AttributeName: appId, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: byApp
+          KeySchema:
+            - { AttributeName: appId, KeyType: HASH }
+            - { AttributeName: pk, KeyType: RANGE }
+          Projection: { ProjectionType: KEYS_ONLY }
+      TimeToLiveSpecification: { AttributeName: ttl, Enabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      SSESpecification: { SSEEnabled: true }
+      Tags:
+        - { Key: project, Value: geovive }
+        - { Key: env, Value: !Ref Env }
+
+  AppsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub geovive-${Env}-apps
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: appId, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+        - { AttributeName: status, AttributeType: S }
+        - { AttributeName: updatedAt, AttributeType: S }
+        - { AttributeName: ownerId, AttributeType: S }
+      KeySchema:
+        - { AttributeName: appId, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: byStatus
+          KeySchema:
+            - { AttributeName: status, KeyType: HASH }
+            - { AttributeName: updatedAt, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+        - IndexName: byOwner
+          KeySchema: [{ AttributeName: ownerId, KeyType: HASH }]
+          Projection: { ProjectionType: ALL }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      Tags:
+        - { Key: project, Value: geovive }
+        - { Key: env, Value: !Ref Env }
+
+  # AppConnect evidence for GeoVivé-only findings (possible legal escalation).
+  # Encrypted, versioned, private; the check worker can add objects but not delete them.
+  EvidenceBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub geovive-${Env}-evidence-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: aws:kms }
+            BucketKeyEnabled: true
+      VersioningConfiguration: { Status: Enabled }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls: { Rules: [{ ObjectOwnership: BucketOwnerEnforced }] }
+      LifecycleConfiguration:
+        Rules:
+          - Id: retain-two-years
+            Status: Enabled
+            ExpirationInDays: 730
+            NoncurrentVersionExpiration: { NoncurrentDays: 730 }
+      Tags:
+        - { Key: project, Value: geovive }
+        - { Key: env, Value: !Ref Env }
+        - { Key: data, Value: restricted }
+
+  EvidenceBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref EvidenceBucket
+      PolicyDocument:
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource: [!GetAtt EvidenceBucket.Arn, !Sub "${EvidenceBucket.Arn}/*"]
+            Condition: { Bool: { "aws:SecureTransport": "false" } }
+
+  # Import jobs (status and results); items expire after 30 days
+  ImportsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub geovive-${Env}-imports
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: importId, AttributeType: S }
+      KeySchema:
+        - { AttributeName: importId, KeyType: HASH }
+      TimeToLiveSpecification: { AttributeName: expiresAt, Enabled: true }
+      Tags:
+        - { Key: project, Value: geovive }
+        - { Key: env, Value: !Ref Env }
+
+  # Background worker for imports (invoked asynchronously by the API)
+  ImportFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub geovive-${Env}-importer
+      Description: Imports GeoJSON and ArcGIS layers into GeoVivé datasets
+      CodeUri: dist/
+      Handler: importer.handler
+      MemorySize: 2048
+      Timeout: 900
+      EventInvokeConfig:
+        MaximumRetryAttempts: 0
+      Environment:
+        Variables:
+          DATASETS_TABLE: !Ref DatasetsTable
+          FEATURES_TABLE: !Ref FeaturesTable
+          IMPORTS_TABLE: !Ref ImportsTable
+          GEOMETRY_BUCKET: !Ref GeometryBucket
+          USER_POOL_ID: !Ref UserPoolId
+          USER_POOL_CLIENT_ID: !Ref UserPoolClientId
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref DatasetsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref FeaturesTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref ImportsTable }
+        - S3CrudPolicy: { BucketName: !Ref GeometryBucket }
+
+  ImportLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/geovive-${Env}-importer
+      RetentionInDays: 30
+
   HttpApi:
     Type: AWS::Serverless::HttpApi
     Properties:
@@ -99,7 +325,7 @@ Resources:
           HostedZoneId: !Ref HostedZoneId
       CorsConfiguration:
         AllowOrigins: !Ref AllowedOrigins
-        AllowHeaders: [authorization, content-type]
+        AllowHeaders: [authorization, content-type, x-admin-session]
         AllowMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
         MaxAge: 600
       Auth:
@@ -117,19 +343,64 @@ Resources:
       FunctionName: !Sub geovive-${Env}-api
       CodeUri: dist/
       Handler: index.handler
+      MemorySize: 1769   # simplifying large shapes and relaying big layers is CPU/memory-bound (1 full vCPU)
+      Timeout: 25
       Environment:
         Variables:
           DATASETS_TABLE: !Ref DatasetsTable
           FEATURES_TABLE: !Ref FeaturesTable
+          GEOMETRY_BUCKET: !Ref GeometryBucket
+          IMPORTS_TABLE: !Ref ImportsTable
+          IMPORT_FUNCTION: !Ref ImportFunction
           USER_POOL_ID: !Ref UserPoolId
           USER_POOL_CLIENT_ID: !Ref UserPoolClientId
           ALLOWED_ORIGINS: !Join [",", !Ref AllowedOrigins]
+          APPS_TABLE: !Ref AppsTable
+          LINKS_TABLE: !Ref LinksTable
+          ADMIN_TABLE: !Ref AdminTable
+          APPCHECK_FUNCTION: !Ref AppCheckFunction
+          STRIPE_SECRET_ID: geovive/stripe
+          GEO_LIBRARY_SUB: !Ref GeoLibrarySub
+          AGENT_RUN_PARAM: /geovive/agents/run
+          AGENT_AUDIT_TABLE: !Sub geovive-${Env}-agents-audit
+          AGENT_MONTHLY_LIMIT_USD: "20"
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref DatasetsTable }
         - DynamoDBCrudPolicy: { TableName: !Ref FeaturesTable }
+        - S3CrudPolicy: { BucketName: !Ref GeometryBucket }
+        - DynamoDBCrudPolicy: { TableName: !Ref ImportsTable }
+        - LambdaInvokePolicy: { FunctionName: !Ref ImportFunction }
+        - DynamoDBCrudPolicy: { TableName: !Ref AppsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref LinksTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref AdminTable }
+        - LambdaInvokePolicy: { FunctionName: !Ref AppCheckFunction }
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource:
+                - !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:geovive/stripe-*
+                - !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:geovive/appconnect-*
+            - Effect: Allow
+              Action: [ses:SendEmail, ses:SendRawEmail]
+              Resource: "*"
+              Condition: { StringEquals: { "ses:FromAddress": appconnect@geovive.link } }
+            - Effect: Allow
+              Action: ce:GetCostAndUsage
+              Resource: "*"
+            - Effect: Allow
+              Action: cognito-idp:ListUsers
+              Resource: !Sub arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}
+            - Effect: Allow
+              Action: [ssm:GetParameter, ssm:PutParameter]
+              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/geovive/agents/run
+            - Effect: Allow
+              Action: dynamodb:Scan
+              Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/geovive-${Env}-agents-audit
       Events:
         # Public reads (visibility enforced in the handler)
         ListDatasets:     { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /v1/datasets, Auth: { Authorizer: NONE } } }
+        BatchFeatures:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/datasets/{datasetId}/features/batch" } }
+        SearchDatasets:   { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /v1/datasets/search, Auth: { Authorizer: NONE } } }
         GetDataset:       { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/datasets/{datasetId}", Auth: { Authorizer: NONE } } }
         ListFeatures:     { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/datasets/{datasetId}/features", Auth: { Authorizer: NONE } } }
         GetFeature:       { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/datasets/{datasetId}/features/{featureId}", Auth: { Authorizer: NONE } } }
@@ -141,7 +412,108 @@ Resources:
         DeleteDataset:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: DELETE, Path: "/v1/datasets/{datasetId}" } }
         CreateFeature:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/datasets/{datasetId}/features" } }
         UpdateFeature:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: PUT, Path: "/v1/datasets/{datasetId}/features/{featureId}" } }
+        GetAppLayers:     { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/apps/{appId}/layers", Auth: { Authorizer: NONE } } }
+        RelayLayer:       { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/relay/{appId}/{layerId}", Auth: { Authorizer: NONE } } }
+        ExportDataset:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/datasets/{datasetId}/exports", Auth: { Authorizer: NONE } } }
+        ImportUploadUrl:  { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/datasets/{datasetId}/imports/upload-url" } }
+        StartImport:      { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/datasets/{datasetId}/imports" } }
+        GetImport:        { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/datasets/{datasetId}/imports/{importId}" } }
+        AppConnectSignup: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: /v1/appconnect/apps } }
+        AppConnectList:   { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /v1/appconnect/apps } }
+        AppConnectGet:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/appconnect/apps/{appId}" } }
+        AppConnectChecks: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/appconnect/apps/{appId}/checks" } }
+        AppConnectReport: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/appconnect/apps/{appId}/reports/{reportId}" } }
+        AppDisconnect:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/appconnect/apps/{appId}/disconnect" } }
+        AppCancelDisc:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: DELETE, Path: "/v1/appconnect/apps/{appId}/disconnect" } }
+        AppReconnect:     { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/appconnect/apps/{appId}/reconnect" } }
+        AppExport:        { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/appconnect/apps/{appId}/export" } }
+        ReviewPage:       { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /v1/appconnect/review, Auth: { Authorizer: NONE } } }
+        ReviewDecision:   { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: /v1/appconnect/review, Auth: { Authorizer: NONE } } }
+        StripeWebhook:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: /v1/appconnect/stripe/webhook, Auth: { Authorizer: NONE } } }
+        # Account linking: consent + Connected apps (GeoVivé sign-in); token endpoint and /v1/linked/* check app credentials and tokens in the handler
+        OAuthInfo:        { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/oauth/authorize" } }
+        OAuthDecide:      { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/oauth/authorize" } }
+        OAuthToken:       { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/oauth/token", Auth: { Authorizer: NONE } } }
+        OAuthRevoke:      { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/oauth/revoke", Auth: { Authorizer: NONE } } }
+        ConnList:         { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/connections" } }
+        ConnShare:        { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: PATCH, Path: "/v1/connections/{appId}" } }
+        ConnRevoke:       { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: DELETE, Path: "/v1/connections/{appId}" } }
+        AppOAuth:         { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: PUT, Path: "/v1/appconnect/apps/{appId}/oauth" } }
+        AppOAuthSecret:   { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/appconnect/apps/{appId}/oauth/secret" } }
+        LinkedMe:         { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/linked/me", Auth: { Authorizer: NONE } } }
+        LinkedList:       { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/linked/datasets", Auth: { Authorizer: NONE } } }
+        LinkedCreate:     { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/linked/datasets", Auth: { Authorizer: NONE } } }
+        LinkedGet:        { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/linked/datasets/{datasetId}", Auth: { Authorizer: NONE } } }
+        LinkedFeats:      { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/linked/datasets/{datasetId}/features", Auth: { Authorizer: NONE } } }
+        LinkedFeat:       { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/v1/linked/datasets/{datasetId}/features/{featureId}", Auth: { Authorizer: NONE } } }
+        LinkedAddFeat:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: "/v1/linked/datasets/{datasetId}/features", Auth: { Authorizer: NONE } } }
+        LinkedPutFeat:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: PUT, Path: "/v1/linked/datasets/{datasetId}/features/{featureId}", Auth: { Authorizer: NONE } } }
+        LinkedDelFeat:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: DELETE, Path: "/v1/linked/datasets/{datasetId}/features/{featureId}", Auth: { Authorizer: NONE } } }
+        # Admin (GeoVivé sign-in at the gateway; admins group + authenticator session checked in admin.mjs)
+        AdminAll:         { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: ANY, Path: "/v1/admin/{proxy+}" } }
+        # A separate, unauthenticated route for the browser's CORS preflight: with ANY covering
+        # OPTIONS too, that preflight was hitting the Cognito authorizer and getting a 401 before
+        # the gateway's own CORS handling took over, which browsers reject (the response must be 2xx).
+        AdminOptions:     { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: OPTIONS, Path: "/v1/admin/{proxy+}", Auth: { Authorizer: NONE } } }
         DeleteFeature:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: DELETE, Path: "/v1/datasets/{datasetId}/features/{featureId}" } }
+
+  # AppConnect connection checks, reports and emails (invoked asynchronously by the API)
+  AppCheckFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub geovive-${Env}-appcheck
+      Description: Runs AppConnect checks, writes the PDF report and emails it
+      CodeUri: dist/
+      Handler: appworker.handler
+      MemorySize: 2048
+      Timeout: 900
+      Events:
+        Daily:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: cron(0 15 * * ? *)
+            Input: '{"task":"daily"}'
+            Description: AppConnect re-checks, renewal reminders and expiry
+      Environment:
+        Variables:
+          APPS_TABLE: !Ref AppsTable
+          LINKS_TABLE: !Ref LinksTable
+          GEOMETRY_BUCKET: !Ref GeometryBucket
+          STRIPE_SECRET_ID: geovive/stripe
+          ALLOWED_ORIGINS: !Join [",", !Ref AllowedOrigins]
+          EVIDENCE_BUCKET: !Ref EvidenceBucket
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref AppsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref LinksTable }
+        - Statement:
+            - Effect: Allow
+              Action: s3:PutObject
+              Resource: !Sub "${EvidenceBucket.Arn}/*"
+            - Effect: Allow
+              Action: bedrock:InvokeModel
+              Resource:
+                - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0
+                - arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
+                - arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
+                - arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
+        - S3CrudPolicy: { BucketName: !Ref GeometryBucket }
+        - LambdaInvokePolicy: { FunctionName: !Sub "geovive-${Env}-appcheck" }
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource:
+                - !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:geovive/stripe-*
+                - !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:geovive/appconnect-*
+            - Effect: Allow
+              Action: [ses:SendEmail, ses:SendRawEmail]
+              Resource: "*"
+              Condition: { StringEquals: { "ses:FromAddress": appconnect@geovive.link } }
+
+  AppCheckLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/geovive-${Env}-appcheck
+      RetentionInDays: 30
 
   PreSignUpFunction:
     Type: AWS::Serverless::Function
@@ -180,6 +552,8 @@ Resources:
       RetentionInDays: 30
 
 Outputs:
+  AppsTableName:
+    Value: !Ref AppsTable
   ApiCustomUrl:
     Value: !Sub https://${ApiDomainName}
   ApiUrl:
@@ -188,5 +562,9 @@ Outputs:
     Value: !Ref DatasetsTable
   FeaturesTableName:
     Value: !Ref FeaturesTable
+  EvidenceBucketName:
+    Value: !Ref EvidenceBucket
+  GeometryBucketName:
+    Value: !Ref GeometryBucket
   PreSignUpFunctionArn:
     Value: !GetAtt PreSignUpFunction.Arn

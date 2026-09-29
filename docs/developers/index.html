@@ -11,27 +11,37 @@
   <main class="page">
     <header>
       <div class="top">
-        <h1>Geo<span>Vivé</span> Docs</h1>
+        <a class="brand" href="/docs/"><h1>Geo<span>Vivé</span> Docs</h1></a>
         <span class="tagline">API reference · v1</span>
       </div>
-      <nav class="tabs">
-        <a href="/docs/">User guide</a>
-        <a href="/docs/developers/" class="active">Developers</a>
-        <a href="/">Open the map →</a>
+      <nav class="tabs" aria-label="Documentation">
+        <div class="tabs-main">
+          <a href="/docs/">User guide</a>
+          <a href="/docs/developers/" class="active" aria-current="page">Developers</a>
+          <a href="/docs/developers/appconnect/">AppConnect</a>
+          <a href="/docs/terms/appconnect/">Terms</a>
+          <a href="/docs/security/">Security</a>
+        </div>
+        <a class="tabs-map" href="/">Open the map →</a>
       </nav>
     </header>
 
     <nav class="toc">
       <a href="#overview">Overview</a>
       <a href="#auth">Authentication</a>
+      <a href="#data-model">Data model</a>
       <a href="#access">Access rules</a>
       <a href="#datasets">Datasets</a>
       <a href="#features">Features</a>
       <a href="#formats">Formats</a>
       <a href="#errors">Errors</a>
       <a href="#examples">Examples</a>
+      <a href="#imports">Imports</a>
+      <a href="#exports">Exports</a>
+      <a href="#layer-lists">Layer lists</a>
       <a href="#open-links">Open links</a>
-      <a href="#connected-apps">Connected apps</a>
+      <a href="#appconnect-api">AppConnect API</a>
+      <a href="#account-linking">Account linking</a>
     </nav>
 
     <h2 id="overview">Overview</h2>
@@ -51,36 +61,74 @@
       <tr><td>Flow</td><td>Authorization code + PKCE</td></tr>
       <tr><td>Token</td><td>Access token (<code>token_use: access</code>); the user is identified by its <code>sub</code> claim</td></tr>
     </table></div>
-    <p>Tokens are currently issued only to GeoVivé's own web app. Third-party access is coming through <a href="#connected-apps">connected apps</a>.</p>
+    <p>These tokens are issued only to GeoVivé's own web app. Other apps get access to a user's maps through <a href="#account-linking">account linking</a>, with the user's consent.</p>
+
+    <h2 id="data-model">Data model</h2>
+    <p>The app calls a dataset a <em>map</em>; this reference and the API say <em>dataset</em>. GeoVivé stores <strong>datasets</strong> of <strong>features</strong> (standard GeoJSON) and displays <strong>layers</strong> it doesn't store. The authoritative definition is <a href="https://github.com/garrettds11/GeoVive/blob/main/datamodel.yaml"><code>datamodel.yaml</code></a> (JSON Schema). <code>openapi.yaml</code> references it, and every write is checked against it.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Concept</th><th>Data model</th><th>API</th><th>In the app</th><th>AppConnect</th></tr>
+      <tr><td><b>Feature</b></td><td><code>Feature</code> = geometry + <code>FeatureProperties</code></td><td><code>/v1/datasets/{id}/features</code></td><td>A pin (point) or shape (line or area)</td><td>Pins in a user's datasets</td></tr>
+      <tr><td><b>Dataset</b></td><td><code>Dataset</code> + its <code>FeatureCollection</code></td><td><code>/v1/datasets</code></td><td>A "map": the Map menu and My maps</td><td>Created for a user by an Open in GeoVivé link or account linking</td></tr>
+      <tr><td><b>Layer</b></td><td><code>LayerList</code>: a display contract (source, style, credits, license), not stored features</td><td><code>/v1/apps/{appId}/layers</code>, relay</td><td>The Layers panel</td><td>The app's own layers</td></tr>
+    </table></div>
+    <div class="table-wrap"><table>
+      <tr><th></th><th>Dataset</th><th>Layer</th></tr>
+      <tr><td>Whose data</td><td>Stored in GeoVivé, owned by a user or the GeoVivé library</td><td>A government agency's or an AppConnect app's</td></tr>
+      <tr><td>Editable</td><td>By its owner</td><td>No, display only</td></tr>
+      <tr><td>Geometry</td><td>Any: points, lines, areas</td><td>Any</td></tr>
+      <tr><td>Held to the data model</td><td>Yes, strictly</td><td>No: shown as published, after AppConnect's checks and approval</td></tr>
+    </table></div>
+    <h3>Feature properties</h3>
+    <div class="table-wrap"><table>
+      <tr><th>Field</th><th>Rules</th></tr>
+      <tr><td><code>name</code></td><td>Required, up to 200 characters</td></tr>
+      <tr><td><code>category</code></td><td>Required: <code>location</code> (a place), <code>event</code> (recorded activity) or <code>alert</code> (noteworthy activity)</td></tr>
+      <tr><td><code>description</code></td><td>Markdown, up to 5,000 characters. Anything specific (address, hours, level) goes here.</td></tr>
+      <tr><td><code>eventTime</code></td><td>When it happened; required for events and alerts</td></tr>
+      <tr><td><code>status</code></td><td><code>active</code> (default), <code>inactive</code> or <code>archived</code></td></tr>
+      <tr><td><code>severity</code></td><td>Alerts only: <code>info</code>, <code>warning</code> or <code>critical</code></td></tr>
+      <tr><td><code>source</code>, <code>externalId</code></td><td>Where the feature came from, and its ID there</td></tr>
+      <tr><td><code>icon</code>, <code>color</code></td><td>Optional display overrides (emoji or icon name; <code>#rrggbb</code>)</td></tr>
+      <tr><td><code>id</code>, <code>datasetId</code>, <code>createdAt</code>, <code>updatedAt</code></td><td>Set by the server</td></tr>
+    </table></div>
+    <p>No other properties are accepted. Tags describe datasets (up to 10, for search), never features.</p>
 
     <h2 id="access">Access rules</h2>
     <ul>
       <li><strong>Reads</strong> need no token. Public datasets are returned to everyone. Private datasets are returned only to their owner, when a valid token is sent; everyone else gets <code>404</code>, so a private dataset's existence isn't revealed.</li>
       <li><strong>Writes</strong> (create, update, delete) always need a token, and only the dataset's owner may change it or its features.</li>
       <li>An invalid or expired token on a read returns <code>401</code> rather than being ignored.</li>
-      <li>Browser calls are accepted from GeoVivé's own sites. Server-to-server calls aren't limited by origin.</li>
+      <li>Browser calls are accepted from GeoVive's own sites. Server-to-server calls aren't limited by origin.</li>
     </ul>
+
+    <h2 id="admin">Admin API</h2>
+    <p><code>/v1/admin/*</code> is internal, not a public API surface: it's undocumented on purpose and returns <code>404</code> for anyone not in the <code>admins</code> Cognito group, so its existence isn't revealed to other signed-in users. Members still need to set up and verify an app-based TOTP authenticator (independent of Cognito MFA) to get a short-lived admin session before any admin route works. It backs the <a href="/admin/">/admin/</a> console: dataset review/visibility/delete with an audit log, platform overview, and (once built) agent controls. All routes are served by one API Gateway route (<code>ANY /v1/admin/{proxy+}</code>, dispatched internally) to stay under the Lambda's resource-policy size limit — a pattern worth reusing for any future route group here rather than adding many explicit routes.</p>
 
     <h2 id="datasets">Datasets</h2>
     <div class="table-wrap"><table>
       <tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr>
-      <tr><td>GET</td><td><code>/v1/datasets</code></td><td><span class="tag public">optional</span></td><td>Public datasets, plus your private ones when signed in</td></tr>
+      <tr><td>GET</td><td><code>/v1/datasets/search</code></td><td><span class="tag public">none</span></td><td>Search public datasets by name, description and tags: <code>q</code>, <code>tag</code>, <code>limit</code> (1–50, default 20)</td></tr>
+      <tr><td>GET</td><td><code>/v1/datasets?scope=mine&amp;ids=a,b</code></td><td><span class="tag public">optional</span></td><td>Your datasets, plus up to 25 other datasets you can read by id (what the map's menu uses)</td></tr>
+      <tr><td>GET</td><td><code>/v1/datasets</code></td><td><span class="tag public">optional</span></td><td>Every public dataset plus your own. Fine for small catalogs; prefer search as the catalog grows</td></tr>
       <tr><td>POST</td><td><code>/v1/datasets</code></td><td><span class="tag auth">required</span></td><td>Create a dataset (you become the owner). Returns <code>201</code></td></tr>
       <tr><td>GET</td><td><code>/v1/datasets/{datasetId}</code></td><td><span class="tag public">optional</span></td><td>One dataset</td></tr>
-      <tr><td>PATCH</td><td><code>/v1/datasets/{datasetId}</code></td><td><span class="tag auth">owner</span></td><td>Update <code>name</code>, <code>description</code> or <code>visibility</code></td></tr>
+      <tr><td>PATCH</td><td><code>/v1/datasets/{datasetId}</code></td><td><span class="tag auth">owner</span></td><td>Update <code>name</code>, <code>description</code>, <code>tags</code> or <code>visibility</code></td></tr>
       <tr><td>DELETE</td><td><code>/v1/datasets/{datasetId}</code></td><td><span class="tag auth">owner</span></td><td>Delete the dataset and all its features. Returns <code>204</code></td></tr>
     </table></div>
     <p><strong>Create / update body</strong></p>
 <pre><code>{
   "name": "Scouting spots",          // required on create
-  "description": "Optional text",
+  "description": "Optional text",     // up to 1,000 characters
+  "tags": ["hiking", "colorado"],     // up to 10; lowercase letters, numbers, spaces, dashes
   "visibility": "private"            // "private" (default) or "public"
 }</code></pre>
+    <p>Tags are normalized: lowercased, accents removed, duplicates dropped. A comma-separated string is accepted too.</p>
     <p><strong>Dataset object</strong></p>
 <pre><code>{
   "datasetId": "world-capitals",
   "name": "World Capitals",
   "description": "National capitals of the world (Natural Earth)…",
+  "tags": ["reference", "world", "capitals", "cities", "countries"],
   "visibility": "public",
   "ownerId": "system",
   "source": "https://www.naturalearthdata.com/",
@@ -89,16 +137,34 @@
   "updatedAt": "2026-09-26T01:51:59.386Z"
 }</code></pre>
 
+    <h3 id="search">Searching public datasets</h3>
+<pre><code>GET /v1/datasets/search?q=colorado%20trails&amp;tag=hiking&amp;limit=20
+
+{
+  "total": 3,              // public datasets that matched
+  "complete": true,
+  "results": [ { …dataset… } ],
+  "tags": [ { "name": "hiking", "count": 3 } ]   // tags among the matches, for filtering
+}</code></pre>
+    <p>Full-text search over each public dataset's name, tags and description. It matches partial words (<code>trail</code> finds "Trailheads"), simple word forms (<code>schools</code> finds "school"), small typos, and ignores accents and case. Results rank by relevance, with name matches weighted most, then tags, then description. When no dataset matches every word, datasets matching any word are returned. With no <code>q</code>, results are the largest datasets first. Only public datasets are searched.</p>
+
     <h2 id="features">Features</h2>
     <div class="table-wrap"><table>
       <tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr>
       <tr><td>GET</td><td><code>/v1/datasets/{datasetId}/features</code></td><td><span class="tag public">optional</span></td><td>A <code>FeatureCollection</code>. Query: <code>limit</code> (default 500, max 1000), <code>nextToken</code></td></tr>
       <tr><td>POST</td><td><code>/v1/datasets/{datasetId}/features</code></td><td><span class="tag auth">owner</span></td><td>Add a feature. GeoVivé assigns the ID. Returns <code>201</code></td></tr>
-      <tr><td>GET</td><td><code>/v1/datasets/{datasetId}/features/{featureId}</code></td><td><span class="tag public">optional</span></td><td>One feature</td></tr>
+      <tr><td>GET</td><td><code>/v1/datasets/{datasetId}/features/{featureId}</code></td><td><span class="tag public">optional</span></td><td>One feature, always with full-detail geometry. Query: <code>detail=simplified</code> for the preview</td></tr>
       <tr><td>PUT</td><td><code>/v1/datasets/{datasetId}/features/{featureId}</code></td><td><span class="tag auth">owner</span></td><td>Replace a feature's geometry and properties</td></tr>
       <tr><td>DELETE</td><td><code>/v1/datasets/{datasetId}/features/{featureId}</code></td><td><span class="tag auth">owner</span></td><td>Delete a feature. Returns <code>204</code></td></tr>
     </table></div>
     <p><strong>Pagination:</strong> when more results exist, the collection includes <code>nextToken</code>. Pass it back as a query parameter to get the next page.</p>
+
+    <h3 id="batch">Bulk delete, move and copy</h3>
+<pre><code>POST /v1/datasets/{datasetId}/features/batch
+{ "action": "move", "ids": ["f1", "f2"], "targetDatasetId": "d2" }   // "delete" | "move" | "copy"
+
+{ "action": "move", "done": ["f1", "f2"], "failed": [], "targetDatasetId": "d2" }</code></pre>
+    <p>Owner only; for <code>move</code> and <code>copy</code> you must also own the target. Up to 100 IDs per call. Moves and copies keep full geometry and properties, with new feature IDs in the target. Each ID succeeds or fails on its own, and pin counts are updated.</p>
 
     <h2 id="formats">Formats</h2>
     <h3>Feature (request)</h3>
@@ -114,11 +180,11 @@
 }</code></pre>
     <ul>
       <li>Coordinates are <strong>[longitude, latitude]</strong> (WGS 84), as GeoJSON requires.</li>
-      <li>Geometry types: <code>Point</code>, <code>MultiPoint</code>, <code>LineString</code>, <code>MultiLineString</code>, <code>Polygon</code>, <code>MultiPolygon</code>. The map currently draws points only.</li>
-      <li>Keep each feature under roughly 350 KB. Very detailed polygons aren't supported yet.</li>
+      <li>Geometry types: <code>Point</code>, <code>MultiPoint</code>, <code>LineString</code>, <code>MultiLineString</code>, <code>Polygon</code>, <code>MultiPolygon</code>. Polygon rings must be closed.</li>
+      <li><strong>Large shapes:</strong> geometry up to 5 MB and 500,000 vertices. Shapes over 100 KB are stored in full, and lists return a simplified preview with <code>properties.geometryDetail: "simplified"</code>. Get the single feature for full detail.</li>
     </ul>
     <h3>Feature (response)</h3>
-    <p>GeoVivé adds <code>id</code>, <code>datasetId</code>, <code>createdAt</code> and <code>updatedAt</code> to <code>properties</code>, and sets the feature's top-level <code>id</code>. These are ignored if sent in a request.</p>
+    <p>GeoVivé adds <code>id</code>, <code>datasetId</code>, <code>createdAt</code> and <code>updatedAt</code> to <code>properties</code>, and sets the feature's top-level <code>id</code>. These are ignored if sent in a request. Non-point features include a GeoJSON <code>bbox</code> of the full shape.</p>
 
     <h2 id="errors">Errors</h2>
     <p>Errors return JSON: <code>{ "message": "…" }</code>.</p>
@@ -128,6 +194,7 @@
       <tr><td><code>401</code></td><td>Missing, invalid or expired token</td></tr>
       <tr><td><code>403</code></td><td>Signed in, but not the dataset's owner</td></tr>
       <tr><td><code>404</code></td><td>Not found, or a private dataset you can't see</td></tr>
+      <tr><td><code>413</code></td><td>Geometry over 5 MB</td></tr>
       <tr><td><code>500</code></td><td>Server error</td></tr>
     </table></div>
 
@@ -151,6 +218,78 @@ curl -X POST https://api.geovive.link/v1/datasets/&lt;datasetId&gt;/features \
 const collection = await res.json();   // GeoJSON FeatureCollection
 map.getSource("places").setData(collection);</code></pre>
 
+    <h2 id="imports">Imports</h2>
+    <p>Load outside data into a dataset you own. Imports run in the background: start one, then poll it until <code>status</code> is <code>succeeded</code> or <code>failed</code>.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr>
+      <tr><td>POST</td><td><code>/v1/datasets/{datasetId}/imports/upload-url</code></td><td><span class="tag auth">owner</span></td><td>A presigned URL for uploading a GeoJSON file (PUT it within 15 minutes)</td></tr>
+      <tr><td>POST</td><td><code>/v1/datasets/{datasetId}/imports</code></td><td><span class="tag auth">owner</span></td><td>Start an import. Returns <code>202</code> with the import</td></tr>
+      <tr><td>GET</td><td><code>/v1/datasets/{datasetId}/imports/{importId}</code></td><td><span class="tag auth">owner</span></td><td>Status, counts and the first few problems</td></tr>
+    </table></div>
+<pre><code>// A state agency's ArcGIS layer, filtered, replacing what's in the map
+{
+  "source": { "type": "arcgis", "url": "https://…/FeatureServer/0", "where": "STATE = 'CO'" },
+  "mode": "replace",            // or "append" (default)
+  "nameField": "UNIT_NAME",     // optional; otherwise name/title/…name fields are tried
+  "categoryField": "TYPE"       // optional; copied into properties.category
+}
+// or { "source": { "type": "url", "url": "https://…/data.geojson" } }
+// or { "source": { "type": "upload", "key": "&lt;from upload-url&gt;" } }</code></pre>
+    <ul>
+      <li>Up to 20,000 features and 50 MB per import. GeoJSON must use longitude/latitude (WGS 84); ArcGIS layers are requested in WGS 84.</li>
+      <li>Each feature is checked like <code>POST …/features</code>. Invalid ones are skipped and counted. Large shapes are stored in full.</li>
+      <li>Imported features keep their original properties, plus <code>sourceId</code> when the source has one.</li>
+      <li>The dataset records each import in <code>imports</code>: source URL or file name, layer title, attribution, time and counts.</li>
+    </ul>
+
+    <h2 id="exports">Exports</h2>
+    <p><code>POST /v1/datasets/{datasetId}/exports</code> with <code>{ "format": "geojson" | "kml" | "gpx" }</code> returns a download link valid for an hour. No sign-in is needed for public datasets; send your token for private ones.</p>
+    <ul>
+      <li>Files have full-detail geometry and all feature properties. GeoJSON adds a <code>geovive</code> block with the dataset name, export time and the sources of imported data.</li>
+      <li>KML keeps pin colors and puts properties in <code>ExtendedData</code>.</li>
+      <li>GPX: points become waypoints and lines become tracks. Areas become tracks along their outer boundaries, since GPX has no areas.</li>
+    </ul>
+
+    <h2 id="layer-lists">Layer lists (connected apps)</h2>
+    <p>GeoVivé keeps no subject-matter layers of its own. A connected app brings its layers by publishing a <strong>layer list</strong>, a JSON file on the app's own verified domain, registered through <a href="/docs/developers/appconnect/">AppConnect</a> (for example <code>https://hunt.example.com/geovive-layers.json</code>). GeoVivé shows those layers in the <strong>AppConnect</strong> section of the Layers panel, only to people working with that app: users who arrived through the app's open link, or who open a map the app created.</p>
+    <p><strong>No personal information.</strong> Labels and shown fields must not identify individuals (names, emails, phone numbers, home addresses). The connection checks look for it, and the <a href="/docs/terms/appconnect/">AppConnect terms</a> forbid it.</p>
+<pre><code>{
+  "version": 1,
+  "title": "Example layers",
+  "layers": [
+    {
+      "id": "co-gmu",                       // letters, numbers, - or _
+      "name": "GMUs (big game)",
+      "group": "Colorado",                  // heading in the Layers panel
+      "color": "#f59e0b",
+      "description": "Big game units with DAUs.",
+      "attribution": "Colorado Parks and Wildlife",
+      "license": "Official agency data",
+      "source": { "type": "arcgis", "url": "https://…/FeatureServer/6", "where": "1=1" },
+      "label": "GMU {GMUID}",               // shown on the map; {FIELD} from the source
+      "fields": { "COUNTY": "County", "ELKDAU": "Elk DAU" },   // shown when clicked
+      "delivery": "relay",                  // or "direct"
+      "cacheHours": 24,                     // relay only (1–168)
+      "tolerance": 0.0005                   // simplification in degrees (optional)
+    }
+  ]
+}</code></pre>
+    <ul>
+      <li><strong>Sources:</strong> <code>arcgis</code> (a FeatureServer or MapServer layer), <code>wfs</code> (OGC WFS 2.0; add <code>typeName</code> and optionally <code>geometryField</code>) or <code>geojson</code> (a GeoJSON file, including one the app hosts). HTTPS only.</li>
+      <li><strong>Delivery:</strong>
+        <ul>
+          <li><code>relay</code>: GeoVivé's server fetches the source, simplifies it for display, keeps only the listed fields with readable names, and caches a compressed copy. Relayed source addresses aren't shown to browsers.</li>
+          <li><code>direct</code>: the browser loads the source itself. Use it when the data's terms don't allow a cached copy; the source must allow browser (CORS) requests.</li>
+        </ul>
+      </li>
+      <li>GeoVivé re-reads the list every few minutes and shows only <strong>approved</strong> layer versions. New or changed layers are checked automatically: passing ones show within minutes, ones a person must review within 5 business days. Checks also re-run weekly or whenever you ask.</li>
+    </ul>
+    <div class="table-wrap"><table>
+      <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+      <tr><td>GET</td><td><code>/v1/apps/{appId}/layers</code></td><td>The app's layers as GeoVivé shows them (display settings; sources only for direct layers)</td></tr>
+      <tr><td>GET</td><td><code>/v1/relay/{appId}/{layerId}</code></td><td>A one-hour link to the relayed layer file (GeoJSON, each feature with <code>_label</code> and the listed fields)</td></tr>
+    </table></div>
+
     <h2 id="open-links">Open in GeoVivé links</h2>
     <p>A registered app can send its signed-in users to their own GeoVivé map for one item in the app (for example, a hunt plan), then bring them back.</p>
 <pre><code>https://geovive.link/open?app=&lt;appId&gt;&amp;ref=&lt;itemId&gt;
@@ -167,21 +306,78 @@ map.getSource("places").setData(collection);</code></pre>
     </table></div>
     <p>GeoVivé signs the user in if needed, finds or creates their private map, applies your pin types, and shows a banner. <strong>Done</strong> returns them to <code>return</code> with <code>?geovive_map=&lt;datasetId&gt;</code> added. Only the ID travels in the URL.</p>
     <p>The map belongs to the user. Until connected apps ship (below), your app can't read it with its own credentials; the user sees it in GeoVivé under <strong>My maps</strong>.</p>
+    <h3>Showing the app's layers</h3>
+    <p>Add <code>layers=&lt;layerId,…&gt;</code> to turn on layers from your layer list, and <code>focus=&lt;layerId&gt;:&lt;label&gt;</code> to zoom to and outline one feature, for example <code>focus=co-gmu:GMU 61</code>. Without <code>ref</code>, the link is a <strong>view link</strong>: no sign-in and no map is created; GeoVivé just shows your layers, with a Done button back to <code>return</code>.</p>
+<pre><code>https://geovive.link/open?app=&lt;appId&gt;&amp;layers=co-gmu,co-sheep&amp;focus=co-gmu:GMU%2061&amp;return=https%3A%2F%2Fhunt.example.com%2Funits%2F61</code></pre>
+
     <h3>API used by the link</h3>
     <div class="table-wrap"><table>
       <tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr>
       <tr><td>GET</td><td><code>/v1/apps/{appId}</code></td><td><span class="tag public">none</span></td><td>App name, allowed origins and pin types</td></tr>
       <tr><td>PUT</td><td><code>/v1/apps/{appId}/maps/{ref}</code></td><td><span class="tag auth">required</span></td><td>Find or create the caller's map for that item. Body: <code>title</code>, <code>externalUrl</code>, <code>referenceArea</code>. Returns <code>201</code> when created, <code>200</code> when it already existed.</td></tr>
     </table></div>
-    <p>To register an app, send its name, return origins, outline origins and pin types to the GeoVivé team.</p>
+    <p>To connect an app, see <a href="/docs/developers/appconnect/">AppConnect requirements</a> for what to have ready.</p>
 
-    <h2 id="connected-apps">Connected apps (coming soon)</h2>
+    <h2 id="appconnect-api">AppConnect API</h2>
+    <p>The <a href="/appconnect/">AppConnect page</a> uses these routes; all but the webhook need a signed-in user, who becomes the app's owner. See <a href="/docs/developers/appconnect/">requirements</a> and <a href="/docs/terms/appconnect/">terms</a>.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+      <tr><td>POST</td><td><code>/v1/appconnect/apps</code></td><td>Register an app: <code>appId</code>, <code>name</code>, <code>domain</code>, <code>layersUrl</code>, <code>returnOrigins</code>, <code>contactEmail</code>, <code>acceptTerms</code>. Returns the domain-verification token.</td></tr>
+      <tr><td>GET</td><td><code>/v1/appconnect/apps</code></td><td>Your apps and their stages</td></tr>
+      <tr><td>GET</td><td><code>/v1/appconnect/apps/{appId}</code></td><td>One app with its history</td></tr>
+      <tr><td>POST</td><td><code>/v1/appconnect/apps/{appId}/checks</code></td><td>Run the connection checks (<code>202</code>); the report is emailed and listed on the app</td></tr>
+      <tr><td>GET</td><td><code>/v1/appconnect/apps/{appId}/reports/{reportId}</code></td><td>A 10-minute link to a report or notice PDF</td></tr>
+      <tr><td>POST</td><td><code>/v1/appconnect/apps/{appId}/disconnect</code></td><td>Disconnect now or at term end (<code>confirm</code> must equal the app ID); <code>DELETE</code> cancels a scheduled one</td></tr>
+      <tr><td>POST</td><td><code>/v1/appconnect/apps/{appId}/reconnect</code></td><td>Reconnect within 90 days</td></tr>
+      <tr><td>GET</td><td><code>/v1/appconnect/apps/{appId}/export</code></td><td>Settings and history as JSON</td></tr>
+    </table></div>
+    <p>Stages: registered → checking → checks passed or needs fixes → awaiting payment → live, renewed yearly; plus sandbox, expired, suspended, disconnected (90-day reconnect window) and closed.</p>
+
+    <h2 id="connected-apps"><span id="account-linking"></span>Account linking</h2>
+    <p>A live or sandbox <a href="/docs/developers/appconnect/">AppConnect</a> app can ask a user to link their GeoVivé account. With the user's consent, your app can read the maps it created for them (and any they choose to share), and create maps and pins. It's standard OAuth 2.0: authorization code with PKCE, and your client secret stays on your server.</p>
+
+    <h3>1. Set up</h3>
+    <p>On your app's <a href="/appconnect/">AppConnect page</a>, under <b>Account linking</b>, add your redirect URIs (exact https addresses on your verified domain; <code>http://localhost</code> is allowed while in the sandbox) and create a client secret. The secret is shown once. Your client ID is your app ID.</p>
+
+    <h3>2. Send the user to GeoVivé</h3>
+    <pre><code>https://geovive.link/connect/?response_type=code
+  &amp;client_id=YOUR_APP_ID
+  &amp;redirect_uri=https%3A%2F%2Fyourapp.example%2Fgeovive%2Fcallback
+  &amp;scope=profile%20maps%3Aread%20maps%3Awrite
+  &amp;state=RANDOM_PER_REQUEST
+  &amp;code_challenge=BASE64URL(SHA256(code_verifier))
+  &amp;code_challenge_method=S256</code></pre>
+    <p>The user signs in if needed, sees your app's name, domain and what it's asking for, and can share extra maps read-only. They come back to your <code>redirect_uri</code> with <code>?code=…&amp;state=…</code>, or <code>?error=access_denied</code> if they cancel. Check that <code>state</code> matches.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Scope</th><th>Lets your app</th></tr>
+      <tr><td><code>profile</code></td><td>Get a user ID for your app and the user's display name</td></tr>
+      <tr><td><code>maps:read</code> (default)</td><td>Read maps your app created for this user, and maps the user shared with it</td></tr>
+      <tr><td><code>maps:write</code></td><td>Create maps, and add, change and delete pins in maps your app created</td></tr>
+    </table></div>
+
+    <h3>3. Swap the code for tokens (on your server)</h3>
+    <pre><code>POST https://api.geovive.link/v1/oauth/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code&amp;code=…&amp;code_verifier=…
+&amp;redirect_uri=…&amp;client_id=YOUR_APP_ID&amp;client_secret=…</code></pre>
+    <pre><code>{ "access_token": "gva_…", "token_type": "Bearer", "expires_in": 3600,
+  "refresh_token": "gvr_…", "scope": "maps:read maps:write profile" }</code></pre>
+    <p>Codes last 5 minutes and work once. Access tokens last an hour. Refresh tokens last 90 days and are replaced every time you use one (<code>grant_type=refresh_token</code>): store the new one. Using an old refresh token again is treated as theft and ends the link. HTTP Basic client authentication also works. Revoke a token with <code>POST /v1/oauth/revoke</code> (<code>token</code>, plus your client credentials).</p>
+
+    <h3>4. Call the linked API</h3>
+    <pre><code>Authorization: Bearer gva_…</code></pre>
+    <div class="table-wrap"><table>
+      <tr><th>Method</th><th>Path</th><th>Scope</th><th>Does</th></tr>
+      <tr><td>GET</td><td><code>/v1/linked/me</code></td><td>any</td><td><code>userId</code> (stable for your app only), scopes, and <code>displayName</code> with <code>profile</code></td></tr>
+      <tr><td>GET</td><td><code>/v1/linked/datasets</code></td><td>maps:read</td><td>Maps your app can see; <code>createdByThisApp</code> says which you can change</td></tr>
+      <tr><td>POST</td><td><code>/v1/linked/datasets</code></td><td>maps:write</td><td>Create a private map: <code>{ name, description?, tags?, externalRef? }</code>. The same <code>externalRef</code> returns the existing map</td></tr>
+      <tr><td>GET</td><td><code>/v1/linked/datasets/{id}</code>, <code>…/features</code>, <code>…/features/{featureId}</code></td><td>maps:read</td><td>Same shapes as the public dataset and feature routes</td></tr>
+      <tr><td>POST, PUT, DELETE</td><td><code>/v1/linked/datasets/{id}/features[/{featureId}]</code></td><td>maps:write</td><td>Add, replace or delete pins, only in maps your app created</td></tr>
+    </table></div>
     <div class="card">
-      <p>Next, apps will be able to link a user's GeoVivé account with their own and read that user's maps, with the user's consent:</p>
-      <ul>
-        <li><strong>Account linking</strong> via OAuth 2.0, with a consent screen and a Connected apps page where users can revoke access.</li>
-        <li><strong>App-scoped access:</strong> an app sees only maps created through it or shared with it.</li>
-      </ul>
+      <p style="margin-top:0"><strong>What your app never gets:</strong> the user's email, password, GeoVivé account ID, or any map they didn't create through you or share with you. <code>userId</code> is different for every app, so apps can't match users with each other.</p>
+      <p style="margin:0"><strong>When access ends:</strong> the user removes your app in <a href="/mydata/#connected-apps">My data → Connected apps</a>, your app leaves AppConnect or lapses, or a refresh token is reused. Calls then return <code>401</code>; send the user through step 2 again. Maps your app created stay with the user.</p>
     </div>
 
     <footer>GeoVivé API v1 · <a href="/docs/">User guide</a></footer>

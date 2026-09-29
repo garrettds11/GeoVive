@@ -1,0 +1,185 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  GeoVivé inbound mail. Mail to admin@geovive.link is received by Amazon SES,
+  scanned for spam and viruses, stored in a private S3 bucket (90 days) and
+  forwarded to the admin's inbox. After creating the stack, activate the rule
+  set once:  aws ses set-active-receipt-rule-set --rule-set-name geovive-inbound
+
+Parameters:
+  HostedZoneId:
+    Type: String
+    Default: Z0318749XVX1CEI14FGK
+  Domain:
+    Type: String
+    Default: geovive.link
+  Recipients:
+    Type: CommaDelimitedList
+    Default: admin@geovive.link
+    Description: Addresses at the domain that are accepted
+  ForwardTo:
+    Type: String
+    Default: garrett.spear@outlook.com
+    Description: Where accepted mail is forwarded (comma-separated for several)
+  ForwardFrom:
+    Type: String
+    Default: admin@geovive.link
+    Description: Verified sender used for forwarded copies (original sender goes in Reply-To)
+
+Resources:
+  MailBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Sub geovive-mail-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls: { Rules: [{ ObjectOwnership: BucketOwnerEnforced }] }
+      LifecycleConfiguration:
+        Rules:
+          - { Id: expire-mail, Status: Enabled, Prefix: inbound/, ExpirationInDays: 90 }
+      Tags:
+        - { Key: project, Value: geovive }
+
+  MailBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref MailBucket
+      PolicyDocument:
+        Statement:
+          - Sid: AllowSESPuts
+            Effect: Allow
+            Principal: { Service: ses.amazonaws.com }
+            Action: s3:PutObject
+            Resource: !Sub "${MailBucket.Arn}/inbound/*"
+            Condition:
+              StringEquals: { "aws:SourceAccount": !Ref AWS::AccountId }
+              ArnLike: { "aws:SourceArn": !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:receipt-rule-set/geovive-inbound:receipt-rule/*" }
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource: [!GetAtt MailBucket.Arn, !Sub "${MailBucket.Arn}/*"]
+            Condition: { Bool: { "aws:SecureTransport": "false" } }
+
+  ForwarderRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - { Effect: Allow, Principal: { Service: lambda.amazonaws.com }, Action: sts:AssumeRole }
+      ManagedPolicyArns: [arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole]
+      Policies:
+        - PolicyName: forward
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub "${MailBucket.Arn}/inbound/*"
+              - Effect: Allow
+                Action: [ses:SendRawEmail, ses:SendEmail]
+                Resource: "*"
+                Condition: { StringEquals: { "ses:FromAddress": !Ref ForwardFrom } }
+
+  ForwarderLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/geovive-mail-forwarder
+      RetentionInDays: 14
+
+  ForwarderFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: ForwarderLogGroup
+    Properties:
+      FunctionName: geovive-mail-forwarder
+      Description: Forwards mail received at the GeoVivé domain
+      Runtime: nodejs22.x
+      Architectures: [arm64]
+      Handler: index.handler
+      MemorySize: 256
+      Timeout: 30
+      Role: !GetAtt ForwarderRole.Arn
+      Environment:
+        Variables:
+          BUCKET: !Ref MailBucket
+          FORWARD_TO: !Ref ForwardTo
+          FORWARD_FROM: !Ref ForwardFrom
+      Code:
+        ZipFile: |
+          // Forward a received message: the copy comes from FORWARD_FROM (SES can only
+          // send from verified addresses) with the original sender as Reply-To.
+          // Messages SES marks as spam or virus are kept in S3 but not forwarded.
+          // Logs contain only the message ID and verdicts, never addresses or content.
+          const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");
+          const { SESv2Client, SendEmailCommand } = require("@aws-sdk/client-sesv2");
+          const s3 = new S3Client({}), ses = new SESv2Client({});
+          exports.handler = async (event) => {
+            const rec = event.Records[0].ses;
+            const id = rec.mail.messageId, r = rec.receipt;
+            const verdicts = { spam: r.spamVerdict.status, virus: r.virusVerdict.status, spf: r.spfVerdict.status, dkim: r.dkimVerdict.status };
+            if (verdicts.spam === "FAIL" || verdicts.virus === "FAIL") { console.log("not forwarded", id, JSON.stringify(verdicts)); return; }
+            const obj = await s3.send(new GetObjectCommand({ Bucket: process.env.BUCKET, Key: `inbound/${id}` }));
+            const raw = await obj.Body.transformToString("latin1");
+            const split = raw.search(/\r?\n\r?\n/);
+            let head = raw.slice(0, split), body = raw.slice(split);
+            const unfolded = head.replace(/\r?\n[ \t]+/g, " ");
+            const from = (unfolded.match(/^From:\s*(.+)$/im) || [])[1] || "unknown sender";
+            const name = (from.match(/^\s*"?([^"<]*?)"?\s*</) || [])[1] || from.replace(/[<>]/g, "");
+            head = head.replace(/\r?\n[ \t]+/g, " ").split(/\r?\n/)
+              .filter(l => !/^(Return-Path|Sender|Message-ID|DKIM-Signature|Reply-To|From|Received|X-SES-[\w-]+|Authentication-Results|ARC-[\w-]+):/i.test(l))
+              .join("\r\n");
+            const safeName = name.replace(/["\r\n]/g, "").slice(0, 60);
+            head = `From: "${safeName} via GeoVivé" <${process.env.FORWARD_FROM}>\r\nReply-To: ${from}\r\nX-GeoVive-Forwarded-For: ${rec.mail.destination.join(", ")}\r\n` + head;
+            await ses.send(new SendEmailCommand({
+              FromEmailAddress: process.env.FORWARD_FROM,
+              Destination: { ToAddresses: process.env.FORWARD_TO.split(",").map(s => s.trim()) },
+              Content: { Raw: { Data: Buffer.from(head + body, "latin1") } }
+            }));
+            console.log("forwarded", id, JSON.stringify(verdicts));
+          };
+
+  ForwarderPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ForwarderFunction
+      Action: lambda:InvokeFunction
+      Principal: ses.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+
+  RuleSet:
+    Type: AWS::SES::ReceiptRuleSet
+    Properties:
+      RuleSetName: geovive-inbound
+
+  ForwardRule:
+    Type: AWS::SES::ReceiptRule
+    DependsOn: [MailBucketPolicy, ForwarderPermission]
+    Properties:
+      RuleSetName: !Ref RuleSet
+      Rule:
+        Name: admin-forward
+        Enabled: true
+        ScanEnabled: true
+        TlsPolicy: Optional
+        Recipients: !Ref Recipients
+        Actions:
+          - S3Action: { BucketName: !Ref MailBucket, ObjectKeyPrefix: inbound/ }
+          - LambdaAction: { FunctionArn: !GetAtt ForwarderFunction.Arn, InvocationType: Event }
+
+  InboundMx:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref Domain
+      Type: MX
+      TTL: "300"
+      ResourceRecords: [!Sub "10 inbound-smtp.${AWS::Region}.amazonaws.com"]
+
+Outputs:
+  MailBucketName:
+    Value: !Ref MailBucket

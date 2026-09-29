@@ -14,6 +14,9 @@ const state = {
   user: null,        // oidc-client-ts user (null when signed out)
   datasets: [],      // datasets visible to this user
   addMode: false,
+  drawMode: null,     // null | "line" | "polygon" — freehand line/area drawing
+  drawPoints: [],
+  drawing: false,
   popup: null
 };
 
@@ -75,6 +78,17 @@ async function refreshDatasets() {
   renderMyMaps();
 }
 
+// Clicking the selected map again hides it and its pins.
+async function deselectDataset() {
+  closePopup();
+  setAddMode(false);
+  cancelDraw();
+  $("dataset-select").value = "";
+  await window.GeoVive.applyDataset("");
+  const form = $("map-details"); if (form) form.hidden = true;
+  updateEditBar();
+}
+
 async function selectDataset(datasetId) {
   const key = `api:${datasetId}`;
   $("dataset-select").value = key;
@@ -92,17 +106,67 @@ function renderMyMaps() {
 
   const list = $("my-maps-list");
   const mine = state.datasets.filter(isMine);
-  list.innerHTML = mine.length
-    ? mine.map(d => `
-        <button type="button" class="my-map-item" data-id="${esc(d.datasetId)}">
-          <span class="my-map-name">${esc(d.name)}</span>
-          <span class="my-map-meta">${d.featureCount || 0} pins · ${esc(d.visibility)}</span>
-        </button>`).join("")
+  // The panel shows the few most recently changed maps (plus the open one);
+  // 📂 All my maps opens the full, searchable list.
+  const SHOWN = 4;
+  const recent = [...mine].sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")));
+  const cur = recent.find(d => d.datasetId === currentDatasetId());
+  const shown = recent.slice(0, SHOWN);
+  if (cur && !shown.includes(cur)) shown[SHOWN - 1] = cur;   // an open map picked from 📂 stays visible
+  const allBtn = $("all-maps-btn");
+  if (allBtn) { allBtn.hidden = mine.length <= SHOWN; allBtn.textContent = `📂 All my maps (${mine.length})`; }
+  list.innerHTML = shown.length
+    ? shown.map(d => `
+        <div class="my-map-item" data-id="${esc(d.datasetId)}">
+          <button type="button" class="my-map-open">
+            <span class="my-map-name">${esc(d.name)}</span>
+            <span class="my-map-meta">${d.featureCount || 0} pins · ${esc(d.visibility)}</span>
+          </button>
+          <button type="button" class="my-map-edit" title="Edit name, description, tags and visibility" aria-label="Edit ${esc(d.name)}">✏️</button>
+        </div>`).join("")
     : `<p class="hint">No maps yet. Create one to start pinning places.</p>`;
 
-  list.querySelectorAll(".my-map-item").forEach(btn =>
-    btn.addEventListener("click", () => selectDataset(btn.dataset.id)));
+  list.querySelectorAll(".my-map-item").forEach(item => {
+    item.querySelector(".my-map-open").addEventListener("click", () =>
+      currentDatasetId() === item.dataset.id ? deselectDataset() : selectDataset(item.dataset.id));
+    item.querySelector(".my-map-edit").addEventListener("click", async () => {
+      const form = $("map-details");
+      if (form && !form.hidden && form.dataset.for === item.dataset.id) { form.hidden = true; return; }   // pencil again closes it
+      if (currentDatasetId() !== item.dataset.id) await selectDataset(item.dataset.id);
+      openDetails();
+    });
+  });
   updateEditBar();
+}
+
+// ------------------------------------------------------------ UI: all my maps (dialog)
+
+function renderAllMaps() {
+  const q = ($("all-maps-filter")?.value || "").trim().toLowerCase();
+  const mine = state.datasets.filter(isMine).sort((a, b) => a.name.localeCompare(b.name));
+  const hits = q ? mine.filter(d => `${d.name} ${d.description || ""} ${(d.tags || []).join(" ")}`.toLowerCase().includes(q)) : mine;
+  const list = $("all-maps-list");
+  list.innerHTML = hits.length ? hits.map(d => `
+    <div class="my-map-item ${d.datasetId === currentDatasetId() ? "active" : ""}" data-id="${esc(d.datasetId)}">
+      <button type="button" class="my-map-open">
+        <span class="my-map-name">${esc(d.name)}</span>
+        <span class="my-map-meta">${d.featureCount || 0} pins · ${esc(d.visibility)}</span>
+      </button>
+    </div>`).join("") : `<p class="hint">No maps match.</p>`;
+  list.querySelectorAll(".my-map-item").forEach(item => item.querySelector(".my-map-open").addEventListener("click", async () => {
+    $("all-maps-dialog").close();
+    if (currentDatasetId() === item.dataset.id) await deselectDataset(); else await selectDataset(item.dataset.id);
+    renderMyMaps();
+  }));
+}
+
+function initAllMaps() {
+  const dlg = $("all-maps-dialog"), btn = $("all-maps-btn");
+  if (!dlg || !btn) return;
+  btn.addEventListener("click", () => { $("all-maps-filter").value = ""; renderAllMaps(); dlg.showModal(); $("all-maps-filter").focus(); });
+  $("all-maps-filter").addEventListener("input", renderAllMaps);
+  dlg.querySelector("[data-close]").addEventListener("click", () => dlg.close());
+  dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
 }
 
 function updateEditBar() {
@@ -111,17 +175,18 @@ function updateEditBar() {
   const ds = currentDataset();
   const editable = canEditCurrent();
   bar.hidden = !editable;
-  if (!editable) setAddMode(false);
+  if (!editable) { setAddMode(false); cancelDraw(); }
   if (editable) $("edit-bar-title").textContent = ds.name;
   document.querySelectorAll(".my-map-item").forEach(b =>
     b.classList.toggle("active", b.dataset.id === currentDatasetId()));
 }
 
 function setAddMode(on) {
+  if (on) cancelDraw();
   state.addMode = on;
   const btn = $("add-pin-btn");
   if (btn) {
-    btn.textContent = on ? "Click the map to place a pin… (Esc to cancel)" : "+ Add pin";
+    btn.textContent = on ? "Click the map… (Esc cancels)" : "📍 New";
     btn.classList.toggle("active", on);
   }
   const canvas = window.GeoVive?.map?.getCanvas();
@@ -139,7 +204,7 @@ async function createMap() {
     nameEl.value = "";
     await refreshDatasets();
     await selectDataset(ds.datasetId);
-    setStatus(`Created "${ds.name}". Click + Add pin to start.`);
+    setStatus(`Created "${ds.name}". Click 📍 New to add a pin, or ✏️ to add a description and tags.`);
   } catch (e) {
     setStatus(e.message, true);
   }
@@ -163,25 +228,37 @@ async function deleteCurrentMap() {
 
 // ------------------------------------------------------------ pin form popup
 
-// Pin types: the dataset's own (set by a connected app), else the defaults.
-function categoriesFor(ds) {
-  const types = ds?.featureTypes;
-  return Array.isArray(types) && types.length
-    ? types.map(t => ({ value: t.key, label: t.label, color: t.color }))
-    : PIN_CATEGORIES;
+// Pin categories are fixed by the data model: location, event, alert.
+function categoriesFor() { return PIN_CATEGORIES; }
+
+// datetime-local wants "YYYY-MM-DDTHH:MM" in local time
+function localTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
+// Fields a pin may carry (datamodel.yaml); everything else is dropped on save
+const MODEL_FIELDS = ["name", "category", "description", "eventTime", "status", "severity", "source", "externalId", "icon", "color"];
 
 function pinFormHtml(props = {}) {
   const cat = props.category || "location";
   return `
     <form class="pin-form">
-      <label>Name<input name="name" required maxlength="120" value="${esc(props.name)}"></label>
+      <label>Name<span class="field-row"><input name="name" required maxlength="120" value="${esc(props.name)}"><button type="button" class="emoji-btn" data-emoji-for="name" title="Insert emoji" aria-label="Insert emoji">😀</button></span></label>
       <label>Type
         <select name="category">
           ${categoriesFor(currentDataset()).map(c => `<option value="${c.value}" ${c.value === cat ? "selected" : ""}>${c.label}</option>`).join("")}
         </select>
       </label>
-      <label>Notes<textarea name="description" rows="3" maxlength="2000">${esc(props.description)}</textarea></label>
+      <div class="pin-when" ${cat === "location" ? "hidden" : ""}>
+        <label>When it happened<input type="datetime-local" name="eventTime" value="${localTime(props.eventTime)}"></label>
+        <label class="pin-severity" ${cat === "alert" ? "" : "hidden"}>Severity
+          <select name="severity">${["info", "warning", "critical"].map(v => `<option value="${v}" ${v === (props.severity || "info") ? "selected" : ""}>${v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select>
+        </label>
+      </div>
+      <label>Notes <span class="hint">(Markdown: **bold**, *italic*, - lists, links)</span><span class="field-row"><textarea name="description" rows="4" maxlength="2000">${esc(props.description)}</textarea><button type="button" class="emoji-btn" data-emoji-for="description" title="Insert emoji" aria-label="Insert emoji">😀</button></span></label>
+      <div class="emoji-pop" hidden></div>
       <div class="pin-form-actions">
         ${props.id ? `<button type="button" class="btn danger" data-action="delete">Delete</button>` : ""}
         <button type="button" class="btn" data-action="cancel">Cancel</button>
@@ -191,33 +268,87 @@ function pinFormHtml(props = {}) {
     </form>`;
 }
 
+// ------------------------------------------------------------ emoji picker
+// A small picker for desktop (phones have emoji keyboards). Also: Win + . or Ctrl + Cmd + Space.
+const EMOJI = [
+  ["Places", "🏠 home house|🏡 house garden|🏕️ camp camping tent|⛺ tent camp|🏔️ mountain snow|⛰️ mountain|🌲 tree forest pine|🌳 tree|🌊 water wave|🏞️ park|🏖️ beach|🏜️ desert|🌋 volcano|🏢 office building|🏫 school|🏥 hospital|🏛️ government|⛪ church|🏪 store shop|🏨 hotel|🏭 factory|🌉 bridge|🗼 tower|⛽ fuel gas|🅿️ parking|🚏 bus stop|⚓ anchor harbor port|🛖 hut cabin|🗻 mount fuji"],
+  ["Map", "📍 pin location|📌 pushpin|🗺️ map|🧭 compass|🚩 flag|🏁 finish flag|⭐ star|❗ important|❓ question|⚠️ warning caution|⛔ no entry|🚫 prohibited|✅ done check|❌ cross no|🔴 red|🟠 orange|🟡 yellow|🟢 green|🔵 blue|🟣 purple|⚫ black|⚪ white|🔺 up triangle|🔻 down triangle|➡️ right arrow|⬆️ up arrow|🎯 target|🔒 locked|🔑 key access|📷 camera photo"],
+  ["Outdoors", "🦌 deer|🐻 bear|🐺 wolf|🦃 turkey|🦆 duck|🐟 fish|🦅 eagle|🐗 boar hog|🐾 tracks paws|🏹 bow arrow hunt|🎣 fishing|🥾 boot hike|🚶 walk|🚴 bike|🛶 canoe|🚤 boat|🔥 fire|💧 water drop|☀️ sun|🌧️ rain|❄️ snow|🌙 moon night|🌿 plant|🍂 leaves|🍄 mushroom|🌾 field|🪨 rock|🌵 cactus"],
+  ["Transport", "🚗 car|🛻 truck pickup|🚙 suv|🚌 bus|🚆 train|✈️ plane airport|🚁 helicopter|🚀 rocket|🛣️ highway road|🛤️ railway|🚦 traffic light|🚧 construction|🏍️ motorcycle|🚲 bicycle|🛴 scooter|🚢 ship"],
+  ["People & events", "👤 person|👥 people group|🧑‍🤝‍🧑 meet|🎉 party event|📅 calendar date|⏰ alarm time|🎓 graduation|💼 work|🛒 shopping|🍽️ food restaurant|☕ coffee|🍺 beer bar|🎵 music|🏆 trophy|⚽ soccer|🏈 football|⚾ baseball|🏀 basketball|❤️ heart love|👍 thumbs up|📞 phone call|✉️ mail|💡 idea|📝 note|🆘 sos help|🚑 ambulance|🚒 fire engine|🚓 police"]
+].map(([cat, list]) => [cat, list.split("|").map(x => { const i = x.indexOf(" "); return { ch: x.slice(0, i), words: x.slice(i + 1) }; })]);
+
+function wireEmojiPicker(form) {
+  const pop = form.querySelector(".emoji-pop");
+  let target = null;
+  const render = (q = "") => {
+    const ql = q.trim().toLowerCase();
+    const cats = EMOJI.map(([cat, items]) => [cat, items.filter(e => !ql || e.words.includes(ql) || cat.toLowerCase().includes(ql))]).filter(([, i]) => i.length);
+    pop.querySelector(".emoji-list").innerHTML = cats.map(([cat, items]) =>
+      `<div class="emoji-cat">${cat}</div><div class="emoji-grid">${items.map(e => `<button type="button" title="${e.words}" data-ch="${e.ch}">${e.ch}</button>`).join("")}</div>`).join("") || `<p class="hint">No match</p>`;
+  };
+  pop.innerHTML = `<input type="search" placeholder="Search emoji (e.g. deer, camp, warning)" aria-label="Search emoji"><div class="emoji-list"></div>`;
+  const search = pop.querySelector("input");
+  search.addEventListener("input", () => render(search.value));
+  form.querySelectorAll(".emoji-btn").forEach(btn => btn.addEventListener("click", () => {
+    const same = !pop.hidden && target === btn.dataset.emojiFor;
+    target = btn.dataset.emojiFor;
+    pop.hidden = same;
+    if (!pop.hidden) { search.value = ""; render(); search.focus(); }
+  }));
+  pop.addEventListener("click", (e) => {
+    const ch = e.target.closest("button[data-ch]")?.dataset.ch;
+    if (!ch || !target) return;
+    const el = form.elements[target];
+    const start = el.selectionStart ?? el.value.length, end = el.selectionEnd ?? el.value.length;
+    if (el.value.length + ch.length > (el.maxLength > 0 ? el.maxLength : 1e9)) return;
+    el.value = el.value.slice(0, start) + ch + el.value.slice(end);
+    el.focus();
+    el.setSelectionRange(start + ch.length, start + ch.length);
+  });
+  pop.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); pop.hidden = true; form.elements[target]?.focus(); } });
+}
+
 function openPinForm(lngLat, feature) {
   closePopup();
   const props = feature ? { ...feature.properties } : {};
-  const popup = new mapboxgl.Popup({ closeOnClick: false, maxWidth: "280px" })
+  const popup = new mapboxgl.Popup({ closeOnClick: false, maxWidth: "300px" })
     .setLngLat(lngLat)
     .setHTML(pinFormHtml(props))
     .addTo(window.GeoVive.map);
   state.popup = popup;
 
   const form = popup.getElement().querySelector(".pin-form");
+  wireEmojiPicker(form);
   const errEl = form.querySelector(".pin-form-error");
-  form.querySelector("input[name=name]").focus();
+  if (!feature) form.querySelector("input[name=name]").focus();
 
   const fail = (msg) => { errEl.textContent = msg; errEl.hidden = false; };
+  // Events and alerts need a time; alerts also a severity
+  form.category.addEventListener("change", () => {
+    const c = form.category.value;
+    form.querySelector(".pin-when").hidden = c === "location";
+    form.querySelector(".pin-severity").hidden = c !== "alert";
+  });
 
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const fd = new FormData(form);
+    const category = fd.get("category");
+    const kept = Object.fromEntries(MODEL_FIELDS.filter(k => props[k] !== undefined && props[k] !== null && props[k] !== "").map(k => [k, props[k]]));
+    const properties = { ...kept, name: fd.get("name").trim(), category, description: fd.get("description").trim() };
+    delete properties.eventTime; delete properties.severity;
+    if (category !== "location") {
+      const t = fd.get("eventTime");
+      if (!t) { fail("Events and alerts need a date and time: when did it happen?"); return; }
+      properties.eventTime = new Date(t).toISOString();
+    }
+    if (category === "alert") properties.severity = fd.get("severity") || "info";
+    if (!properties.description) delete properties.description;
     const body = {
       type: "Feature",
       geometry: feature ? feature.geometry : { type: "Point", coordinates: [lngLat.lng, lngLat.lat] },
-      properties: {
-        name: fd.get("name").trim(),
-        category: fd.get("category"),
-        color: categoriesFor(currentDataset()).find(c => c.value === fd.get("category"))?.color,
-        description: fd.get("description").trim()
-      }
+      properties
     };
     const id = encodeURIComponent(currentDatasetId());
     try {
@@ -252,11 +383,113 @@ function openPinForm(lngLat, feature) {
 
 // Called by the inline script before it shows its read-only popup.
 // Returns true when the editor handled the click.
+// Existing pins open as a read-only card (pin-view.js); editing starts from its pencil.
 function onFeatureClick(feature, e) {
-  if (!canEditCurrent() || state.addMode) return state.addMode;
+  return !!state.addMode && canEditCurrent();
+}
+
+function canEditPin(props) {
+  return canEditCurrent() && (!props?.datasetId || props.datasetId === currentDatasetId());
+}
+
+function editPin(feature) {
   const [lng, lat] = feature.geometry.coordinates;
   openPinForm({ lng, lat }, feature);
-  return true;
+}
+
+// Add a pin at the device's current location (asks the browser for permission).
+// The position is only used to place the pin form; it's saved only if the user saves the pin.
+function pinMyLocation() {
+  const btn = $("pin-here-btn");
+  if (!navigator.geolocation) { setStatus("This browser can't share your location."); return; }
+  if (btn) { btn.disabled = true; btn.textContent = "Finding you…"; }
+  navigator.geolocation.getCurrentPosition(pos => {
+    if (btn) { btn.disabled = false; btn.textContent = "📍 Pin my location"; }
+    const lngLat = { lng: pos.coords.longitude, lat: pos.coords.latitude };
+    const map = window.GeoVive.map;
+    map.flyTo({ center: [lngLat.lng, lngLat.lat], zoom: Math.max(map.getZoom(), 15) });
+    setAddMode(false);
+    openPinForm(lngLat, null);
+    const acc = Math.round(pos.coords.accuracy || 0);
+    if (acc) setStatus(`Location found (within about ${acc} m). Adjust the name and save the pin.`);
+  }, err => {
+    if (btn) { btn.disabled = false; btn.textContent = "📍 Pin my location"; }
+    setStatus(err.code === err.PERMISSION_DENIED ? "Location sharing is off for this site. Allow it in your browser settings to pin your location."
+      : "Couldn't get your location. Try again, or place the pin by clicking the map.");
+  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
+}
+
+// ------------------------------------------------------------ freehand line/area drawing
+
+// A dashed preview of the line or polygon being traced, cleared once saved or cancelled.
+function ensureDrawLayer() {
+  const map = window.GeoVive.map;
+  if (map.getSource("GeoVive-draw-temp")) return;
+  map.addSource("GeoVive-draw-temp", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addLayer({ id: "GeoVive-draw-temp-fill", type: "fill", source: "GeoVive-draw-temp",
+    paint: { "fill-color": "#facc15", "fill-opacity": 0.15 }, filter: ["==", ["geometry-type"], "Polygon"] });
+  map.addLayer({ id: "GeoVive-draw-temp-line", type: "line", source: "GeoVive-draw-temp",
+    paint: { "line-color": "#facc15", "line-width": 2.5, "line-dasharray": [1, 1] } });
+}
+
+function updateDrawData() {
+  const map = window.GeoVive?.map;
+  const src = map?.getSource("GeoVive-draw-temp");
+  if (!src) return;
+  const pts = state.drawPoints;
+  if (pts.length < 2) { src.setData({ type: "FeatureCollection", features: [] }); return; }
+  const geometry = state.drawMode === "polygon"
+    ? { type: "Polygon", coordinates: [[...pts, pts[0]]] }
+    : { type: "LineString", coordinates: pts };
+  src.setData({ type: "FeatureCollection", features: [{ type: "Feature", geometry, properties: {} }] });
+}
+
+// Stops any drawing in progress and clears the preview. Safe to call any time.
+function cancelDraw() {
+  state.drawMode = null;
+  state.drawing = false;
+  state.drawPoints = [];
+  const map = window.GeoVive?.map;
+  if (map) {
+    map.dragPan.enable();
+    map.getSource("GeoVive-draw-temp")?.setData({ type: "FeatureCollection", features: [] });
+    const canvas = map.getCanvas();
+    if (canvas) canvas.style.cursor = state.addMode ? "crosshair" : "";
+  }
+  $("draw-line-btn")?.classList.remove("active");
+  $("draw-area-btn")?.classList.remove("active");
+}
+
+// mode is "line" or "polygon". Clicking the active button again turns drawing off.
+function setDrawMode(mode) {
+  if (state.drawMode === mode) { cancelDraw(); setStatus(""); return; }
+  setAddMode(false);
+  cancelDraw();
+  if (!canEditCurrent()) { setStatus("Select one of your own maps first."); return; }
+  state.drawMode = mode;
+  ensureDrawLayer();
+  const map = window.GeoVive.map;
+  map.dragPan.disable();
+  map.getCanvas().style.cursor = "crosshair";
+  $(mode === "polygon" ? "draw-area-btn" : "draw-line-btn")?.classList.add("active");
+  setStatus(mode === "polygon"
+    ? "Click and drag on the map to trace the area's outline, then release to finish (Esc cancels)."
+    : "Click and drag on the map to trace the line, then release to finish (Esc cancels).");
+}
+
+function finishDraw() {
+  const map = window.GeoVive.map;
+  map.dragPan.enable();
+  state.drawing = false;
+  const pts = state.drawPoints;
+  if (pts.length < 2) { state.drawPoints = []; updateDrawData(); setStatus("That was too short to save — try tracing it again.", true); return; }
+  const mode = state.drawMode;
+  const geometry = mode === "polygon"
+    ? { type: "Polygon", coordinates: [[...pts, pts[0]]] }
+    : { type: "LineString", coordinates: pts };
+  const mid = pts[Math.floor(pts.length / 2)];
+  cancelDraw();
+  openPinForm({ lng: mid[0], lat: mid[1] }, { geometry, properties: {} });
 }
 
 function wireMap() {
@@ -265,8 +498,36 @@ function wireMap() {
     if (!state.addMode || !canEditCurrent()) return;
     openPinForm(e.lngLat, null);
   });
+  map.on("mousedown", (e) => {
+    if (!state.drawMode || !canEditCurrent()) return;
+    if (e.originalEvent && e.originalEvent.button) return; // left button only
+    state.drawing = true;
+    state.drawPoints = [[e.lngLat.lng, e.lngLat.lat]];
+    updateDrawData();
+  });
+  map.on("mousemove", (e) => {
+    if (!state.drawing) return;
+    const pts = state.drawPoints;
+    const p = map.project(pts[pts.length - 1]), np = map.project(e.lngLat);
+    if (Math.hypot(np.x - p.x, np.y - p.y) < 4) return; // throttle by on-screen distance
+    pts.push([e.lngLat.lng, e.lngLat.lat]);
+    updateDrawData();
+  });
+  map.on("mouseup", () => { if (state.drawing) finishDraw(); });
+  map.on("touchstart", (e) => {
+    if (!state.drawMode || !canEditCurrent() || !e.lngLat) return;
+    state.drawing = true;
+    state.drawPoints = [[e.lngLat.lng, e.lngLat.lat]];
+    updateDrawData();
+  });
+  map.on("touchmove", (e) => {
+    if (!state.drawing || !e.lngLat) return;
+    state.drawPoints.push([e.lngLat.lng, e.lngLat.lat]);
+    updateDrawData();
+  });
+  map.on("touchend", () => { if (state.drawing) finishDraw(); });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") { setAddMode(false); closePopup(); }
+    if (e.key === "Escape") { setAddMode(false); cancelDraw(); closePopup(); }
   });
 }
 
@@ -286,13 +547,128 @@ async function init() {
   $("create-map-btn")?.addEventListener("click", createMap);
   $("new-map-name")?.addEventListener("keydown", (e) => { if (e.key === "Enter") createMap(); });
   $("add-pin-btn")?.addEventListener("click", () => setAddMode(!state.addMode));
+  $("pin-here-btn")?.addEventListener("click", pinMyLocation);
+  $("draw-line-btn")?.addEventListener("click", () => setDrawMode("line"));
+  $("draw-area-btn")?.addEventListener("click", () => setDrawMode("polygon"));
+
+  $("map-details")?.addEventListener("submit", saveDetails);
+  $("map-details")?.querySelector("[data-cancel]")?.addEventListener("click", () => { $("map-details").hidden = true; });
   $("delete-map-btn")?.addEventListener("click", deleteCurrentMap);
   $("dataset-select")?.addEventListener("change", () => { closePopup(); setTimeout(updateEditBar, 0); });
-  window.addEventListener("geovive:dataset-applied", updateEditBar);
+  window.addEventListener("geovive:dataset-applied", renderMyMaps);
+  initAllMaps();
   window.addEventListener("geovive:datasets-changed", refreshDatasets);
 
   updateEditBar();
 }
 
-window.GeoViveEditor = { onFeatureClick };
+// ------------------------------------------------------------ map details (name, description, tags, visibility)
+
+function openDetails() {
+  const form = $("map-details"), ds = currentDataset();
+  if (!form || !ds) return;
+  form.name.value = ds.name || "";
+  form.description.value = ds.description || "";
+  form.tags.value = (ds.tags || []).join(", ");
+  form.public.checked = ds.visibility === "public";
+  form.dataset.for = ds.datasetId;
+  form.hidden = false;
+  form.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  form.name.focus();
+}
+
+async function saveDetails(e) {
+  e.preventDefault();
+  const form = e.currentTarget, ds = currentDataset();
+  if (!ds) return;
+  try {
+    setStatus("Saving details…");
+    await api("PATCH", `/v1/datasets/${encodeURIComponent(ds.datasetId)}`, {
+      name: form.name.value.trim(), description: form.description.value.trim(),
+      tags: form.tags.value.split(",").map(t => t.trim()).filter(Boolean),
+      visibility: form.public.checked ? "public" : "private"
+    });
+    form.hidden = true;
+    await refreshDatasets();
+    updateEditBar();
+    setStatus("Details saved.");
+  } catch (err) { setStatus(err.message, true); }
+}
+
+// ------------------------------------------------------------ save a pin to my map
+// From any pin card: pick one of your maps (or name a new one) and a copy is added
+// there, with a note of where it came from.
+
+const LAST_TARGET_KEY = "geovive:saveTarget";
+
+function saveTo(root, props, feature) {
+  const panel = root.querySelector(".pin-save-panel");
+  const actions = root.querySelector(".pin-actions");
+  if (!panel) return;
+  if (!state.user) {
+    panel.innerHTML = `<p class="pin-save-note">Sign in to save pins to your own maps.</p>
+      <div class="pin-save-row"><button type="button" class="btn primary" data-s="signin">Sign in</button><button type="button" class="btn" data-s="cancel">Cancel</button></div>`;
+  } else {
+    const mine = state.datasets.filter(isMine).filter(d => d.datasetId !== props.datasetId);
+    let last = null; try { last = localStorage.getItem(LAST_TARGET_KEY); } catch { /* ignore */ }
+    const selected = mine.some(d => d.datasetId === last) ? last : (mine[0]?.datasetId || "__new");
+    panel.innerHTML = `
+      <label class="pin-save-label">Save a copy to
+        <select data-s="target">
+          ${mine.map(d => `<option value="${esc(d.datasetId)}" ${d.datasetId === selected ? "selected" : ""}>${esc(d.name)} (${d.featureCount || 0})</option>`).join("")}
+          <option value="__new" ${selected === "__new" ? "selected" : ""}>＋ New map…</option>
+        </select>
+      </label>
+      <input type="text" data-s="newname" maxlength="80" placeholder="New map name" value="Saved places" ${selected === "__new" ? "" : "hidden"}>
+      <div class="pin-save-row"><button type="button" class="btn primary" data-s="go">Save</button><button type="button" class="btn" data-s="cancel">Cancel</button></div>
+      <p class="pin-save-note" data-s="msg" role="status"></p>`;
+    const sel = panel.querySelector("[data-s=target]"), nameEl = panel.querySelector("[data-s=newname]");
+    sel.addEventListener("change", () => { nameEl.hidden = sel.value !== "__new"; if (!nameEl.hidden) nameEl.focus(); });
+    panel.querySelector("[data-s=go]").addEventListener("click", async (ev) => {
+      const btn = ev.currentTarget, msg = panel.querySelector("[data-s=msg]");
+      btn.disabled = true; msg.textContent = "Saving…";
+      try {
+        let target = sel.value, targetName;
+        if (target === "__new") {
+          const name = nameEl.value.trim() || "Saved places";
+          const ds = await api("POST", "/v1/datasets", { name, visibility: "private" });
+          target = ds.datasetId; targetName = ds.name;
+        } else targetName = mine.find(d => d.datasetId === target)?.name;
+        await copyFeature(props, feature, target);
+        try { localStorage.setItem(LAST_TARGET_KEY, target); } catch { /* ignore */ }
+        await refreshDatasets();
+        panel.innerHTML = `<p class="pin-save-note ok">Saved to <strong>${esc(targetName)}</strong>.</p>
+          <div class="pin-save-row"><button type="button" class="btn" data-s="open">Open that map</button><button type="button" class="btn" data-s="cancel">Done</button></div>`;
+        panel.querySelector("[data-s=open]").addEventListener("click", () => { closeAllPopups(); selectDataset(target); });
+        panel.querySelector("[data-s=cancel]").addEventListener("click", () => { panel.hidden = true; actions.hidden = false; });
+      } catch (e) { msg.textContent = e.message; btn.disabled = false; }
+    });
+  }
+  panel.querySelector("[data-s=signin]")?.addEventListener("click", () => document.getElementById("signIn")?.click());
+  panel.querySelector("[data-s=cancel]")?.addEventListener("click", () => { panel.hidden = true; actions.hidden = false; });
+  actions.hidden = true;
+  panel.hidden = false;
+}
+
+function closeAllPopups() { document.querySelectorAll(".mapboxgl-popup").forEach(p => p.remove()); }
+
+async function copyFeature(props, feature, targetId) {
+  let geometry = feature.geometry;
+  // Shapes drawn on the map can be simplified or cut at tile edges: copy the stored one
+  if (geometry?.type !== "Point" && props.datasetId && props.id) {
+    const full = await api("GET", `/v1/datasets/${encodeURIComponent(props.datasetId)}/features/${encodeURIComponent(props.id)}`);
+    geometry = full.geometry;
+  }
+  const source = state.datasets.find(d => d.datasetId === props.datasetId);
+  const copy = {};
+  for (const k of ["name", "category", "color", "description"]) if (props[k] !== undefined && props[k] !== null && props[k] !== "") copy[k] = props[k];
+  copy.name ||= "Saved place";
+  if (!["location", "event", "alert"].includes(copy.category)) copy.category = "location";
+  // Provenance within the data model: where the copy came from
+  copy.source = `Saved from ${source?.name || "another map"}`.slice(0, 200);
+  copy.externalId = `${props.datasetId}/${props.id}`.slice(0, 200);
+  return api("POST", `/v1/datasets/${encodeURIComponent(targetId)}/features`, { type: "Feature", geometry, properties: copy });
+}
+
+window.GeoViveEditor = { onFeatureClick, canEdit: canEditPin, edit: editPin, saveTo };
 init().catch(e => console.error("Editor init failed", e));

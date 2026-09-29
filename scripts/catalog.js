@@ -9,6 +9,10 @@
 //   group        heading in the panel
 //   type         "raster-tiles" (a z/y/x tile cache) or "raster-export" (an
 //                ArcGIS MapServer drawn per view via its export endpoint)
+//
+// These are neutral, public reference layers. Subject-matter layers (hunting
+// units, business data, …) are brought by connected apps through their layer
+// lists and shown only for that app's users (scripts/app-layers.js).
 //   url          tile URL template, or the MapServer base URL for exports
 //   minzoom/maxzoom  zoom range the service provides (the map scales tiles beyond it)
 //   opacity      default opacity (0–1)

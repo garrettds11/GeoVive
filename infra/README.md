@@ -32,3 +32,16 @@ CloudFormation can only manage the Amplify app with a GitHub access token. To fi
 2. Store it in Secrets Manager as `geovive/github-token`.
 3. Add `AccessToken: '{{resolve:secretsmanager:geovive/github-token}}'` to `WebApp` and import
    `web.yaml` as `geovive-dev-web` (resource import: App, Branch, Domain).
+
+## Addresses kept out of the repo
+
+Amplify branch addresses (dev, stage) are allowed at deploy time rather than written in the templates:
+
+- `geovive-dev-identity`: parameter `PrivateAppUrls` (comma-separated, each URL with and without a trailing slash) is added to the sign-in and sign-out URLs.
+- `geovive-dev-backend`: parameter `AllowedOrigins` holds the full list of site origins. The template default lists only the public ones. The demo app's allowed return addresses use the same list.
+
+When deploying, reuse the stack's previous values for these parameters (or pass them explicitly). Don't deploy with the defaults, or sign-in and the API stop working on dev and stage.
+
+## mail.yaml
+
+Inbound mail for the domain. Mail to `admin@geovive.link` is received by Amazon SES (spam and virus scanned), stored in a private S3 bucket for 90 days, and forwarded by a small Lambda to the admin inbox (parameter `ForwardTo`). Forwarded copies come from `admin@geovive.link` with the original sender as Reply-To. Stack: `geovive-mail`. After creating it, activate the rule set once: `aws ses set-active-receipt-rule-set --rule-set-name geovive-inbound`. To add addresses, change the `Recipients` parameter.

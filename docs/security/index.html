@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Trust &amp; Security · GeoVivé</title>
+  <link rel="icon" href="/assets/favicon-32x32.png" />
+  <link rel="stylesheet" href="/docs/docs.css" />
+</head>
+<body>
+  <main class="page">
+    <header>
+      <div class="top">
+        <a class="brand" href="/docs/"><h1>Geo<span>Vivé</span> Docs</h1></a>
+        <span class="tagline">Trust &amp; Security</span>
+      </div>
+      <nav class="tabs" aria-label="Documentation">
+        <div class="tabs-main">
+          <a href="/docs/">User guide</a>
+          <a href="/docs/developers/">Developers</a>
+          <a href="/docs/developers/appconnect/">AppConnect</a>
+          <a href="/docs/terms/appconnect/">Terms</a>
+          <a href="/docs/security/" class="active" aria-current="page">Security</a>
+        </div>
+        <a class="tabs-map" href="/">Open the map →</a>
+      </nav>
+    </header>
+
+    <nav class="toc">
+      <a href="#principles">Principles</a>
+      <a href="#your-data">Your data stays yours</a>
+      <a href="#review">How layers are reviewed</a>
+      <a href="#ai">AI review</a>
+      <a href="#findings">Findings and notices</a>
+      <a href="#logs">Logs and retention</a>
+      <a href="#access">Who can do what</a>
+      <a href="#payments">Payments</a>
+      <a href="#report">Reporting a problem</a>
+    </nav>
+
+    <h2 id="principles">Principles</h2>
+    <ul>
+      <li><strong>Neutral canvas.</strong> GeoVivé shows what connected businesses bring; it keeps no subject-matter layers of its own and never resells yours.</li>
+      <li><strong>Nothing unreviewed goes live.</strong> Every new or changed layer is checked before users see it.</li>
+      <li><strong>Least data, least access.</strong> Each part of the system can reach only what it needs, and sensitive values are kept out of logs.</li>
+    </ul>
+
+    <h2 id="your-data">Your data stays yours</h2>
+    <ul>
+      <li>Layers are shown only to your users, only inside GeoVivé, and are never listed for other apps, offered for download or used to train models.</li>
+      <li><strong>Relay</strong> layers are kept as a simplified display copy for no more than 7 days; <strong>direct</strong> layers are never copied.</li>
+      <li>Cached copies are deleted within 7 days of a connection ending. Details are in the <a href="/docs/terms/appconnect/">AppConnect terms</a>.</li>
+      <li>Maps users make belong to those users. Private maps are visible only to their owner.</li>
+      <li><strong>Account linking</strong> is always the user's choice. An app sees only maps it created for that user or that the user shared with it (read-only), never their email or GeoVivé account ID, and gets a user ID that's different for every app. Users can remove an app any time in My data, and access stops at once.</li>
+    </ul>
+
+    <h2 id="review">How layers are reviewed</h2>
+    <ol>
+      <li><strong>Domain proof.</strong> Only the business that controls a domain can connect layers from it.</li>
+      <li><strong>Automatic checks</strong> on every new or changed layer: public HTTPS sources only (private networks are blocked), valid shapes and coordinates, size limits, credits and license, browser access for direct layers, and field names and values that look like personal information.</li>
+      <li><strong>AI review</strong> of the layer's text (see below), when enabled.</li>
+      <li><strong>Human review</strong> of anything a person must judge, within 5 business days. Reviewers see the real values so they can decide accurately.</li>
+      <li><strong>Approved versions only.</strong> Users see the last approved version of each layer; an edit never takes a working layer offline.</li>
+      <li><strong>Weekly re-checks</strong> of every connected app.</li>
+    </ol>
+
+    <h2 id="ai">AI review</h2>
+    <p>GeoVivé can use a model on Amazon Bedrock to review a layer's settings and a sample of its text values for personal information, offensive or misleading content, data-quality problems and signs of criminal, security or targeting risk. Controls:</p>
+    <ul>
+      <li>Only text is sent: layer settings and up to 40 features' labels and shown values, each cut to 300 characters. Shapes are never sent.</li>
+      <li>Processing stays in US AWS regions, in GeoVivé's own AWS account. AWS does not use Bedrock inputs to train models, and Bedrock request logging is turned off, so prompts and answers aren't stored.</li>
+      <li>The model is instructed to treat your data as untrusted and never follow instructions inside it.</li>
+      <li>AI findings never reject a layer on their own: they either add a note for you or send the layer to a person.</li>
+      <li>Only one model is permitted, reviews are capped per day, and AI review can be switched off at any time.</li>
+    </ul>
+
+    <h2 id="findings">Findings and notices</h2>
+    <p>GeoVivé tells you what it detects; fixing it stays in your systems.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Finding</th><th>What happens</th><th>When you're told</th></tr>
+      <tr><td>Personal information</td><td>Layer held for review</td><td>Immediately</td></tr>
+      <tr><td>Offensive content</td><td>Layer held for review</td><td>Immediately</td></tr>
+      <tr><td>Misleading content</td><td>Held for review if serious</td><td>Weekly digest</td></tr>
+      <tr><td>Data quality</td><td>Layer shows; please fix</td><td>Weekly digest</td></tr>
+      <tr><td>Credits and licensing</td><td>Layer shows; please fix</td><td>Weekly digest</td></tr>
+      <tr><td>Possible criminal activity, security threats or targeting of people</td><td>Layer held; evidence preserved; may be escalated</td><td>Told only that the layer is held for review</td></tr>
+    </table></div>
+    <p>Each finding is reported once. Findings in the last row stay with GeoVivé because they may need legal escalation to protect users and the platform; see section 7 of the <a href="/docs/terms/appconnect/">terms</a>.</p>
+
+    <h2 id="logs">Logs and retention</h2>
+    <ul>
+      <li>Service logs are scrubbed before they're written: emails, phone numbers, street addresses, sign-in tokens, signed-link signatures and payment secrets are masked, and each entry is size-limited, so layer data and request bodies can't be logged whole. Logs are kept 30 days.</li>
+      <li>Check results store only <em>where</em> a problem is (for example “email address in Note”), not the value.</li>
+      <li>Layer versions waiting for human review, with a sample of values for the reviewer, are deleted after 90 days.</li>
+      <li>Evidence for possible criminal, security or targeting findings is kept encrypted in a separate restricted store for two years. The checking service can add to it but can't delete from it.</li>
+      <li>When an app disconnects, its display, relay and review copies are deleted at once; its reports and history are deleted 90 days later.</li>
+      <li>Reports and exports are delivered through short-lived signed links (10 minutes for reports).</li>
+    </ul>
+
+    <h2 id="access">Who can do what</h2>
+    <div class="table-wrap"><table>
+      <tr><th>Who or what</th><th>How it proves itself</th></tr>
+      <tr><td>People</td><td>Signed in with GeoVivé accounts (Amazon Cognito; email or Google). App owners see only their own apps.</td></tr>
+      <tr><td>Payment confirmations</td><td>Stripe's signature on every message, checked within 5 minutes</td></tr>
+      <tr><td>Linked apps</td><td>Their client secret plus the user's consent (OAuth 2.0 with PKCE). Tokens are random, stored only as hashes, last an hour, and stop when the user or GeoVivé ends the link</td></tr>
+      <tr><td>Layer reviewers</td><td>Signed links tied to one layer version, expiring in 30 days</td></tr>
+      <tr><td>Scheduled checks and background jobs</td><td>AWS roles limited to the exact tables, files, email sender and model they use</td></tr>
+      <tr><td>Your data sources</td><td>GeoVivé reads only public HTTPS addresses and sends no credentials</td></tr>
+    </table></div>
+    <p>Everything is served over HTTPS and stored encrypted at rest.</p>
+
+    <h2 id="payments">Payments</h2>
+    <p>Payments are handled by Stripe. GeoVivé never sees or stores card details, and holds no Stripe account keys; it only receives Stripe's signed confirmation that a payment completed.</p>
+
+    <h2 id="report">Reporting a problem</h2>
+    <p>If you see a layer that exposes personal information or looks harmful, or you've found a security issue, email <a href="mailto:admin@geovive.link">admin@geovive.link</a>.</p>
+
+    <footer>GeoVivé · <a href="/docs/terms/appconnect/">AppConnect terms</a> · <a href="/docs/developers/appconnect/">AppConnect requirements</a></footer>
+  </main>
+</body>
+</html>

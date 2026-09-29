@@ -1,48 +1,93 @@
 # GeoVivé
 
-A map for exploring places and keeping your own collections of pinned locations: https://geovive.link
+**A neutral map-data platform.** GeoVivé stores real-world places and shapes, along with their time, source and stable IDs, and shows them on an interactive map. People can browse public maps and keep their own. Other apps can build on the same data.
 
-- User guide: https://geovive.link/docs/
-- API reference: https://geovive.link/docs/developers/
+Live at https://geovive.link · [User guide](https://geovive.link/docs/) · [Developer docs](https://geovive.link/docs/developers/)
+
+## Purpose
+
+GeoVivé is the "reality spine": the neutral store of geospatial truth. It keeps each feature's geometry, time, metadata, provenance and stable ID. It deliberately doesn't interpret the data. Analysis, context and alerts belong in products built on top of it, such as Watchfield (intelligence overlays) and connected apps like Bow & Arrow Hunt.
+
+Principles:
+
+- GeoVivé holds the master copy of map data.
+- Everyone signs in to GeoVivé, and apps connect to it.
+- Datasets define their own categories; GeoVivé imposes no fixed vocabulary.
+- External sources are shown with their attribution and license.
+
+## What it does
+
+- **Explore:**
+  - Browse public datasets on a Mapbox map, then filter by category and inspect features.
+  - Switch between map styles, with a 3D terrain view.
+  - Show several datasets together, plus live government overlays (topography, land ownership, boundaries, water).
+- **Own your maps:** sign in with email and password or with Google, then create public or private maps and add, edit and delete pins.
+- **Connect apps:** a registered app can send a user to GeoVivé with an "Open in GeoVivé" link. The user works on their map there and returns to the app with a reference to it. A public REST API (`openapi.yaml`) serves datasets and features.
+
+## Architecture
+
+```
+Browser (static site, Mapbox GL JS)
+   │  sign-in (OIDC)            │  REST (JWT)
+   ▼                            ▼
+Cognito ── Google          API Gateway ─► Lambda ─► DynamoDB
+auth.geovive.link          api.geovive.link          (datasets, features)
+```
+
+- **Frontend:**
+  - A static site on AWS Amplify: plain HTML with ES modules and no framework or bundler.
+  - `config.js` is generated at build time from environment variables.
+- **Backend:** AWS SAM on Node.js (one API Lambda and a Cognito pre sign-up Lambda that links accounts by email), with DynamoDB tables for datasets and features.
+- **Identity:** a Cognito user pool with a branded hosted sign-in page (email + password and Google). SES sends the emails.
+- **Region:** everything runs in AWS us-east-1. Resources are tagged `project=geovive`.
 
 ## Repository layout
 
-| Path | What it is |
+| Path | Contents |
 |---|---|
-| `index.html` | The map app (static HTML + Mapbox GL JS) |
-| `scripts/auth.js`, `scripts/main.js` | Google sign-in via Cognito (oidc-client-ts, loaded from a CDN) |
-| `scripts/editor.js` | My maps and pin editing |
-| `scripts/build-config.mjs` | Writes `config.js` from environment variables at build time |
-| `docs/` | Public user guide and developer docs, served at `/docs/` |
-| `backend/` | API, Lambda and DynamoDB tables as AWS SAM (see `backend/README.md`) |
+| `index.html` | The map app |
+| `scripts/` | Front-end modules:<br>• `auth.js` / `main.js`: sign-in<br>• `editor.js`: my maps, pins<br>• `layers.js` / `catalog.js`: layers and overlays<br>• `open.js`: app links<br>• `build-config.mjs`: config generator |
+| `docs/` | Public user guide and developer docs (served at `/docs/`) |
+| `backend/` | SAM template, Lambda source, tests, data scripts (see `backend/README.md`) |
+| `infra/` | CloudFormation for Cognito and Amplify (see `infra/README.md`) |
+| `openapi.yaml` | API specification |
 | `amplify.yml` | Amplify build settings |
 
-## Running locally
+## Development
 
-1. Create a Mapbox public token restricted to `http://localhost:8080` (the production token only works on geovive.link).
-2. Generate the config and serve the folder:
+**Run locally:**
 
-   ```bash
-   MAPBOX_ACCESS_TOKEN=pk.xxx node scripts/build-config.mjs
-   python -m http.server 8080
-   ```
+```bash
+MAPBOX_ACCESS_TOKEN=pk.xxx node scripts/build-config.mjs   # token restricted to localhost
+python -m http.server 8080
+```
 
-3. Open http://localhost:8080. The local site uses the dev API; signing in requires `http://localhost:8080/` to be added to the Cognito app client's callback and sign-out URLs.
+- The local site uses the shared API.
+- Signing in locally requires adding `http://localhost:8080/` to the Cognito client's callback and sign-out URLs.
 
-`config.js` is generated and ignored by git. Never commit tokens.
+**Branches and releases:**
 
-## Deploying
+- `dev` deploys to its Amplify branch address (no custom domain).
+- `stage` deploys to https://stage.geovive.link (password-protected).
+- `main` deploys to https://geovive.link.
+- The release flow: work on `dev`, test on the dev site, then open a pull request from `dev` to `main`.
 
-- **Frontend:** pushing to `dev` triggers an Amplify build (app `d24kp6zzj6jjwt`), which runs `npm run build` to generate `config.js` from the `MAPBOX_ACCESS_TOKEN` environment variable. Changing that variable requires a redeploy.
-- **Backend:** `cd backend && npm ci && npm run build && sam deploy --config-env dev`.
+**Backend:** `cd backend && npm ci && npm test && sam deploy --config-env dev`
 
-## Infrastructure (us-east-1)
+**Secrets:** never commit tokens or secrets.
 
-| Piece | Where |
-|---|---|
-| Site | Amplify, custom domain `geovive.link` |
-| API | `api.geovive.link` (SAM stack `geovive-dev-backend`) |
-| Sign-in | Cognito pool `us-east-1_cLqbEZJhi`, domain `auth.geovive.link`, Google identity provider |
-| DNS / certificate | Route 53 zone for `geovive.link`; ACM certificate for `geovive.link` and `*.geovive.link` |
+- `config.js` is generated and git-ignored.
+- The Google client secret is kept in AWS Secrets Manager.
 
-Cognito and Amplify are configured in AWS directly (not yet in the SAM template).
+## Status
+
+This is an early beta. Browsing, sign-in, personal maps, layers and app links work in production.
+
+Next up:
+
+- storing large shapes
+- importing data from external sources, with provenance
+- upload and export
+- a separate dev backend
+- full connected-app authorization (consent screen and per-app access)
+- shared maps

@@ -4,107 +4,243 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>GeoVivé User Guide</title>
+  <meta name="description" content="A quick, animated tour of GeoVivé: explore the map, stack layers, keep your own private maps and pins, and bring data in and out." />
   <link rel="icon" href="/assets/favicon-32x32.png" />
   <link rel="stylesheet" href="/docs/docs.css" />
+  <link rel="stylesheet" href="/docs/guide.css" />
 </head>
 <body>
-  <main class="page">
+  <main class="page guide">
     <header>
       <div class="top">
-        <h1>Geo<span>Vivé</span> Docs</h1>
+        <a class="brand" href="/docs/"><h1>Geo<span>Vivé</span> Docs</h1></a>
         <span class="tagline">Explore places. Pin what matters.</span>
       </div>
-      <nav class="tabs">
-        <a href="/docs/" class="active">User guide</a>
-        <a href="/docs/developers/">Developers</a>
-        <a href="/">Open the map →</a>
+      <nav class="tabs" aria-label="Documentation">
+        <div class="tabs-main">
+          <a href="/docs/" class="active" aria-current="page">User guide</a>
+          <a href="/docs/developers/">Developers</a>
+          <a href="/docs/developers/appconnect/">AppConnect</a>
+          <a href="/docs/terms/appconnect/">Terms</a>
+          <a href="/docs/security/">Security</a>
+        </div>
+        <a class="tabs-map" href="/">Open the map →</a>
       </nav>
     </header>
 
-    <nav class="toc">
-      <a href="#explore">Explore the map</a>
-      <a href="#datasets">Datasets</a>
-      <a href="#layers">Layers</a>
-      <a href="#signin">Signing in</a>
-      <a href="#my-maps">My maps</a>
-      <a href="#pins">Pins</a>
-      <a href="#privacy">Public &amp; private</a>
-      <a href="#faq">FAQ</a>
-    </nav>
-
-    <p>GeoVivé is a map for exploring places and keeping your own collections of pinned locations. Anyone can browse public maps; sign in to create and edit your own.</p>
-
-    <h2 id="explore">Explore the map</h2>
-    <ul>
-      <li><strong>Move around:</strong> drag to pan, scroll or pinch to zoom.</li>
-      <li><strong>Inspect a place:</strong> click a point on the map to see its name, type and notes.</li>
-      <li><strong>Fly to a place:</strong> open <strong>Features</strong> in the sidebar and click an item. The map zooms in to street level.</li>
-      <li><strong>Change the look:</strong> use <strong>Map Style</strong> for Streets, Outdoors, Light, Dark or Satellite.</li>
-      <li><strong>Filter by type:</strong> each dataset has its own categories, shown with their colors and counts in the legend. Tick or untick a category to show or hide it.</li>
-      <li><strong>Measure distance:</strong> the scale bars in the bottom-left corner show miles/feet and kilometers/meters.</li>
-      <li><strong>Status:</strong> the upper-right corner shows the map connection, current zoom level and version. On a phone they move to the bottom-right.</li>
-    </ul>
-    <p>On a phone, the sidebar is a tray: tap the bar with three lines to open or close it.</p>
-
-    <h2 id="datasets">Datasets</h2>
-    <p>A dataset is a collection of places. Pick one from <strong>Dataset</strong> in the sidebar. GeoVivé opens with <strong>World Capitals</strong>, the national capitals of the world from <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a>. When you're signed in, your own maps appear in the list too.</p>
-
-    <h2 id="layers">Layers</h2>
-    <p>Open <strong>Layers</strong> in the sidebar to stack more information on the map. Your choices are remembered in this browser.</p>
-    <ul>
-      <li><strong>More datasets:</strong> tick any other dataset to show its points alongside the one you're browsing. Click a point to see which dataset it belongs to.</li>
-      <li><strong>Overlays:</strong> live maps from public agencies, drawn directly from their servers: USGS topo, shaded relief and imagery, streams and lakes, BLM land ownership, National Forest boundaries, and state and county lines. Each has a <strong>Source</strong> link and an opacity slider.</li>
-    </ul>
-    <p>Overlays cover the United States and depend on the agency's servers; if one is slow or down, that layer stays blank while the rest of the map works. Land ownership is detailed down to about zoom 14.</p>
-
-    <h2 id="signin">Signing in</h2>
-    <p>Browsing needs no account. To create maps, click <strong>Sign in</strong>, then either:</p>
-    <ul>
-      <li><strong>Sign in with Google</strong>: your GeoVivé account is created the first time. Google shows an account chooser each time, so you can switch accounts.</li>
-      <li><strong>Email and password</strong>: choose <strong>Create an account</strong>, enter your email and a password, then type the verification code we email you. Forgot your password? Use the reset link on the sign-in page.</li>
-    </ul>
-    <p>One email address is one GeoVivé account. If you created an account with email and password and later choose <strong>Sign in with Google</strong> using the same verified address, both methods open the same account and maps. (The very first time, you may need to click Sign in with Google a second time.) If you first signed in with Google, keep using Google for that address.</p>
-    <ul>
-      <li><strong>Sign out</strong> signs you out of GeoVivé only. It does not sign you out of Google itself; on a shared computer, sign out of Google too.</li>
-      <li>You stay signed in for about a day before GeoVivé asks you to sign in again.</li>
-    </ul>
-
-    <h2 id="my-maps">My maps</h2>
-    <p>After signing in, the <strong>My maps</strong> panel lists maps you own, with their pin counts.</p>
-    <ol>
-      <li>Type a name in <strong>New map name</strong>.</li>
-      <li>Tick <strong>Public</strong> if anyone should be able to view it (maps are private by default).</li>
-      <li>Click <strong>Create</strong>. The new, empty map opens, ready for pins.</li>
-    </ol>
-    <p>Click any map in the list to open it. To remove a map and all its pins, open it and click <strong>Delete map</strong>. This can't be undone.</p>
-
-    <h2 id="pins">Adding and editing pins</h2>
-    <p>Open one of your maps to show the edit bar.</p>
-    <ol>
-      <li>Click <strong>+ Add pin</strong>. The cursor becomes a crosshair.</li>
-      <li>Click the spot on the map.</li>
-      <li>Enter a <strong>Name</strong>, choose a <strong>Type</strong> (Location, Event or Alert) and add any <strong>Notes</strong>.</li>
-      <li>Click <strong>Save</strong>.</li>
-    </ol>
-    <p>To change or remove a pin, click it on the map, edit the form, then <strong>Save</strong> or <strong>Delete</strong>. Press <strong>Esc</strong> to cancel adding a pin.</p>
-
-    <h2 id="privacy">Public and private maps</h2>
-    <div class="card">
-      <ul>
-        <li><strong>Private</strong> maps are visible only to you, even to someone who has the link.</li>
-        <li><strong>Public</strong> maps can be viewed by anyone, signed in or not. Only you can edit them.</li>
-      </ul>
+    <div class="hero">
+      <h2>The world is big.<br><em>Make it yours.</em></h2>
+      <p>GeoVivé is a map for exploring places and keeping your own collections of them: the trailhead, the hidden campsite, the café worth the detour. Take the two-minute tour, or jump to the answers you need.</p>
+      <a class="cta" href="#tour" data-start-tour>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5v14l12-7z" fill="currentColor"/></svg>Get started
+      </a>
     </div>
 
-    <h2 id="faq">FAQ</h2>
-    <h3>How do I switch Google accounts?</h3>
-    <p>Sign out, then click <strong>Sign in</strong> and pick a different account from Google's chooser, or choose <strong>Use another account</strong>.</p>
-    <h3>I can't see the edit buttons.</h3>
-    <p>Editing is only available on maps you own, while signed in. Public maps from others are view-only.</p>
-    <h3>Where does GeoVivé's data come from?</h3>
-    <p>Public datasets list their source (for example, World Capitals comes from Natural Earth, which is public domain). Your maps contain only what you add.</p>
+    <section class="tour" id="tour" aria-label="GeoVivé tour">
+      <div class="tour-bar" role="tablist" aria-label="Tour steps"></div>
+      <div class="stage" tabindex="-1">
+        <button type="button" class="tour-pause" data-act="play" aria-label="Play the tour"></button>
 
-    <footer>GeoVivé · v0.1 beta · <a href="/docs/developers/">Developer docs</a></footer>
+        <!-- 1 · Start -->
+        <article class="scene">
+          <div class="panel">
+            <div class="body stagger">
+              <div class="kicker">Step 1 · Start in a minute</div>
+              <h2>Three steps from a blank map to your own map</h2>
+              <p>No setup, no install. GeoVivé runs in your browser on a computer, tablet or phone.</p>
+              <ul class="points">
+                <li><span class="dotico"><svg viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 1 6 6c0 4.5-6 12-6 12S6 13.5 6 9a6 6 0 0 1 6-6z" fill="none" stroke="currentColor" stroke-width="2"/></svg></span><span><b>Look around.</b> Drag, zoom and click any point. No account needed.</span></li>
+                <li><span class="dotico"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" fill="none" stroke="currentColor" stroke-width="2"/></svg></span><span><b>Sign in.</b> With Google or an email address. It's free.</span></li>
+                <li><span class="dotico"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></span><span><b>Make a map.</b> Name it, then drop pins wherever life takes you.</span></li>
+              </ul>
+            </div>
+            <div class="art" aria-hidden="true">
+              <svg viewBox="0 0 320 260">
+                <defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0f2a4a"/><stop offset="1" stop-color="#0a1f33"/></linearGradient></defs>
+                <rect x="20" y="30" width="280" height="200" rx="18" fill="url(#g1)" stroke="#1e3a5f" stroke-width="2"/>
+                <path d="M20 170 C80 140 120 190 180 160 S270 120 300 140 L300 212 a18 18 0 0 1-18 18 H38 a18 18 0 0 1-18-18z" fill="#12402e" opacity="0.8"/>
+                <path d="M40 90 C90 60 140 110 200 80 S270 70 300 90" fill="none" stroke="#1d4ed8" stroke-width="6" opacity="0.55" stroke-linecap="round"/>
+                <path d="M60 210 C110 150 170 170 250 70" fill="none" stroke="#f8fafc" stroke-width="2.5" opacity="0.5" class="dash"/>
+                <g class="drop"><circle cx="70" cy="196" r="14" fill="#22c55e" opacity="0.25" class="pulse-ring"/><path d="M70 196c0 0-15-17-15-27a15 15 0 0 1 30 0c0 10-15 27-15 27z" fill="#22c55e"/><circle cx="70" cy="169" r="5.5" fill="#052e16"/></g>
+                <g class="drop d2"><path d="M165 150c0 0-15-17-15-27a15 15 0 0 1 30 0c0 10-15 27-15 27z" fill="#3b82f6"/><circle cx="165" cy="123" r="5.5" fill="#0b1f44"/></g>
+                <g class="drop d3"><circle cx="250" cy="96" r="14" fill="#f97316" opacity="0.25" class="pulse-ring"/><path d="M250 96c0 0-15-17-15-27a15 15 0 0 1 30 0c0 10-15 27-15 27z" fill="#f97316"/><circle cx="250" cy="69" r="5.5" fill="#431407"/></g>
+              </svg>
+            </div>
+          </div>
+        </article>
+
+        <!-- 2 · Explore -->
+        <article class="scene">
+          <div class="panel">
+            <div class="body stagger">
+              <div class="kicker">Step 2 · Explore the map</div>
+              <h2>Move freely, then look closer</h2>
+              <p>Everything starts on the map. On a phone, the sidebar is a tray you open with the bar at the top.</p>
+              <ul class="points">
+                <li><span class="dotico"><svg viewBox="0 0 24 24"><path d="M12 2v20M2 12h20M12 2l-3 3M12 2l3 3M12 22l-3-3M12 22l3-3M2 12l3-3M2 12l3 3M22 12l-3-3M22 12l-3 3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></span><span><b>Drag to pan, scroll or pinch to zoom.</b> Click any point for its name, type and notes.</span></li>
+                <li><span class="dotico"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span><span><b>Features</b> lists every place; click one and the map flies there. Tick categories in the legend to filter.</span></li>
+                <li><span class="dotico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 6l3 7-3-1.5L9 13z" fill="currentColor"/></svg></span><span><b>Top-left tools:</b> find yourself, reset north with the compass, lock north-up, or tilt into 3D terrain.</span></li>
+                <li><span class="dotico"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 15l5-4 4 3 3-2 6 4" fill="none" stroke="currentColor" stroke-width="2"/></svg></span><span><b>Map Style</b> switches between Streets, Outdoors, Light, Dark and Satellite.</span></li>
+              </ul>
+            </div>
+            <div class="art" aria-hidden="true">
+              <svg viewBox="0 0 320 260">
+                <rect x="20" y="20" width="280" height="220" rx="18" fill="#0b1b33" stroke="#1e3a5f" stroke-width="2"/>
+                <g opacity="0.35" stroke="#334155"><path d="M20 80H300M20 140H300M20 200H300M90 20V240M160 20V240M230 20V240"/></g>
+                <g class="slide-l"><path d="M40 190 C90 150 120 205 175 170 S250 120 285 150" fill="none" stroke="#22c55e" stroke-width="5" stroke-linecap="round" opacity="0.8"/></g>
+                <g class="slide-r"><circle cx="170" cy="120" r="46" fill="none" stroke="#3b82f6" stroke-width="3" opacity="0.7"/><circle cx="170" cy="120" r="46" fill="#3b82f6" opacity="0.08" class="pulse-ring"/>
+                  <path d="M203 153l30 30" stroke="#3b82f6" stroke-width="8" stroke-linecap="round"/><path d="M152 120h36M170 102v36" stroke="#93c5fd" stroke-width="4" stroke-linecap="round"/></g>
+                <g transform="translate(62 62)"><circle r="24" fill="#0f172a" stroke="#475569" stroke-width="2"/><g class="needle"><path d="M0-17 6 0 0 17-6 0z" fill="#ef4444"/><path d="M0 0 6 0 0 17-6 0z" fill="#e2e8f0"/></g></g>
+                <g transform="translate(255 205)"><g class="float"><path d="M0 0 18-7 11 11 8 3z" fill="#60a5fa"/></g></g>
+              </svg>
+            </div>
+          </div>
+        </article>
+
+        <!-- 3 · Layers -->
+        <article class="scene">
+          <div class="panel">
+            <div class="body stagger">
+              <div class="kicker">Step 3 · Layers</div>
+              <h2>Stack what matters on one map</h2>
+              <p>Open <b>Layers</b> to lay more information over the map. Your choices are remembered on this device.</p>
+              <div class="duo2">
+                <div><h4>For you</h4><p>Show other maps beside your own, and turn on live public maps: USGS topo, relief and imagery, streams and lakes, BLM land ownership, National Forests, state and county lines. See where public land meets the trail you're planning.</p></div>
+                <div><h4>From the apps you use</h4><p>Apps connected to GeoVivé can bring their own layers, like hunting units or service areas. Arrive from one and its layers appear under <b>AppConnect</b>, alongside your own maps, for that visit.</p></div>
+              </div>
+              <p style="margin-top:0.8rem;font-size:0.86rem">Public overlays come straight from each agency and cover the United States. Shapes are simplified for display, so check the official source for exact boundaries.</p>
+            </div>
+            <div class="art" aria-hidden="true">
+              <svg viewBox="0 0 320 260">
+                <g transform="translate(-6 8) scale(0.82)"><g class="float f3"><path d="M160 170 290 205 160 240 30 205z" fill="#0f2a4a" stroke="#1e3a5f" stroke-width="2"/><path d="M60 205l40-8 30 14 40-10 50 12" fill="none" stroke="#334155" stroke-width="2"/></g>
+                <g class="float f2"><path d="M160 115 290 150 160 185 30 150z" fill="#14532d" opacity="0.85" stroke="#22c55e" stroke-width="2"/><path d="M80 150c30-12 60 14 90-2s50 6 70 0" fill="none" stroke="#86efac" stroke-width="3" opacity="0.8"/></g>
+                <g class="float"><path d="M160 60 290 95 160 130 30 95z" fill="#1e3a8a" opacity="0.8" stroke="#3b82f6" stroke-width="2"/><path d="M110 92 150 80 190 96 150 110z" fill="#f97316" opacity="0.85"/><path d="M200 88l26-6 16 12-24 8z" fill="#a855f7" opacity="0.85"/></g></g>
+                <g font-family="system-ui, sans-serif" font-size="12" font-weight="700"><text x="244" y="92" fill="#93c5fd">App layers</text><text x="244" y="137" fill="#86efac">Public</text><text x="244" y="151" fill="#86efac">overlays</text><text x="244" y="186" fill="#94a3b8">Base map</text></g>
+              </svg>
+            </div>
+          </div>
+        </article>
+
+        <!-- 4 · Sign in, your maps and pins -->
+        <article class="scene">
+          <div class="panel">
+            <div class="body stagger">
+              <div class="kicker">Step 4 · Your maps</div>
+              <h2>Sign in, then make it personal</h2>
+              <p>Browsing never needs an account. <b>Sign in</b> with Google or an email and password to start keeping your own maps.</p>
+              <ul class="points">
+                <li><span class="dotico"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2"/></svg></span><span><b>Private by default.</b> Only you see a new map, even if someone has the link. Tick <b>Public</b> to share it for viewing; only you can edit.</span></li>
+                <li><span class="dotico"><svg viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 1 6 6c0 4.5-6 12-6 12S6 13.5 6 9a6 6 0 0 1 6-6z" fill="none" stroke="currentColor" stroke-width="2"/></svg></span><span><b>Drop pins</b> with <b>New</b> or <b>My location</b>, trace a <b>Line</b> or <b>Area</b> by dragging on the map, or <b>Save to my map</b> from any pin you find. Your location stays on your device unless you save a pin.</span></li>
+                <li><span class="dotico"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4z" fill="none" stroke="currentColor" stroke-width="2"/></svg></span><span><b>Make pins yours:</b> Markdown notes, emoji (the smiley button, or <kbd>Win</kbd>+<kbd>.</kbd> / <kbd>Ctrl</kbd>+<kbd>Cmd</kbd>+<kbd>Space</kbd>), and copy any pin as Markdown or JSON.</span></li>
+              </ul>
+            </div>
+            <div class="art" aria-hidden="true">
+              <svg viewBox="0 0 320 260">
+                <rect x="70" y="30" width="200" height="200" rx="20" fill="#0b1b33" stroke="#1e3a5f" stroke-width="2"/>
+                <rect x="88" y="50" width="164" height="110" rx="12" fill="#0f2a4a"/>
+                <path d="M88 130c30-20 60 10 90-8s50 0 74-6v32a12 12 0 0 1-12 12H100a12 12 0 0 1-12-12z" fill="#14532d" opacity="0.85"/>
+                <g class="drop"><path d="M140 118c0 0-12-13-12-21a12 12 0 0 1 24 0c0 8-12 21-12 21z" fill="#22c55e"/><circle cx="140" cy="97" r="4.5" fill="#052e16"/></g>
+                <g class="drop d2"><path d="M205 100c0 0-12-13-12-21a12 12 0 0 1 24 0c0 8-12 21-12 21z" fill="#3b82f6"/><circle cx="205" cy="79" r="4.5" fill="#0b1f44"/></g>
+                <rect x="88" y="174" width="120" height="10" rx="5" fill="#334155"/><rect x="88" y="194" width="84" height="10" rx="5" fill="#1f2937"/>
+                <g transform="translate(236 186)"><rect x="0" y="0" width="34" height="20" rx="10" fill="#22c55e"/><circle cx="24" cy="10" r="7" fill="#fff" class="slide-r"/></g>
+                <g transform="translate(292 60)"><g class="hover-spin"><circle r="24" fill="#0f172a" stroke="#3b82f6" stroke-width="2.5"/><circle cy="-5" r="7" fill="#3b82f6"/><path d="M-12 14c3-8 21-8 24 0" fill="#3b82f6"/></g></g>
+              </svg>
+            </div>
+          </div>
+        </article>
+
+        <!-- 5 · Import and export -->
+        <article class="scene">
+          <div class="panel">
+            <div class="body stagger">
+              <div class="kicker">Step 5 · Import &amp; export</div>
+              <h2>Bring data in. Take it anywhere.</h2>
+              <p>Your maps aren't locked in. Open one of your maps to move places in and out.</p>
+              <div class="duo2">
+                <div><h4>Import</h4><p>A GeoJSON file (up to 50 MB), a GeoJSON link, or an ArcGIS layer from an agency, with an optional filter. Choose which fields become names and categories. Up to 20,000 places, with their source remembered.</p></div>
+                <div><h4>Export</h4><p><b>GeoJSON</b> for GIS and map apps, <b>KML</b> for Google Earth, <b>GPX</b> for GPS units and outdoor apps. Pins become waypoints, lines become tracks, at full detail.</p></div>
+              </div>
+              <p style="margin-top:0.8rem">That's the tour. Answers to everything else are just below.</p>
+            </div>
+            <div class="art" aria-hidden="true">
+              <svg viewBox="0 0 320 260">
+                <rect x="110" y="70" width="100" height="120" rx="14" fill="#0b1b33" stroke="#1e3a5f" stroke-width="2"/>
+                <path d="M110 150c20-14 40 6 60-6s30 0 40-4v42a14 14 0 0 1-14 14h-72a14 14 0 0 1-14-14z" fill="#14532d" opacity="0.85"/>
+                <path d="M160 128c0 0-10-11-10-18a10 10 0 0 1 20 0c0 7-10 18-10 18z" fill="#22c55e"/>
+                <g class="slide-r"><path d="M28 60h44l12 12v56H28z" fill="#0f172a" stroke="#60a5fa" stroke-width="2"/><text x="56" y="104" font-family="ui-monospace, monospace" font-size="11" font-weight="700" fill="#93c5fd" text-anchor="middle">{ }</text>
+                  <path d="M88 100h14" stroke="#60a5fa" stroke-width="3" class="dash"/><path d="M100 94l8 6-8 6" fill="none" stroke="#60a5fa" stroke-width="3"/></g>
+                <g class="slide-l"><path d="M218 100h14" stroke="#22c55e" stroke-width="3" class="dash"/><path d="M230 94l8 6-8 6" fill="none" stroke="#22c55e" stroke-width="3"/></g>
+                <g font-family="system-ui, sans-serif" font-size="11" font-weight="800">
+                  <g class="float"><rect x="244" y="52" width="62" height="26" rx="13" fill="#052e16" stroke="#22c55e"/><text x="275" y="69" fill="#86efac" text-anchor="middle">GeoJSON</text></g>
+                  <g class="float f2"><rect x="244" y="88" width="62" height="26" rx="13" fill="#0b1f44" stroke="#3b82f6"/><text x="275" y="105" fill="#93c5fd" text-anchor="middle">KML</text></g>
+                  <g class="float f3"><rect x="244" y="124" width="62" height="26" rx="13" fill="#2e1065" stroke="#a855f7"/><text x="275" y="141" fill="#d8b4fe" text-anchor="middle">GPX</text></g>
+                </g>
+              </svg>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <div class="tour-controls">
+        <button type="button" data-act="prev" aria-label="Previous step"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.5"/></svg>Back</button>
+        <button type="button" data-act="next" class="primary" aria-label="Next step">Next<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.5"/></svg></button>
+        <span class="tour-count" aria-live="polite"></span>
+      </div>
+      <div class="tour-end" hidden><button type="button" class="cta" data-act="replay">Watch the tour again</button></div>
+    </section>
+
+    <section id="maps-and-layers" class="dl">
+      <h2>Maps and layers</h2>
+      <p class="lede">Everything on the map is either a map or a layer. The difference is who owns it, not what shape it is.</p>
+      <div class="table-wrap"><table>
+        <tr><th></th><th>Map</th><th>Layer</th></tr>
+        <tr><td><b>Where you find it</b></td><td>The map menu and <b>My maps</b></td><td>The <b>Layers</b> panel</td></tr>
+        <tr><td><b>Whose data</b></td><td>Stored in GeoVivé and owned by someone: you, another person who made it public, or the GeoVivé library</td><td>Someone else's: a government agency, or an app connected to GeoVivé</td></tr>
+        <tr><td><b>Can you change it?</b></td><td>Yes, if it's yours</td><td>No, it's shown as its provider publishes it</td></tr>
+        <tr><td><b>What's in it</b></td><td>Pins, and shapes such as trails and areas</td><td>Areas, lines or points, such as hunt units, land ownership or an app's locations</td></tr>
+        <tr><td><b>Save a copy?</b></td><td>Yes: <b>Save to my map</b> copies a pin into your own map</td><td>No; turn it on whenever you want to see it</td></tr>
+      </table></div>
+      <p>Every pin is one of three kinds: a <b>location</b> (a place), an <b>event</b> (something that happened there) or an <b>alert</b> (something that happened that people should know about).</p>
+    </section>
+
+    <section id="faq" class="faq">
+      <h2>Frequently Asked Questions</h2>
+      <p class="lede">The details behind the tour. Tap a question to open it.</p>
+
+      <h3>Getting around</h3>
+      <details><summary>How do I find a place quickly?</summary><div><p>Open <b>Features</b> in the sidebar and click an item; the map flies to it. Filter by category with the legend, and switch maps under <b>Map</b>. GeoVivé opens with World Capitals from <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a>.</p></div></details>
+      <details><summary>How do I find public maps?</summary><div><p>Type in <b>Search public maps</b> at the top of the <b>Map</b> panel. It looks through every public map's name, description and tags as you type; tap a <b>#tag</b> to narrow the results, and use the arrow keys and Enter on a keyboard. Opening a map adds it to the <b>Map</b> menu under <b>Public maps</b>, next to <b>Your maps</b>.</p></div></details>
+      <details><summary>What do the buttons in the corners do?</summary><div><p>Top-left: find your location, the compass (turns with the map; click to reset north), the lock (keeps north up) and 3D terrain. Bottom-left: scale bars in miles and kilometers. Top-right (bottom-right on a phone): the map connection and zoom level.</p></div></details>
+      <details><summary>Is my location shared?</summary><div><p>No. The location button and <b>Pin my location</b> use your position only in your browser, after it asks you. It's saved only if you save a pin there.</p></div></details>
+      <details><summary>Why is an overlay blank?</summary><div><p>Public overlays load straight from each agency and cover the United States. If an agency's server is slow or down, that layer stays blank while the rest of the map works. Land ownership has detail down to about zoom 14.</p></div></details>
+      <details><summary>Where do the layers under AppConnect come from?</summary><div><p>From an app or business connected to GeoVivé, shown when you arrive from that app or open a map it created, for that visit. They belong to the provider and show its credits. Shapes are simplified for display; check the provider's official sources for exact boundaries.</p></div></details>
+
+      <h3>Accounts &amp; your maps</h3>
+      <details><summary>How do I sign in?</summary><div><p>Click <b>Sign in</b>, then either <b>Sign in with Google</b> (your account is created the first time) or <b>Create an account</b> with email and password and type the code we email you. Forgot your password? Use the reset link on the sign-in page. Sessions last about a day.</p></div></details>
+      <details><summary>I used email before; can I switch to Google?</summary><div><p>Yes. One email address is one GeoVivé account: choosing Google with the same verified address opens the same maps. The very first time you may need to click <b>Sign in with Google</b> twice. If you started with Google, keep using Google.</p></div></details>
+      <details><summary>How do I switch Google accounts or sign out?</summary><div><p>Sign out, click <b>Sign in</b> and pick another account from Google's chooser. Signing out of GeoVivé doesn't sign you out of Google, so on a shared computer sign out of Google too.</p></div></details>
+      <details><summary>Who can see my maps?</summary><div><ul><li><b>Private</b> (the default): only you, even with the link.</li><li><b>Public</b>: anyone can view, signed in or not; only you can edit.</li></ul></div></details>
+      <details><summary>How do I create, open, hide or delete a map?</summary><div><ol><li>Sign in and open <b>My maps</b>.</li><li>Type a name, tick <b>Public</b> if you want to share it, and click <b>Create</b>.</li><li>Click any map in the list to open it. Click it again to hide it and its pins without deleting anything.</li><li><b>My maps</b> shows your 4 most recently changed maps; click <b>📂 All my maps</b> to search and open any of the rest.</li><li>🗑️ <b>Map</b> removes the open map and all its pins, and can't be undone.</li></ol></div></details>
+      <details><summary>How do I add, draw, edit or delete pins?</summary><div><p>Open one of your maps, click <b>📍 New</b>, then click the spot (or use <b>📍 My location</b>). Give it a name, a type (<b>Location</b> for a place; <b>Event</b> or <b>Alert</b> for something that happened, with when it happened) and notes, and <b>Save</b>. To change a pin, click it, then the pencil. <kbd>Esc</kbd> cancels adding a pin.</p><p>To draw a line or an area instead of a single point, click <b>✏️ Line</b> or <b>🔷 Area</b>, then click and drag on the map to trace it; release to finish and fill in the same name/type/notes form. <kbd>Esc</kbd> cancels a drawing in progress.</p></div></details>
+      <details><summary>Can I save a pin from someone else's map?</summary><div><p>Yes. Click any pin on a map you don't own (a public map, or another map you've shown on top with <b>Also show other maps</b>) and choose <b>Save to my map</b>. Pick one of your maps, or name a new one, and a copy is added there with a note of where it came from. The copy is yours to edit; the original doesn't change.</p></div></details>
+      <details><summary>What can I put in pin notes?</summary><div><p>Simple Markdown: <code>**bold**</code>, <code>*italic*</code>, <code>- lists</code>, headings and links. Emoji from the smiley button or your keyboard (<kbd>Win</kbd>+<kbd>.</kbd> on Windows, <kbd>Ctrl</kbd>+<kbd>Cmd</kbd>+<kbd>Space</kbd> on a Mac). Codes like <code>U+1F3E0</code> show as the character. Each pin card copies the pin as Markdown or JSON.</p></div></details>
+      <details><summary>How do I help people find my public map?</summary><div><p>Click the ✏️ next to your map in <b>My maps</b>. Give it a clear name, a description of what's on it and who it's for, and a few tags (like <code>hiking, colorado, trailheads</code>), then tick <b>Public</b>. Search matches all three, including partial words and small typos.</p></div></details>
+      <details><summary>How do I review everything I've pinned, or check what's public?</summary><div><p>Open <a href="/mydata/">My data</a> (also linked from <b>My maps</b> on the map). It lists every pin across your maps, and warns you if any are in a public map. You can:</p><ul><li>Search and filter by map, type, or public vs private.</li><li>Switch a whole map between public and private.</li><li>Create pins by coordinates, edit names, types, notes and positions, and delete pins.</li><li>Tick several pins to delete them, or move or copy them to another map, for example out of a public map into a private one.</li></ul></div></details>
+      <details><summary>An app wants to link to my GeoVivé account. What does it get?</summary><div><p>Only what the approval screen lists, and only after you click <b>Allow</b>. An app can see maps it created for you, plus any maps you tick to share (it can read those but not change them). It never sees your email, password or other maps. To check or remove linked apps, open <a href="/mydata/#connected-apps">My data → Connected apps</a>; removing an app stops its access immediately, and maps it created stay yours.</p></div></details>
+      <details><summary>I can't see the edit buttons.</summary><div><p>Editing appears only on maps you own, while you're signed in. Other people's public maps are view-only.</p></div></details>
+
+      <h3>Importing &amp; exporting</h3>
+      <details><summary>What can I import?</summary><div><ul><li><b>GeoJSON file</b>: <code>.geojson</code> or <code>.json</code>, up to 50 MB.</li><li><b>GeoJSON link</b>: a public web address, such as an open-data download.</li><li><b>ArcGIS layer</b>: an address ending in <code>FeatureServer/0</code> or <code>MapServer/2</code>, with an optional filter like <code>STATE = 'CO'</code>.</li></ul><p>Under <b>Options</b>, pick the name and category fields and whether to add or replace. Imports run in the background, up to 20,000 features, and GeoVivé records where the data came from.</p></div></details>
+      <details><summary>Which export format should I pick?</summary><div><ul><li><b>GeoJSON</b>: GIS software and map apps; includes where imported data came from.</li><li><b>KML</b>: Google Earth and most mapping apps.</li><li><b>GPX</b>: GPS units and outdoor apps. Pins become waypoints; lines and area edges become tracks.</li></ul><p>You can export public maps and your own maps, at full detail.</p></div></details>
+
+      <h3>Trust &amp; help</h3>
+      <details><summary>Where does GeoVivé's data come from?</summary><div><p>Public maps name their source; World Capitals comes from Natural Earth (public domain). AppConnect layers come from the connected app and show its credits. Your maps contain only what you add.</p></div></details>
+      <details><summary>Can my business bring its own layers?</summary><div><p>Yes, with <a href="/docs/developers/appconnect/">AppConnect</a>. You keep your data; GeoVivé shows it to your users. Register on the <a href="/appconnect/">AppConnect page</a>.</p></div></details>
+      <details><summary>How do I report a problem?</summary><div><p>Email <a href="mailto:admin@geovive.link">admin@geovive.link</a>. See <a href="/docs/security/">Trust &amp; Security</a> for how we protect your data.</p></div></details>
+    </section>
+
+    <footer>GeoVivé · <a href="/docs/developers/">Developer docs</a> · <a href="/docs/security/">Trust &amp; Security</a> · <a href="#tour" data-start-tour>Replay the tour</a></footer>
   </main>
+  <script src="/docs/guide.js" defer></script>
 </body>
 </html>

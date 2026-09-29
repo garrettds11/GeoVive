@@ -6,21 +6,53 @@
 // Write routes are protected by the API Gateway JWT authorizer, and the
 // handler additionally enforces ownership.
 
+import "./safelog.mjs";   // first: keeps personal information out of logs
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
   DynamoDBDocumentClient, GetCommand, PutCommand, DeleteCommand,
-  QueryCommand, BatchWriteCommand, UpdateCommand
+  QueryCommand, BatchWriteCommand, UpdateCommand, ScanCommand
 } from "@aws-sdk/lib-dynamodb";
+import {
+  S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand,
+  ListObjectsV2Command, DeleteObjectsCommand
+} from "@aws-sdk/client-s3";
 import { CognitoJwtVerifier } from "aws-jwt-verify";
 import { randomUUID } from "node:crypto";
-import { getApp, originAllowed } from "./apps.mjs";
+import { gzipSync } from "node:zlib";
+import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { originAllowed } from "./apps.mjs";
+import { getActiveApp, getAppRecord, isActive } from "./appstore.mjs";
+import * as linking from "./linking.mjs";
+import { validateFeature, validateDatasetFields, ModelError } from "./model.mjs";
+import * as admin from "./admin.mjs";
+import { CostExplorerClient, GetCostAndUsageCommand } from "@aws-sdk/client-cost-explorer";
+import { SSMClient, GetParameterCommand, PutParameterCommand } from "@aws-sdk/client-ssm";
+import { CognitoIdentityProviderClient, ListUsersCommand } from "@aws-sdk/client-cognito-identity-provider";
+import * as appconnect from "./appconnect.mjs";
+import { fetchLayerList, layerHash } from "./appcheck.mjs";
+import { cleanTags, searchTextOf, searchPublic, MetaError } from "./search.mjs";
+import { loadApproved, visibleLayers } from "./approvals.mjs";
+import { promises as dns } from "node:dns";
+import { FORMATS, render as renderExport, fileName as exportFileName } from "./export.mjs";
+import { validateLayerList, publicLayer, buildLayer, LayerListError } from "./overlays.mjs";
+import {
+  GeometryError, validateGeometry, bboxOf, byteSize, simplifyToFit,
+  INLINE_LIMIT, MAX_GEOMETRY
+} from "./geometry.mjs";
 
-const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+export const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true }
 });
 
 const DATASETS_TABLE = process.env.DATASETS_TABLE;
 const FEATURES_TABLE = process.env.FEATURES_TABLE;
+const GEOMETRY_BUCKET = process.env.GEOMETRY_BUCKET;
+const IMPORTS_TABLE = process.env.IMPORTS_TABLE;
+const IMPORT_FUNCTION = process.env.IMPORT_FUNCTION;
+const APPCHECK_FUNCTION = process.env.APPCHECK_FUNCTION;
+const lambda = new LambdaClient({});
+const s3 = new S3Client({});
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
 
 const verifier = CognitoJwtVerifier.create({
@@ -29,12 +61,16 @@ const verifier = CognitoJwtVerifier.create({
   tokenUse: "access"
 });
 
-const GEOMETRY_TYPES = new Set(["Point", "MultiPoint", "LineString", "MultiLineString", "Polygon", "MultiPolygon"]);
 const VISIBILITIES = new Set(["public", "private"]);
+// geo-library (Section 3.4/3.5 of the agents readiness doc): the agents' service account.
+// Every dataset it creates is forced into "review" visibility, never what it asked for,
+// and it can never move a dataset out of "review" itself -- only an admin approval can.
+const GEO_LIBRARY_SUB = process.env.GEO_LIBRARY_SUB || "";
+const isGeoLibrary = caller => !!GEO_LIBRARY_SUB && caller?.sub === GEO_LIBRARY_SUB;
 
 // ------------------------------------------------------------------ helpers
 
-class HttpError extends Error {
+export class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 
@@ -87,7 +123,7 @@ async function getCaller(event, { required }) {
   return null;
 }
 
-async function loadDataset(datasetId) {
+export async function loadDataset(datasetId) {
   const { Item } = await ddb.send(new GetCommand({ TableName: DATASETS_TABLE, Key: { datasetId } }));
   if (!Item) throw new HttpError(404, "Dataset not found");
   return Item;
@@ -104,48 +140,72 @@ function assertOwner(dataset, caller) {
   if (!caller || caller.sub !== dataset.ownerId) throw new HttpError(403, "Only the dataset owner can modify it");
 }
 
-function datasetView(d) {
+export function datasetView(d) {
   return {
-    datasetId: d.datasetId, name: d.name, description: d.description || "",
+    datasetId: d.datasetId, name: d.name, description: d.description || "", tags: d.tags || [],
     visibility: d.visibility, ownerId: d.ownerId, source: d.source,
-    origin: d.origin, referenceArea: d.referenceArea, featureTypes: d.featureTypes,
-    featureCount: d.featureCount || 0, createdAt: d.createdAt, updatedAt: d.updatedAt
+    origin: d.origin, referenceArea: d.referenceArea,
+    featureCount: d.featureCount || 0, provenance: d.imports, createdAt: d.createdAt, updatedAt: d.updatedAt,
+    reviewStatus: d.reviewStatus, authStatus: d.authStatus
   };
 }
 
-function validateGeometry(g) {
-  if (!g || typeof g !== "object" || !GEOMETRY_TYPES.has(g.type) || !Array.isArray(g.coordinates)) {
-    throw new HttpError(400, `geometry must be a GeoJSON geometry of type ${[...GEOMETRY_TYPES].join(", ")}`);
-  }
-  if (g.type === "Point") {
-    const [lng, lat] = g.coordinates;
-    if (!Number.isFinite(lng) || !Number.isFinite(lat) || lng < -180 || lng > 180 || lat < -90 || lat > 90) {
-      throw new HttpError(400, "Point coordinates must be [lng, lat] within valid ranges");
-    }
-  }
-}
+// Large geometries live in S3; the table keeps a simplified preview.
+const geometryKey = (datasetId, featureId) => `geometry/${datasetId}/${featureId}.json`;
 
-function featureItem(datasetId, featureId, body, existing) {
-  if (!body || body.type !== "Feature") throw new HttpError(400, "Body must be a GeoJSON Feature");
-  validateGeometry(body.geometry);
-  const props = { ...(body.properties || {}) };
-  if (!props.name || typeof props.name !== "string") throw new HttpError(400, "properties.name is required");
-  delete props.id; delete props.datasetId; delete props.createdAt; delete props.updatedAt;
+export async function featureItem(datasetId, featureId, body, existing) {
+  try { body = validateFeature(body); } catch (e) {
+    if (e instanceof ModelError) throw new HttpError(400, e.message);
+    throw e;
+  }
+  try { validateGeometry(body.geometry); } catch (e) {
+    if (e instanceof GeometryError) throw new HttpError(400, e.message);
+    throw e;
+  }
+  const props = body.properties;   // exactly the data model's fields
   const now = new Date().toISOString();
-  return {
+  const item = {
     datasetId, featureId,
     geometry: body.geometry,
     properties: props,
     createdAt: existing?.createdAt || now,
     updatedAt: now
   };
+  if (body.geometry.type !== "Point") item.bbox = bboxOf(body.geometry);
+
+  const size = byteSize(body.geometry);
+  if (size > MAX_GEOMETRY) throw new HttpError(413, `geometry is too large (${size} bytes; limit ${MAX_GEOMETRY})`);
+  if (size > INLINE_LIMIT) {
+    const key = geometryKey(datasetId, featureId);
+    await s3.send(new PutObjectCommand({
+      Bucket: GEOMETRY_BUCKET, Key: key, Body: JSON.stringify(body.geometry),
+      ContentType: "application/geo+json"
+    }));
+    item.geometry = simplifyToFit(body.geometry);
+    item.geometryRef = { key, bytes: size };
+  } else if (existing?.geometryRef) {
+    await deleteStoredGeometry(existing);   // shape got small again
+  }
+  return item;
 }
 
-function toFeature(item) {
-  return {
+async function deleteStoredGeometry(item) {
+  if (item?.geometryRef?.key) {
+    await s3.send(new DeleteObjectCommand({ Bucket: GEOMETRY_BUCKET, Key: item.geometryRef.key }));
+  }
+}
+
+async function loadFullGeometry(item) {
+  const res = await s3.send(new GetObjectCommand({ Bucket: GEOMETRY_BUCKET, Key: item.geometryRef.key }));
+  return JSON.parse(await res.Body.transformToString());
+}
+
+// `full`: geometry to return in place of the stored preview.
+function toFeature(item, full) {
+  const f = {
     type: "Feature",
     id: item.featureId,
-    geometry: item.geometry,
+    geometry: full || item.geometry,
     properties: {
       ...item.properties,
       id: item.featureId,
@@ -154,9 +214,12 @@ function toFeature(item) {
       updatedAt: item.updatedAt
     }
   };
+  if (item.bbox) f.bbox = item.bbox;
+  if (item.geometryRef) f.properties.geometryDetail = full ? "full" : "simplified";
+  return f;
 }
 
-async function adjustCount(datasetId, delta) {
+export async function adjustCount(datasetId, delta) {
   await ddb.send(new UpdateCommand({
     TableName: DATASETS_TABLE, Key: { datasetId },
     UpdateExpression: "ADD featureCount :d SET updatedAt = :u",
@@ -166,36 +229,89 @@ async function adjustCount(datasetId, delta) {
 
 // ------------------------------------------------------------------ datasets
 
+async function queryAll(input) {
+  const items = []; let key;
+  do {
+    const res = await ddb.send(new QueryCommand({ ...input, ExclusiveStartKey: key }));
+    items.push(...(res.Items || [])); key = res.LastEvaluatedKey;
+  } while (key);
+  return items;
+}
+
+// GET /v1/datasets            public datasets + the caller's own (all pages)
+// GET /v1/datasets?scope=mine the caller's own, plus any ids=a,b,c they can read
+//                             (the map uses this: search finds public maps)
 async function listDatasets(event) {
   const caller = await getCaller(event, { required: false });
-  const pub = await ddb.send(new QueryCommand({
-    TableName: DATASETS_TABLE, IndexName: "byVisibility",
-    KeyConditionExpression: "visibility = :v", ExpressionAttributeValues: { ":v": "public" }
-  }));
-  let items = pub.Items || [];
-  if (caller) {
-    const mine = await ddb.send(new QueryCommand({
-      TableName: DATASETS_TABLE, IndexName: "byOwner",
-      KeyConditionExpression: "ownerId = :o", ExpressionAttributeValues: { ":o": caller.sub }
+  const q = event.queryStringParameters || {};
+  const mine = caller ? await queryAll({
+    TableName: DATASETS_TABLE, IndexName: "byOwner",
+    KeyConditionExpression: "ownerId = :o", ExpressionAttributeValues: { ":o": caller.sub }
+  }) : [];
+  let items;
+  if (q.scope === "mine") {
+    const ids = [...new Set(String(q.ids || "").split(",").map(x => x.trim()).filter(Boolean))].slice(0, 25);
+    const have = new Set(mine.map(d => d.datasetId));
+    const extra = await Promise.all(ids.filter(id => !have.has(id)).map(async id => {
+      const { Item } = await ddb.send(new GetCommand({ TableName: DATASETS_TABLE, Key: { datasetId: id } }));
+      return Item && (Item.visibility === "public" || Item.ownerId === caller?.sub) ? Item : null;
     }));
-    const seen = new Set(items.map(d => d.datasetId));
-    items = items.concat((mine.Items || []).filter(d => !seen.has(d.datasetId)));
+    items = mine.concat(extra.filter(Boolean));
+  } else {
+    const pub = await queryAll({
+      TableName: DATASETS_TABLE, IndexName: "byVisibility",
+      KeyConditionExpression: "visibility = :v", ExpressionAttributeValues: { ":v": "public" }
+    });
+    const seen = new Set(pub.map(d => d.datasetId));
+    items = pub.concat(mine.filter(d => !seen.has(d.datasetId)));
   }
   items.sort((a, b) => a.name.localeCompare(b.name));
   return { datasets: items.map(datasetView) };
+}
+
+// GET /v1/datasets/search?q=&tag=&limit=  public datasets by name, description and tags
+async function searchDatasets(event) {
+  const q = event.queryStringParameters || {};
+  const out = await searchPublic(ddb, DATASETS_TABLE, { q: String(q.q || "").slice(0, 100), tag: q.tag, limit: parseLimit(q.limit, 20, 50) });
+  return { ...out, results: out.results.map(datasetView) };
+}
+
+function validateName(name) {
+  try { validateDatasetFields({ name }); } catch (e) { if (e instanceof ModelError) throw new HttpError(400, e.message); throw e; }
+  return name;
+}
+
+function metaFields(body, existing = {}) {
+  const out = {};
+  if (body.description !== undefined) {
+    if (typeof body.description !== "string") throw new HttpError(400, "description must be text");
+    out.description = body.description.trim();
+  }
+  try { const t = cleanTags(body.tags); if (t !== undefined) out.tags = t; }
+  catch (e) { if (e instanceof MetaError) throw new HttpError(400, e.message); throw e; }
+  try { validateDatasetFields(out, { partial: true }); }
+  catch (e) { if (e instanceof ModelError) throw new HttpError(400, e.message); throw e; }
+  return out;
 }
 
 async function createDataset(event) {
   const caller = await getCaller(event, { required: true });
   const body = parseBody(event);
   if (!body.name || typeof body.name !== "string") throw new HttpError(400, "name is required");
-  const visibility = body.visibility || "private";
-  if (!VISIBILITIES.has(visibility)) throw new HttpError(400, "visibility must be public or private");
+  try { validateDatasetFields({ name: body.name.trim() }); } catch (e) { if (e instanceof ModelError) throw new HttpError(400, e.message); throw e; }
+  const requestedVisibility = body.visibility || "private";
+  const visibility = isGeoLibrary(caller) ? "review" : requestedVisibility;
+  if (!isGeoLibrary(caller) && !VISIBILITIES.has(visibility)) throw new HttpError(400, "visibility must be public or private");
   const now = new Date().toISOString();
+  const meta = metaFields(body);
   const item = {
-    datasetId: randomUUID(), name: body.name.trim(), description: body.description || "",
-    visibility, ownerId: caller.sub, source: body.source, featureCount: 0, createdAt: now, updatedAt: now
+    datasetId: randomUUID(), name: body.name.trim().slice(0, 120), description: meta.description || "", tags: meta.tags || [],
+    visibility, ownerId: caller.sub, featureCount: 0, createdAt: now, updatedAt: now
   };
+  // Three-agent pipeline (readiness doc item 9): only geo-library datasets carry these statuses.
+  // Reviewer runs first, so authStatus stays unset until reviewStatus=passed.
+  if (isGeoLibrary(caller)) item.reviewStatus = "pending";
+  item.searchText = searchTextOf(item);
   await ddb.send(new PutCommand({ TableName: DATASETS_TABLE, Item: item }));
   return datasetView(item);
 }
@@ -205,14 +321,33 @@ async function updateDataset(event, datasetId) {
   const ds = await loadDataset(datasetId);
   assertOwner(ds, caller);
   const body = parseBody(event);
+  if (body.visibility !== undefined && isGeoLibrary(caller)) throw new HttpError(403, "geo-library datasets can only leave review visibility through admin approval");
   if (body.visibility !== undefined && !VISIBILITIES.has(body.visibility)) throw new HttpError(400, "visibility must be public or private");
+  // Three-agent pipeline (readiness doc item 9): reviewStatus/authStatus are set only by the
+  // Reviewer/Governor agents, writing as geo-library through this same public PATCH -- no
+  // separate internal route. Any other caller trying to set these is rejected outright.
+  if ((body.reviewStatus !== undefined || body.authStatus !== undefined) && !isGeoLibrary(caller)) {
+    throw new HttpError(403, "reviewStatus/authStatus are set by the agent pipeline only");
+  }
+  const REVIEW_STATUSES = new Set(["pending", "passed", "failed"]);
+  const AUTH_STATUSES = new Set(["pending", "authorized", "unauthorized", "escalation_aborted"]);
+  if (body.reviewStatus !== undefined && !REVIEW_STATUSES.has(body.reviewStatus)) throw new HttpError(400, "invalid reviewStatus");
+  if (body.authStatus !== undefined) {
+    if (!AUTH_STATUSES.has(body.authStatus)) throw new HttpError(400, "invalid authStatus");
+    if (body.authStatus !== "pending" && ds.reviewStatus !== "passed") {
+      throw new HttpError(409, "authStatus can only be set once reviewStatus=passed (Governor never re-checks accuracy)");
+    }
+  }
   const next = {
     ...ds,
-    name: typeof body.name === "string" && body.name.trim() ? body.name.trim() : ds.name,
-    description: body.description ?? ds.description,
+    ...metaFields(body, ds),
+    name: typeof body.name === "string" && body.name.trim() ? validateName(body.name.trim()) : ds.name,
     visibility: body.visibility ?? ds.visibility,
+    reviewStatus: body.reviewStatus ?? ds.reviewStatus,
+    authStatus: body.authStatus ?? ds.authStatus,
     updatedAt: new Date().toISOString()
   };
+  next.searchText = searchTextOf(next);
   await ddb.send(new PutCommand({ TableName: DATASETS_TABLE, Item: next }));
   return datasetView(next);
 }
@@ -221,8 +356,15 @@ async function deleteDataset(event, datasetId) {
   const caller = await getCaller(event, { required: true });
   const ds = await loadDataset(datasetId);
   assertOwner(ds, caller);
-  // Delete all features, then the dataset record.
-  let ExclusiveStartKey;
+  await deleteAllFeatures(datasetId);
+  await deleteDatasetGeometry(datasetId);
+  await ddb.send(new DeleteCommand({ TableName: DATASETS_TABLE, Key: { datasetId } }));
+  return undefined;
+}
+
+// Remove every feature of a dataset (table rows; call deleteDatasetGeometry for S3).
+export async function deleteAllFeatures(datasetId) {
+  let ExclusiveStartKey, removed = 0;
   do {
     const page = await ddb.send(new QueryCommand({
       TableName: FEATURES_TABLE, KeyConditionExpression: "datasetId = :d",
@@ -230,14 +372,39 @@ async function deleteDataset(event, datasetId) {
     }));
     const keys = page.Items || [];
     for (let i = 0; i < keys.length; i += 25) {
-      await ddb.send(new BatchWriteCommand({
-        RequestItems: { [FEATURES_TABLE]: keys.slice(i, i + 25).map(Key => ({ DeleteRequest: { Key } })) }
-      }));
+      await batchWrite(keys.slice(i, i + 25).map(Key => ({ DeleteRequest: { Key } })));
     }
+    removed += keys.length;
     ExclusiveStartKey = page.LastEvaluatedKey;
   } while (ExclusiveStartKey);
-  await ddb.send(new DeleteCommand({ TableName: DATASETS_TABLE, Key: { datasetId } }));
-  return undefined;
+  return removed;
+}
+
+// BatchWrite with retries for unprocessed items.
+export async function batchWrite(requests) {
+  let pending = requests, tries = 0;
+  while (pending.length) {
+    const res = await ddb.send(new BatchWriteCommand({ RequestItems: { [FEATURES_TABLE]: pending } }));
+    pending = res.UnprocessedItems?.[FEATURES_TABLE] || [];
+    if (pending.length) {
+      if (++tries > 8) throw new Error("DynamoDB kept throttling the batch write");
+      await new Promise(r => setTimeout(r, 100 * 2 ** tries));
+    }
+  }
+}
+
+export async function deleteDatasetGeometry(datasetId) {
+  let ContinuationToken;
+  do {
+    const page = await s3.send(new ListObjectsV2Command({
+      Bucket: GEOMETRY_BUCKET, Prefix: `geometry/${datasetId}/`, ContinuationToken
+    }));
+    const objects = (page.Contents || []).map(o => ({ Key: o.Key }));
+    if (objects.length) {
+      await s3.send(new DeleteObjectsCommand({ Bucket: GEOMETRY_BUCKET, Delete: { Objects: objects, Quiet: true } }));
+    }
+    ContinuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+  } while (ContinuationToken);
 }
 
 // ------------------------------------------------------------------ features
@@ -252,7 +419,7 @@ async function listFeatures(event, datasetId) {
     ExpressionAttributeValues: { ":d": datasetId },
     Limit: parseLimit(qs.limit), ExclusiveStartKey: decodeToken(qs.nextToken)
   }));
-  const fc = { type: "FeatureCollection", features: (res.Items || []).map(toFeature) };
+  const fc = { type: "FeatureCollection", features: (res.Items || []).map(item => toFeature(item)) };
   const nextToken = encodeToken(res.LastEvaluatedKey);
   if (nextToken) fc.nextToken = nextToken;
   return fc;
@@ -264,14 +431,16 @@ async function getFeature(event, datasetId, featureId) {
   assertCanRead(ds, caller);
   const { Item } = await ddb.send(new GetCommand({ TableName: FEATURES_TABLE, Key: { datasetId, featureId } }));
   if (!Item) throw new HttpError(404, "Feature not found");
-  return toFeature(Item);
+  const qs = event.queryStringParameters || {};
+  const full = Item.geometryRef && qs.detail !== "simplified" ? await loadFullGeometry(Item) : undefined;
+  return toFeature(Item, full);
 }
 
 async function createFeature(event, datasetId) {
   const caller = await getCaller(event, { required: true });
   const ds = await loadDataset(datasetId);
   assertOwner(ds, caller);
-  const item = featureItem(datasetId, randomUUID(), parseBody(event));
+  const item = await featureItem(datasetId, randomUUID(), parseBody(event));
   await ddb.send(new PutCommand({ TableName: FEATURES_TABLE, Item: item }));
   await adjustCount(datasetId, 1);
   return toFeature(item);
@@ -283,9 +452,56 @@ async function updateFeature(event, datasetId, featureId) {
   assertOwner(ds, caller);
   const { Item: existing } = await ddb.send(new GetCommand({ TableName: FEATURES_TABLE, Key: { datasetId, featureId } }));
   if (!existing) throw new HttpError(404, "Feature not found");
-  const item = featureItem(datasetId, featureId, parseBody(event), existing);
+  const item = await featureItem(datasetId, featureId, parseBody(event), existing);
   await ddb.send(new PutCommand({ TableName: FEATURES_TABLE, Item: item }));
   return toFeature(item);
+}
+
+// POST /v1/datasets/{datasetId}/features/batch
+// { action: "delete" | "move" | "copy", ids: [...up to 100], targetDatasetId }
+// Owner only (and owner of the target for move/copy). Moves and copies keep full
+// geometry and properties, with new feature IDs in the target.
+const BATCH_MAX = 100;
+async function batchFeatures(event, datasetId) {
+  const caller = await getCaller(event, { required: true });
+  const ds = await loadDataset(datasetId);
+  assertOwner(ds, caller);
+  const body = parseBody(event);
+  const action = body.action;
+  if (!["delete", "move", "copy"].includes(action)) throw new HttpError(400, "action must be delete, move or copy");
+  const ids = [...new Set(Array.isArray(body.ids) ? body.ids.map(String) : [])];
+  if (!ids.length || ids.length > BATCH_MAX) throw new HttpError(400, `ids must list 1 to ${BATCH_MAX} feature IDs`);
+  let target = null;
+  if (action !== "delete") {
+    if (!body.targetDatasetId || body.targetDatasetId === datasetId) throw new HttpError(400, "targetDatasetId must be another of your datasets");
+    target = await loadDataset(body.targetDatasetId);
+    assertOwner(target, caller);
+  }
+  const done = [], failed = [];
+  for (const featureId of ids) {
+    try {
+      const { Item } = await ddb.send(new GetCommand({ TableName: FEATURES_TABLE, Key: { datasetId, featureId } }));
+      if (!Item) { failed.push({ id: featureId, message: "Not found" }); continue; }
+      if (target) {
+        const geometry = Item.geometryRef ? await loadFullGeometry(Item) : Item.geometry;
+        const copy = await featureItem(target.datasetId, randomUUID(), { type: "Feature", geometry, properties: Item.properties });
+        await ddb.send(new PutCommand({ TableName: FEATURES_TABLE, Item: copy }));
+      }
+      if (action !== "copy") {
+        await ddb.send(new DeleteCommand({ TableName: FEATURES_TABLE, Key: { datasetId, featureId } }));
+        await deleteStoredGeometry(Item);
+      }
+      done.push(featureId);
+    } catch (e) {
+      failed.push({ id: featureId, message: e instanceof HttpError ? e.message : "Couldn't process this feature" });
+      if (!(e instanceof HttpError)) console.error("Batch item failed", datasetId, featureId, e.name);
+    }
+  }
+  if (done.length) {
+    if (action !== "copy") await adjustCount(datasetId, -done.length);
+    if (target) await adjustCount(target.datasetId, done.length);
+  }
+  return { action, done, failed, targetDatasetId: target?.datasetId };
 }
 
 async function deleteFeature(event, datasetId, featureId) {
@@ -296,6 +512,7 @@ async function deleteFeature(event, datasetId, featureId) {
     TableName: FEATURES_TABLE, Key: { datasetId, featureId }, ReturnValues: "ALL_OLD"
   }));
   if (!Attributes) throw new HttpError(404, "Feature not found");
+  await deleteStoredGeometry(Attributes);
   await adjustCount(datasetId, -1);
   return undefined;
 }
@@ -306,12 +523,12 @@ function publicAppView(appId, app) {
   return {
     appId, name: app.name,
     returnOrigins: app.returnOrigins, areaOrigins: app.areaOrigins,
-    featureTypes: app.featureTypes
+    hasLayers: !!(app.layers || app.layersUrl)
   };
 }
 
 async function getAppInfo(appId) {
-  const app = getApp(appId);
+  const app = await getActiveApp(ddb, appId);
   if (!app) throw new HttpError(404, "Unknown app");
   return publicAppView(appId, app);
 }
@@ -320,7 +537,7 @@ async function getAppInfo(appId) {
 // owner + appId + externalRef is unique (GSI byOrigin on originKey).
 async function openAppMap(event, appId, externalRef) {
   const caller = await getCaller(event, { required: true });
-  const app = getApp(appId);
+  const app = await getActiveApp(ddb, appId);
   if (!app) throw new HttpError(404, "Unknown app");
   if (!externalRef || externalRef.length > 200) throw new HttpError(400, "Invalid item reference");
 
@@ -349,8 +566,7 @@ async function openAppMap(event, appId, externalRef) {
       ...existing,
       origin: { ...existing.origin, externalUrl: externalUrl ?? existing.origin?.externalUrl },
       referenceArea: referenceArea ?? existing.referenceArea,
-      featureTypes: app.featureTypes,
-      updatedAt: now
+        updatedAt: now
     };
     await ddb.send(new PutCommand({ TableName: DATASETS_TABLE, Item: next }));
     return { created: false, dataset: datasetView(next) };
@@ -365,22 +581,539 @@ async function openAppMap(event, appId, externalRef) {
     origin: { appId, externalRef, externalUrl },
     originKey,
     referenceArea,
-    featureTypes: app.featureTypes,
-    featureCount: 0, createdAt: now, updatedAt: now
+    featureCount: 0, createdAt: now, updatedAt: now, tags: []
   };
+  item.searchText = searchTextOf(item);
   await ddb.send(new PutCommand({ TableName: DATASETS_TABLE, Item: item }));
   return { created: true, dataset: datasetView(item) };
 }
+
+// ------------------------------------------------------------------ imports
+// Imports run in a separate worker (importer.mjs); these routes start and track them.
+
+const IMPORT_SOURCES = new Set(["upload", "url", "arcgis"]);
+
+async function createUploadUrl(event, datasetId) {
+  const caller = await getCaller(event, { required: true });
+  assertOwner(await loadDataset(datasetId), caller);
+  const key = `uploads/${caller.sub}/${randomUUID()}.geojson`;
+  const uploadUrl = await getSignedUrl(s3, new PutObjectCommand({
+    Bucket: GEOMETRY_BUCKET, Key: key, ContentType: "application/geo+json"
+  }), { expiresIn: 900 });
+  return { key, uploadUrl, contentType: "application/geo+json", maxBytes: 50_000_000 };
+}
+
+function checkUrl(raw) {
+  let u;
+  try { u = new URL(raw); } catch { throw new HttpError(400, "source.url must be a valid URL"); }
+  if (u.protocol !== "https:") throw new HttpError(400, "source.url must use https");
+  return u.toString();
+}
+
+async function startImport(event, datasetId) {
+  const caller = await getCaller(event, { required: true });
+  assertOwner(await loadDataset(datasetId), caller);
+  const body = parseBody(event);
+  const src = body.source || {};
+  if (!IMPORT_SOURCES.has(src.type)) throw new HttpError(400, "source.type must be upload, url or arcgis");
+  const source = { type: src.type };
+  if (src.type === "upload") {
+    if (typeof src.key !== "string" || !src.key.startsWith(`uploads/${caller.sub}/`)) throw new HttpError(400, "source.key is not one of your uploads");
+    source.key = src.key;
+    if (typeof src.fileName === "string") source.fileName = src.fileName.slice(0, 200);
+  } else {
+    source.url = checkUrl(src.url);
+    if (src.type === "arcgis" && typeof src.where === "string" && src.where.trim()) source.where = src.where.slice(0, 1000);
+  }
+  const mode = body.mode === "replace" ? "replace" : "append";
+  const str = (v) => typeof v === "string" && v.trim() ? v.trim().slice(0, 100) : undefined;
+  const now = new Date();
+  const job = {
+    importId: randomUUID(), datasetId, ownerId: caller.sub, status: "queued", source, mode,
+    nameField: str(body.nameField), categoryField: str(body.categoryField),
+    createdAt: now.toISOString(), updatedAt: now.toISOString(),
+    expiresAt: Math.floor(now.getTime() / 1000) + 30 * 86400
+  };
+  await ddb.send(new PutCommand({ TableName: IMPORTS_TABLE, Item: job }));
+  await lambda.send(new InvokeCommand({
+    FunctionName: IMPORT_FUNCTION, InvocationType: "Event",
+    Payload: Buffer.from(JSON.stringify({ importId: job.importId }))
+  }));
+  return importView(job);
+}
+
+function importView(j) {
+  return {
+    importId: j.importId, datasetId: j.datasetId, status: j.status, source: j.source, mode: j.mode,
+    nameField: j.nameField, categoryField: j.categoryField,
+    imported: j.imported || 0, skipped: j.skipped || 0, errors: j.errors || [], message: j.message,
+    createdAt: j.createdAt, updatedAt: j.updatedAt
+  };
+}
+
+async function getImport(event, datasetId, importId) {
+  const caller = await getCaller(event, { required: true });
+  const { Item } = await ddb.send(new GetCommand({ TableName: IMPORTS_TABLE, Key: { importId } }));
+  if (!Item || Item.datasetId !== datasetId || Item.ownerId !== caller.sub) throw new HttpError(404, "Import not found");
+  return importView(Item);
+}
+
+// ------------------------------------------------------------------ exports
+// Builds the file with full-detail geometry, stores it under exports/ (kept a
+// day) and returns a short-lived download link. Anyone who can read the dataset
+// can export it.
+
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) { const i = next++; out[i] = await fn(items[i], i); }
+  }));
+  return out;
+}
+
+async function exportDataset(event, datasetId) {
+  const caller = await getCaller(event, { required: false });
+  const ds = await loadDataset(datasetId);
+  assertCanRead(ds, caller);
+  const body = event.body ? parseBody(event) : {};
+  const format = String(body.format || "geojson").toLowerCase();
+  if (!FORMATS[format]) throw new HttpError(400, `format must be one of ${Object.keys(FORMATS).join(", ")}`);
+
+  const items = [];
+  let ExclusiveStartKey;
+  do {
+    const page = await ddb.send(new QueryCommand({
+      TableName: FEATURES_TABLE, KeyConditionExpression: "datasetId = :d",
+      ExpressionAttributeValues: { ":d": datasetId }, ExclusiveStartKey
+    }));
+    items.push(...(page.Items || []));
+    ExclusiveStartKey = page.LastEvaluatedKey;
+  } while (ExclusiveStartKey);
+
+  const features = await mapLimit(items, 8, async (item) => {
+    const f = toFeature(item, item.geometryRef ? await loadFullGeometry(item) : undefined);
+    delete f.properties.geometryDetail;
+    return f;
+  });
+  features.sort((a, b) => String(a.properties.name).localeCompare(String(b.properties.name)));
+
+  const { ext, type } = FORMATS[format];
+  const name = exportFileName(ds.name, ext);
+  const key = `exports/${datasetId}/${randomUUID()}/${name}`;
+  const content = renderExport(format, ds, features);
+  await s3.send(new PutObjectCommand({
+    Bucket: GEOMETRY_BUCKET, Key: key, Body: content, ContentType: type,
+    ContentDisposition: `attachment; filename="${name}"`
+  }));
+  const url = await getSignedUrl(s3, new GetObjectCommand({ Bucket: GEOMETRY_BUCKET, Key: key }), { expiresIn: 3600 });
+  return {
+    format, fileName: name, featureCount: features.length, bytes: Buffer.byteLength(content),
+    url, expiresAt: new Date(Date.now() + 3600_000).toISOString()
+  };
+}
+
+// ------------------------------------------------------------------ app layers + relay
+// Connected apps bring their own layers (see overlays.mjs). GeoVivé reads the
+// app's layer list, shows those layers for the app's users, and relays the
+// ones marked "relay" through a cached, simplified copy.
+
+const LAYER_LIST_TTL_MS = 5 * 60 * 1000;
+const layerLists = new Map();   // appId -> { at, list }
+
+export async function loadAppLayers(appId) {
+  const app = await getActiveApp(ddb, appId);
+  if (!app) throw new HttpError(404, "Unknown app");
+  if (!app.layers && !app.layersUrl) return { title: undefined, layers: [] };
+  const hit = layerLists.get(appId);
+  if (hit && Date.now() - hit.at < LAYER_LIST_TTL_MS) return hit.list;
+  if (app.ownerId) return loadApprovedLayers(app, hit);
+  let json = app.layers;
+  if (!json) {
+    // The list must live on the app's own site
+    if (!originAllowed(app.layersUrl, app.returnOrigins) || !app.layersUrl.startsWith("https://")) {
+      throw new HttpError(500, "App layer list address is not on the app's site");
+    }
+    try {
+      const res = await fetch(app.layersUrl, { signal: AbortSignal.timeout(10_000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      json = await res.json();
+    } catch (e) {
+      if (hit) return hit.list;   // keep serving the last good list
+      throw new HttpError(502, `${app.name}'s layer list couldn't be loaded (${e.message})`);
+    }
+  }
+  let list;
+  try { list = validateLayerList(json); }
+  catch (e) {
+    if (e instanceof LayerListError) throw new HttpError(502, `${app.name}'s layer list is invalid: ${e.message}`);
+    throw e;
+  }
+  layerLists.set(appId, { at: Date.now(), list });
+  return list;
+}
+
+// Self-service apps: users see only approved layer versions. A new or changed
+// layer in the app's list is checked automatically before it's shown.
+async function loadApprovedLayers(app, hit) {
+  let list = null;
+  try {
+    list = await fetchLayerList(app, { fetch, lookup: dns.lookup });
+  } catch (e) { console.warn("Layer list unavailable; serving approved layers", app.appId, e.message); }
+  const approved = await loadApproved(s3, app.appId);
+  const out = { title: list?.title, layers: visibleLayers(approved, list) };
+  if (list) {
+    try {
+      await appconnect.detectChanges(ddb, app, list, payload => lambda.send(new InvokeCommand({
+        FunctionName: APPCHECK_FUNCTION, InvocationType: "Event", Payload: Buffer.from(JSON.stringify(payload)) })));
+    } catch (e) { console.error("Change detection failed", app.appId, e); }
+  }
+  layerLists.set(app.appId, { at: Date.now(), list: out });
+  return out;
+}
+
+async function getAppLayers(appId) {
+  const app = await getActiveApp(ddb, appId);
+  const list = await loadAppLayers(appId);
+  return { appId, appName: app.name, title: list.title, layers: list.layers.map(publicLayer) };
+}
+
+async function relayLayer(appId, layerId) {
+  const list = await loadAppLayers(appId);
+  const layer = list.layers.find(l => l.id === layerId);
+  if (!layer) throw new HttpError(404, "Unknown layer");
+  if (layer.delivery !== "relay") throw new HttpError(400, "This layer loads directly from its source");
+  const key = `overlays/v3/${appId}/${layerId}-${layerHash(layer)}.geojson`;   // a new approved version gets a new cache
+  let fetchedAt, count;
+  try {
+    const head = await s3.send(new HeadObjectCommand({ Bucket: GEOMETRY_BUCKET, Key: key }));
+    if (Date.now() - head.LastModified.getTime() < layer.cacheHours * 3600_000) fetchedAt = head.LastModified.toISOString();
+  } catch { /* not cached yet */ }
+  if (!fetchedAt) {
+    let fc;
+    try { fc = await buildLayer(layer); }
+    catch (e) { console.error("Relay failed", appId, layerId, e); throw new HttpError(502, `The source for this layer isn't responding (${e.message})`); }
+    await s3.send(new PutObjectCommand({
+      Bucket: GEOMETRY_BUCKET, Key: key, Body: gzipSync(JSON.stringify(fc)), ContentType: "application/geo+json",
+      ContentEncoding: "gzip", CacheControl: "public, max-age=3600"
+    }));
+    fetchedAt = fc.geovive.fetchedAt; count = fc.features.length;
+  }
+  const url = await getSignedUrl(s3, new GetObjectCommand({ Bucket: GEOMETRY_BUCKET, Key: key }), { expiresIn: 3600 });
+  return { appId, layerId, url, fetchedAt, count };
+}
+
+// ------------------------------------------------------------------ account linking (OAuth 2.0)
+// The consent page (/connect/) and the Connected apps list use the user's GeoVivé sign-in;
+// the token endpoint authenticates the app; /v1/linked/* takes the app's access token.
+
+const cognito = new CognitoIdentityProviderClient({});
+// Always read fresh: a rotated secret or changed redirect must apply at once.
+const linkApp = async id => {
+  const a = await getAppRecord(ddb, id, { fresh: true });
+  return a && isActive(a.status, a.termEndsAt) ? a : null;
+};
+const ownedMapsOf = sub => () => queryAll({ TableName: DATASETS_TABLE, IndexName: "byOwner",
+  KeyConditionExpression: "ownerId = :o", ExpressionAttributeValues: { ":o": sub } });
+
+function formBody(event) {
+  const raw = event.isBase64Encoded ? Buffer.from(event.body || "", "base64").toString("utf8") : (event.body || "");
+  const type = event.headers?.["content-type"] || event.headers?.["Content-Type"] || "";
+  if (type.includes("application/json")) { try { return JSON.parse(raw || "{}"); } catch { return {}; } }
+  return Object.fromEntries(new URLSearchParams(raw));
+}
+const header = (event, name) => event.headers?.[name] || event.headers?.[name.toLowerCase()] || event.headers?.[name[0].toUpperCase() + name.slice(1)];
+
+async function authorizeInfo(event) {
+  const caller = await getCaller(event, { required: true });
+  const q = event.queryStringParameters || {};
+  const out = await linking.checkAuthorize(ddb, { getApp: linkApp, sub: caller.sub }, q);
+  if (out.redirect) return out;
+  const maps = (await ownedMapsOf(caller.sub)()).map(d => ({ datasetId: d.datasetId, name: d.name, visibility: d.visibility,
+    featureCount: d.featureCount || 0, fromThisApp: d.origin?.appId === out.app.appId })).sort((a, b) => a.name.localeCompare(b.name));
+  return { app: { appId: out.app.appId, name: out.app.name, domain: out.app.domain },
+    scopes: out.scopes.map(s => ({ scope: s, label: linking.SCOPES[s] })),
+    grant: out.grant ? linking.grantView(out.grant) : null, maps };
+}
+
+async function authorizeDecision(event) {
+  const caller = await getCaller(event, { required: true });
+  const body = parseBody(event);
+  return linking.approve(ddb, { getApp: linkApp, sub: caller.sub, ownedMaps: ownedMapsOf(caller.sub) },
+    body.params || {}, { approve: body.approve === true, sharedDatasets: body.sharedDatasets || [] });
+}
+
+const oauthJson = (status, body) => ({ statusCode: status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "Pragma": "no-cache" }, body: JSON.stringify(body) });
+
+async function linkedRequest(event, scope) {
+  return linking.authenticate(ddb, { getApp: linkApp }, header(event, "authorization"), scope);
+}
+// The existing dataset/feature routes check the caller; after the link checks pass,
+// run them as the linked user.
+const asUser = (event, sub) => ({ ...event, headers: { ...event.headers, authorization: undefined, Authorization: undefined },
+  requestContext: { ...event.requestContext, authorizer: { jwt: { claims: { sub } } } } });
+const linkedView = d => { const v = datasetView(d); delete v.ownerId; return { ...v, createdByThisApp: undefined }; };
+
+async function linkedMap(link, datasetId, write) {
+  let ds;
+  try { ds = await loadDataset(datasetId); } catch { ds = null; }
+  if (!ds || !linking.canSee(link, ds)) throw new HttpError(404, "Dataset not found");
+  if (write && !linking.canChange(link, ds)) throw new HttpError(403, "Apps can only change maps they created. The user shared this one read-only.");
+  return ds;
+}
+
+async function linkedRoute(event, routeKey, p) {
+  switch (routeKey) {
+    case "GET /v1/linked/me": {
+      const link = await linkedRequest(event, null);
+      const { reviewKey } = await appconnect.reviewSettings();
+      const me = { userId: linking.pairwiseId(reviewKey, link.appId, link.sub), scopes: link.scopes };
+      if (link.scopes.includes("profile")) {
+        try {
+          const res = await cognito.send(new ListUsersCommand({ UserPoolId: process.env.USER_POOL_ID, Filter: `sub = "${link.sub.replace(/"/g, "")}"`, Limit: 1 }));
+          const attrs = Object.fromEntries((res.Users?.[0]?.Attributes || []).map(a => [a.Name, a.Value]));
+          me.displayName = attrs.preferred_username || attrs.name || null;
+        } catch (e) { console.error("Profile lookup failed", e.name); me.displayName = null; }
+      }
+      return me;
+    }
+    case "GET /v1/linked/datasets": {
+      const link = await linkedRequest(event, "maps:read");
+      const mine = await ownedMapsOf(link.sub)();
+      return { datasets: mine.filter(d => linking.canSee(link, d)).sort((a, b) => a.name.localeCompare(b.name))
+        .map(d => ({ ...linkedView(d), createdByThisApp: d.origin?.appId === link.appId })) };
+    }
+    case "POST /v1/linked/datasets": {
+      const link = await linkedRequest(event, "maps:write");
+      const body = parseBody(event);
+      if (!body.name || typeof body.name !== "string") throw new HttpError(400, "name is required");
+      const app = await linkApp(link.appId);
+      const now = new Date().toISOString(), meta = metaFields(body);
+      const externalRef = typeof body.externalRef === "string" ? body.externalRef.slice(0, 200) : undefined;
+      const item = { datasetId: randomUUID(), name: body.name.trim().slice(0, 120), description: meta.description || `Created from ${app.name}`,
+        tags: meta.tags || [], visibility: "private", ownerId: link.sub, origin: { appId: link.appId, externalRef },
+        ...(externalRef ? { originKey: `${link.sub}#${link.appId}#${externalRef}` } : {}),
+        featureCount: 0, createdAt: now, updatedAt: now };
+      if (item.originKey) {
+        const found = await ddb.send(new QueryCommand({ TableName: DATASETS_TABLE, IndexName: "byOrigin",
+          KeyConditionExpression: "originKey = :k", ExpressionAttributeValues: { ":k": item.originKey }, Limit: 1 }));
+        if (found.Items?.[0]) return { created: false, dataset: { ...linkedView(found.Items[0]), createdByThisApp: true } };
+      }
+      item.searchText = searchTextOf(item);
+      await ddb.send(new PutCommand({ TableName: DATASETS_TABLE, Item: item }));
+      return { created: true, dataset: { ...linkedView(item), createdByThisApp: true } };
+    }
+    case "GET /v1/linked/datasets/{datasetId}": {
+      const link = await linkedRequest(event, "maps:read");
+      const ds = await linkedMap(link, p.datasetId, false);
+      return { ...linkedView(ds), createdByThisApp: ds.origin?.appId === link.appId };
+    }
+    case "GET /v1/linked/datasets/{datasetId}/features": {
+      const link = await linkedRequest(event, "maps:read");
+      await linkedMap(link, p.datasetId, false);
+      return listFeatures(asUser(event, link.sub), p.datasetId);
+    }
+    case "GET /v1/linked/datasets/{datasetId}/features/{featureId}": {
+      const link = await linkedRequest(event, "maps:read");
+      await linkedMap(link, p.datasetId, false);
+      return getFeature(asUser(event, link.sub), p.datasetId, p.featureId);
+    }
+    case "POST /v1/linked/datasets/{datasetId}/features": {
+      const link = await linkedRequest(event, "maps:write");
+      await linkedMap(link, p.datasetId, true);
+      return { status: 201, body: await createFeature(asUser(event, link.sub), p.datasetId) };
+    }
+    case "PUT /v1/linked/datasets/{datasetId}/features/{featureId}": {
+      const link = await linkedRequest(event, "maps:write");
+      await linkedMap(link, p.datasetId, true);
+      return updateFeature(asUser(event, link.sub), p.datasetId, p.featureId);
+    }
+    case "DELETE /v1/linked/datasets/{datasetId}/features/{featureId}": {
+      const link = await linkedRequest(event, "maps:write");
+      await linkedMap(link, p.datasetId, true);
+      await deleteFeature(asUser(event, link.sub), p.datasetId, p.featureId);
+      return { status: 204 };
+    }
+  }
+  return undefined;
+}
+
+// ------------------------------------------------------------------ admin (/v1/admin/*)
+// Group + authenticator session checked in admin.mjs; every change is audited.
+
+const ce = new CostExplorerClient({ region: "us-east-1" });
+const adminKey = async () => (await appconnect.reviewSettings()).reviewKey;
+const audit = (actor, action, target, detail) => admin.writeAudit(ddb, actor, action, target, detail);
+
+let userCache = { at: 0, bySub: new Map(), count: 0 };
+async function usersBySub() {
+  if (Date.now() - userCache.at < 300_000) return userCache;
+  const bySub = new Map(); let token;
+  do {
+    const r = await cognito.send(new ListUsersCommand({ UserPoolId: process.env.USER_POOL_ID, PaginationToken: token, Limit: 60 }));
+    for (const u of r.Users || []) {
+      const a = Object.fromEntries((u.Attributes || []).map(x => [x.Name, x.Value]));
+      bySub.set(a.sub, { email: a.email, name: a.preferred_username || a.name || "", createdAt: u.UserCreateDate, status: u.UserStatus });
+    }
+    token = r.PaginationToken;
+  } while (token);
+  userCache = { at: Date.now(), bySub, count: bySub.size };
+  return userCache;
+}
+
+async function monthCost() {
+  const now = new Date(), start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+  const end = new Date(now.getTime() + 86400_000).toISOString().slice(0, 10);
+  try {
+    const r = await ce.send(new GetCostAndUsageCommand({ TimePeriod: { Start: start, End: end }, Granularity: "MONTHLY", Metrics: ["UnblendedCost"],
+      GroupBy: [{ Type: "DIMENSION", Key: "SERVICE" }] }));
+    const groups = r.ResultsByTime?.[0]?.Groups || [];
+    const services = groups.map(g => ({ service: g.Keys[0], usd: Number(g.Metrics.UnblendedCost.Amount) })).filter(x => x.usd >= 0.005).sort((a, b) => b.usd - a.usd);
+    return { from: start, totalUsd: services.reduce((t, x) => t + x.usd, 0), services };
+  } catch (e) { return { error: e.name }; }
+}
+
+const ssm = new SSMClient({});
+const AGENT_RUN_PARAM = process.env.AGENT_RUN_PARAM || "/geovive/agents/run";
+const AGENT_AUDIT_TABLE = process.env.AGENT_AUDIT_TABLE;
+const AGENT_MONTHLY_LIMIT_USD = Number(process.env.AGENT_MONTHLY_LIMIT_USD || 20);
+
+async function agentsMonthCost() {
+  const now = new Date(), start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+  const end = new Date(now.getTime() + 86400_000).toISOString().slice(0, 10);
+  try {
+    const r = await ce.send(new GetCostAndUsageCommand({ TimePeriod: { Start: start, End: end }, Granularity: "MONTHLY", Metrics: ["UnblendedCost"],
+      Filter: { Tags: { Key: "component", Values: ["agents"] } } }));
+    return Number(r.ResultsByTime?.[0]?.Total?.UnblendedCost?.Amount || 0);
+  } catch { return null; } // Cost Explorer can be briefly unavailable; the admin page shows "unknown" rather than erroring the whole overview
+}
+
+async function agentsStatus() {
+  const [runParam, monthToDateUsd] = await Promise.all([
+    ssm.send(new GetParameterCommand({ Name: AGENT_RUN_PARAM })).then(r => r.Parameter?.Value === "true").catch(() => false),
+    agentsMonthCost()
+  ]);
+  let recentRuns = [];
+  if (AGENT_AUDIT_TABLE) {
+    try {
+      const r = await ddb.send(new ScanCommand({ TableName: AGENT_AUDIT_TABLE, FilterExpression: "begins_with(#a, :p)",
+        ExpressionAttributeNames: { "#a": "action" }, ExpressionAttributeValues: { ":p": "run." }, Limit: 200 }));
+      recentRuns = (r.Items || []).sort((a, b) => (b.at || "").localeCompare(a.at || "")).slice(0, 20);
+    } catch (e) { console.warn("agent audit scan failed", e.name); }
+  }
+  return { deployed: true, runEnabled: !!runParam, monthToDateUsd, monthlyLimitUsd: AGENT_MONTHLY_LIMIT_USD, recentRuns };
+}
+
+async function allDatasets() {
+  const items = []; let key;
+  do { const r = await ddb.send(new ScanCommand({ TableName: DATASETS_TABLE, ExclusiveStartKey: key })); items.push(...(r.Items || [])); key = r.LastEvaluatedKey; } while (key);
+  return items;
+}
+
+// The gateway has one catch-all admin route (ANY /v1/admin/{proxy+}) to keep the Lambda's
+// resource policy under its size limit; this turns it back into the route keys below.
+export function adminRouteKey(event, routeKey, p = {}) {
+  if (!routeKey.startsWith("ANY ")) return { routeKey, p };
+  const method = (event.requestContext?.http?.method || "GET").toUpperCase();
+  const path = String(p.proxy || "").replace(/^\/+|\/+$/g, "");
+  let m;
+  if ((m = path.match(/^datasets\/([^/]+)\/features$/))) return { routeKey: `${method} /v1/admin/datasets/{datasetId}/features`, p: { datasetId: decodeURIComponent(m[1]) } };
+  if ((m = path.match(/^datasets\/([^/]+)$/))) return { routeKey: `${method} /v1/admin/datasets/{datasetId}`, p: { datasetId: decodeURIComponent(m[1]) } };
+  return { routeKey: `${method} /v1/admin/${path}`, p: {} };
+}
+
+async function adminRoute(event, routeKey, p) {
+  if (routeKey === "GET /v1/admin/me") {
+    const sub = admin.requireAdminUser(event);
+    const token = event.headers?.["x-admin-session"] || event.headers?.["X-Admin-Session"];
+    return { admin: true, authenticator: await admin.mfaStatus(ddb, sub), session: admin.verifySession(await adminKey(), token, sub) };
+  }
+  if (routeKey === "POST /v1/admin/mfa/setup") {
+    const sub = admin.requireAdminUser(event);
+    const users = await usersBySub();
+    return admin.mfaSetup(ddb, sub, users.bySub.get(sub)?.email);
+  }
+  if (routeKey === "POST /v1/admin/mfa/verify") {
+    const sub = admin.requireAdminUser(event);
+    return admin.mfaVerify(ddb, sub, parseBody(event).code, { key: await adminKey(), audit });
+  }
+  const actor = await admin.requireAdmin(event, { key: await adminKey() });
+  switch (routeKey) {
+    case "GET /v1/admin/overview": {
+      const [ds, users, cost, apps, agents] = await Promise.all([allDatasets(), usersBySub(),
+        monthCost(), ddb.send(new ScanCommand({ TableName: process.env.APPS_TABLE, FilterExpression: "sk = :a", ExpressionAttributeValues: { ":a": "APP" },
+          ProjectionExpression: "appId, #n, #s, termEndsAt", ExpressionAttributeNames: { "#n": "name", "#s": "status" } })), agentsStatus()]);
+      const byVis = {}; let pins = 0;
+      ds.forEach(d => { byVis[d.visibility] = (byVis[d.visibility] || 0) + 1; pins += d.featureCount || 0; });
+      return { users: users.count, maps: ds.length, mapsByVisibility: byVis, pins, apps: (apps.Items || []).map(a => ({ appId: a.appId, name: a.name, status: a.status, termEndsAt: a.termEndsAt })),
+        cost, agents };
+    }
+    case "GET /v1/admin/agents": {
+      return agentsStatus();
+    }
+    case "PATCH /v1/admin/agents": {
+      const body = parseBody(event);
+      if (typeof body.run !== "boolean") throw new HttpError(400, "run must be true or false");
+      await ssm.send(new PutParameterCommand({ Name: AGENT_RUN_PARAM, Value: body.run ? "true" : "false", Type: "String", Overwrite: true }));
+      await audit(actor, "agents.run", "agents", { run: body.run });
+      return agentsStatus();
+    }
+    case "GET /v1/admin/datasets": {
+      const [ds, users] = await Promise.all([allDatasets(), usersBySub()]);
+      return { datasets: ds.map(d => ({ ...datasetView(d), owner: users.bySub.get(d.ownerId)?.email || (d.ownerId === "system" ? "GeoVivé" : "unknown") }))
+        .sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || "")) };
+    }
+    case "GET /v1/admin/datasets/{datasetId}/features": {
+      const qs = event.queryStringParameters || {};
+      const res = await ddb.send(new QueryCommand({ TableName: FEATURES_TABLE, KeyConditionExpression: "datasetId = :d", ExpressionAttributeValues: { ":d": p.datasetId },
+        Limit: parseLimit(qs.limit, 1000, 1000), ExclusiveStartKey: decodeToken(qs.nextToken) }));
+      const fc = { type: "FeatureCollection", features: (res.Items || []).map(i => toFeature(i)) };
+      const nt = encodeToken(res.LastEvaluatedKey); if (nt) fc.nextToken = nt;
+      return fc;
+    }
+    case "PATCH /v1/admin/datasets/{datasetId}": {
+      const ds = await loadDataset(p.datasetId);
+      const body = parseBody(event);
+      if (!["public", "private", "review"].includes(body.visibility)) throw new HttpError(400, "visibility must be public, private or review");
+      const before = ds.visibility;
+      await ddb.send(new UpdateCommand({ TableName: DATASETS_TABLE, Key: { datasetId: ds.datasetId }, UpdateExpression: "SET visibility = :v, updatedAt = :u",
+        ExpressionAttributeValues: { ":v": body.visibility, ":u": new Date().toISOString() } }));
+      await audit(actor, "map.visibility", ds.datasetId, { name: ds.name, from: before, to: body.visibility, reason: String(body.reason || "").slice(0, 300) });
+      return { datasetId: ds.datasetId, visibility: body.visibility };
+    }
+    case "DELETE /v1/admin/datasets/{datasetId}": {
+      const ds = await loadDataset(p.datasetId);
+      const body = event.body ? parseBody(event) : {};
+      if (body.confirm !== ds.name) throw new HttpError(400, "Type the map's exact name to confirm");
+      await deleteAllFeatures(ds.datasetId);
+      await deleteDatasetGeometry(ds.datasetId);
+      await ddb.send(new DeleteCommand({ TableName: DATASETS_TABLE, Key: { datasetId: ds.datasetId } }));
+      await audit(actor, "map.deleted", ds.datasetId, { name: ds.name, ownerId: ds.ownerId, pins: ds.featureCount || 0, visibility: ds.visibility, reason: String(body.reason || "").slice(0, 300) });
+      return { deleted: ds.datasetId };
+    }
+    case "GET /v1/admin/audit": {
+      const users = await usersBySub();
+      return { entries: (await admin.listAudit(ddb, 200)).map(e => ({ ...e, actorEmail: users.bySub.get(e.actor)?.email })) };
+    }
+  }
+  throw new HttpError(404, `No route for ${routeKey}`);
+}
+
+const html = body => ({ statusCode: 200, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store",
+  "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action https://api.geovive.link", "X-Frame-Options": "DENY" }, body });
 
 // ------------------------------------------------------------------ router
 
 export const handler = async (event) => {
   const routeKey = event.routeKey; // e.g. "GET /v1/datasets/{datasetId}/features"
   const p = event.pathParameters || {};
+  if ((event.requestContext?.http?.method || "").toUpperCase() === "OPTIONS") return { statusCode: 204, headers: corsHeaders(event), body: "" };
   try {
     let result, status = 200;
     switch (routeKey) {
       case "GET /v1/datasets": result = await listDatasets(event); break;
+      case "GET /v1/datasets/search": result = await searchDatasets(event); break;
+      case "POST /v1/datasets/{datasetId}/features/batch": result = await batchFeatures(event, p.datasetId); break;
       case "POST /v1/datasets": result = await createDataset(event); status = 201; break;
       case "GET /v1/datasets/{datasetId}": {
         const caller = await getCaller(event, { required: false });
@@ -395,16 +1128,85 @@ export const handler = async (event) => {
       case "GET /v1/datasets/{datasetId}/features/{featureId}": result = await getFeature(event, p.datasetId, p.featureId); break;
       case "PUT /v1/datasets/{datasetId}/features/{featureId}": result = await updateFeature(event, p.datasetId, p.featureId); break;
       case "DELETE /v1/datasets/{datasetId}/features/{featureId}": result = await deleteFeature(event, p.datasetId, p.featureId); status = 204; break;
+      case "GET /v1/apps/{appId}/layers": result = await getAppLayers(p.appId); break;
+      case "GET /v1/relay/{appId}/{layerId}": result = await relayLayer(p.appId, p.layerId); break;
+      case "POST /v1/datasets/{datasetId}/exports": result = await exportDataset(event, p.datasetId); break;
+      case "POST /v1/datasets/{datasetId}/imports/upload-url": result = await createUploadUrl(event, p.datasetId); break;
+      case "POST /v1/datasets/{datasetId}/imports": result = await startImport(event, p.datasetId); status = 202; break;
+      case "GET /v1/datasets/{datasetId}/imports/{importId}": result = await getImport(event, p.datasetId, p.importId); break;
       case "GET /v1/apps/{appId}": result = await getAppInfo(p.appId); break;
       case "PUT /v1/apps/{appId}/maps/{externalRef}": {
         const out = await openAppMap(event, p.appId, p.externalRef);
         result = out.dataset; status = out.created ? 201 : 200; break;
       }
-      default: throw new HttpError(404, `No route for ${routeKey}`);
+      case "POST /v1/appconnect/apps":
+        result = await appconnect.signup(ddb, await getCaller(event, { required: true }), parseBody(event)); status = 201; break;
+      case "GET /v1/appconnect/apps":
+        result = await appconnect.listMine(ddb, await getCaller(event, { required: true })); break;
+      case "GET /v1/appconnect/apps/{appId}":
+        result = await appconnect.getMine(ddb, await getCaller(event, { required: true }), p.appId); break;
+      case "POST /v1/appconnect/apps/{appId}/checks":
+        result = await appconnect.requestChecks(ddb, await getCaller(event, { required: true }), p.appId,
+          payload => lambda.send(new InvokeCommand({ FunctionName: APPCHECK_FUNCTION, InvocationType: "Event", Payload: Buffer.from(JSON.stringify(payload)) })));
+        status = 202; break;
+      case "GET /v1/appconnect/apps/{appId}/reports/{reportId}":
+        result = await appconnect.reportLink(ddb, s3, await getCaller(event, { required: true }), p.appId, p.reportId); break;
+      case "POST /v1/appconnect/apps/{appId}/disconnect":
+        result = await appconnect.requestDisconnect(ddb, s3, await getCaller(event, { required: true }), p.appId, parseBody(event)); break;
+      case "DELETE /v1/appconnect/apps/{appId}/disconnect":
+        result = await appconnect.cancelScheduledDisconnect(ddb, await getCaller(event, { required: true }), p.appId); break;
+      case "POST /v1/appconnect/apps/{appId}/reconnect":
+        result = await appconnect.reconnect(ddb, await getCaller(event, { required: true }), p.appId); break;
+      case "GET /v1/appconnect/apps/{appId}/export":
+        result = await appconnect.exportMine(ddb, await getCaller(event, { required: true }), p.appId); break;
+      case "GET /v1/appconnect/review":
+        return html(await appconnect.reviewPage(ddb, s3, event.queryStringParameters || {}));
+      case "POST /v1/appconnect/review": {
+        const raw = event.isBase64Encoded ? Buffer.from(event.body || "", "base64").toString("utf8") : (event.body || "");
+        return html(await appconnect.reviewDecision(ddb, s3, Object.fromEntries(new URLSearchParams(raw))));
+      }
+      case "POST /v1/appconnect/stripe/webhook": {
+        const raw = event.isBase64Encoded ? Buffer.from(event.body || "", "base64").toString("utf8") : (event.body || "");
+        result = await appconnect.stripeWebhook(ddb, s3, raw, event.headers?.["stripe-signature"] || event.headers?.["Stripe-Signature"]);
+        break;
+      }
+      case "GET /v1/oauth/authorize": result = await authorizeInfo(event); break;
+      case "POST /v1/oauth/authorize": result = await authorizeDecision(event); break;
+      case "POST /v1/oauth/token":
+        try { return oauthJson(200, await linking.tokenEndpoint(ddb, { getApp: linkApp }, formBody(event), header(event, "authorization"))); }
+        catch (e) { if (e instanceof linking.LinkError) return oauthJson(e.status, { error: e.oauth || "invalid_request", error_description: e.message }); throw e; }
+      case "POST /v1/oauth/revoke":
+        try { return oauthJson(200, await linking.revokeToken(ddb, { getApp: linkApp }, formBody(event), header(event, "authorization"))); }
+        catch (e) { if (e instanceof linking.LinkError) return oauthJson(e.status, { error: e.oauth || "invalid_request", error_description: e.message }); throw e; }
+      case "GET /v1/connections":
+        result = { connections: await linking.listGrants(ddb, (await getCaller(event, { required: true })).sub) }; break;
+      case "PATCH /v1/connections/{appId}": {
+        const caller = await getCaller(event, { required: true });
+        result = await linking.updateShared(ddb, caller.sub, p.appId, parseBody(event).sharedDatasets, ownedMapsOf(caller.sub)); break;
+      }
+      case "DELETE /v1/connections/{appId}": {
+        const caller = await getCaller(event, { required: true });
+        if (!(await linking.revokeGrant(ddb, caller.sub, p.appId))) throw new HttpError(404, "This app isn't linked to your account");
+        status = 204; break;
+      }
+      case "PUT /v1/appconnect/apps/{appId}/oauth":
+        result = await appconnect.setOAuth(ddb, await getCaller(event, { required: true }), p.appId, parseBody(event)); break;
+      case "POST /v1/appconnect/apps/{appId}/oauth/secret":
+        result = await appconnect.rotateOAuthSecret(ddb, await getCaller(event, { required: true }), p.appId); break;
+      default: {
+        if (routeKey.includes(" /v1/admin/")) { const a = adminRouteKey(event, routeKey, p); result = await adminRoute(event, a.routeKey, a.p); break; }
+        if (routeKey.includes(" /v1/linked/")) {
+          const out = await linkedRoute(event, routeKey, p);
+          if (out === undefined) throw new HttpError(404, `No route for ${routeKey}`);
+          if (out && out.status) { status = out.status; result = out.body; } else result = out;
+          break;
+        }
+        throw new HttpError(404, `No route for ${routeKey}`);
+      }
     }
     return respond(event, status, result);
   } catch (err) {
-    if (err instanceof HttpError) return respond(event, err.status, { message: err.message });
+    if (err instanceof HttpError || err instanceof appconnect.AppConnectError || err instanceof linking.LinkError || err instanceof ModelError || err instanceof admin.AdminError) return respond(event, err.status, { message: err.message, ...(err.code ? { code: err.code } : {}) });
     console.error("Unhandled error", err);
     return respond(event, 500, { message: "Internal error" });
   }
