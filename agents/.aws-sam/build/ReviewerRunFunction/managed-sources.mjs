@@ -22,11 +22,20 @@ export async function listManagedSources() {
 // Cheap in-process filter over the (small) full scan -- topic match against topicTags, optional
 // geography match. Good enough at catalog sizes in the tens/hundreds; revisit with a GSI if this
 // table ever grows past that.
+//
+// normalize() maps hyphens/underscores to spaces before comparing, so a hyphenated tag like
+// "ev-charging" still matches a space-separated candidate topic like "EV charging stations" --
+// without it, plain substring matching silently missed every tag containing a hyphen or
+// underscore (bug found 2026-09-29: 3 of the 4 CANDIDATE_TOPICS in curator-run.mjs never matched
+// their seeded managed source because of this, quietly falling through to the Tavily/websearch
+// fallback every run).
+const normalize = s => String(s || "").toLowerCase().replace(/[-_]/g, " ");
+
 export async function findManagedSource(topic, geography) {
   const all = await listManagedSources();
-  const topicLower = String(topic || "").toLowerCase();
+  const topicNorm = normalize(topic);
   return all.find(s =>
-    (s.topicTags || []).some(t => topicLower.includes(String(t).toLowerCase())) &&
+    (s.topicTags || []).some(t => topicNorm.includes(normalize(t))) &&
     (!geography || !s.geography || s.geography === "global" || s.geography === geography)
   ) || null;
 }
