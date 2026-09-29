@@ -120,10 +120,10 @@ async function console_() {
 
     <section class="md-section"><h2>Costs this month</h2>${cost}
       <div class="ad-links">
-        <a class="btn2" href="https://us-east-1.console.aws.amazon.com/costmanagement/home#/home" target="_blank" rel="noopener">AWS billing ↗</a>
+        <a class="btn2" href="https://grafana.com/orgs/olivesycamore976" target="_blank" rel="noopener">Grafana Cloud Portal ↗</a>
         <a class="btn2" href="https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1" target="_blank" rel="noopener">AWS console ↗</a>
+        <a class="btn2" href="https://us-east-1.console.aws.amazon.com/costmanagement/home#/home" target="_blank" rel="noopener">AWS billing ↗</a>
         <a class="btn2" href="https://dashboard.stripe.com/" target="_blank" rel="noopener">Stripe ↗</a>
-        <span class="btn2" aria-disabled="true" title="Set up with the agents">Grafana (not set up yet)</span>
       </div>
     </section>
 
