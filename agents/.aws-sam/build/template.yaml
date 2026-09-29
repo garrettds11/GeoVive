@@ -212,7 +212,8 @@ Resources:
           - bedrock:Converse
           - bedrock:ConverseStream
           Resource:
-            Fn::Sub: arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:*
+          - arn:aws:bedrock:*::foundation-model/*
+          - Fn::Sub: arn:aws:bedrock:*:${AWS::AccountId}:*
         - Sid: CostExplorerRead
           Effect: Allow
           Action: ce:GetCostAndUsage
