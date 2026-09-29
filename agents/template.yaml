@@ -180,9 +180,20 @@ Resources:
           - Sid: BedrockInvoke
             Effect: Allow
             Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream, bedrock:Converse, bedrock:ConverseStream]
-            Resource: !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:*
-            # Narrowed to the tagged application inference profile once build-order item 4 (cost gate)
-            # creates it -- left broad-but-Bedrock-only for now since that resource doesn't exist yet.
+            # Two resource patterns, not one -- issue #18. Foundation-model ARNs are AWS-owned and
+            # have an EMPTY account component (arn:aws:bedrock:<region>::foundation-model/<id>), so
+            # they never match a pattern requiring ${AWS::AccountId} in that slot. Inference-profile
+            # ARNs (bedrock.mjs's cross-region MODELS.haiku/opus) ARE account-owned and need the
+            # account ID. Both are required; per-function policies already had this split correctly,
+            # but the shared boundary (which caps every function's policy, including that grant) did
+            # not, so it silently denied every real Curator/Reviewer/Governor model call.
+            # Region wildcarded on both, matching the per-function identity policies below --
+            # cross-region inference profiles (bedrock.mjs's MODELS.haiku/opus) route a single
+            # invoke across several regions, so a region-pinned boundary would re-introduce the
+            # same class of silent denial this fix is for.
+            Resource:
+              - arn:aws:bedrock:*::foundation-model/*
+              - !Sub arn:aws:bedrock:*:${AWS::AccountId}:*
           - Sid: CostExplorerRead
             Effect: Allow
             Action: ce:GetCostAndUsage
