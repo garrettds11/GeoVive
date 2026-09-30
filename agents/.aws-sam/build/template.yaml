@@ -39,6 +39,10 @@ Parameters:
       as any human sign-up.
 
       '
+  NlrApiSecretArn:
+    Type: String
+    Default: arn:aws:secretsmanager:us-east-1:666993265047:secret:geovive/agents/nlr-api-key-Jn7RDO
+    Description: ARN of the externally managed NLR Developer Network API key secret.
 Globals:
   Function:
     Runtime: nodejs22.x
@@ -369,6 +373,8 @@ Resources:
         Variables:
           AGENT_AUDIT_TABLE:
             Ref: AgentAuditTable
+          NLR_API_SECRET_ARN:
+            Ref: NlrApiSecretArn
           MONTHLY_LIMIT_USD: '20'
           TAVILY_SECRET_ARN:
             Ref: TavilySearchKey
@@ -415,6 +421,7 @@ Resources:
           - Ref: TavilySearchKey
           - Ref: GeoLibraryCredentials
           - Ref: GrafanaOtelCredentials
+          - Ref: NlrApiSecretArn
         - Effect: Allow
           Action:
           - cognito-idp:InitiateAuth
@@ -707,3 +714,7 @@ Outputs:
   ScopeCardsTableName:
     Value:
       Ref: ScopeCardsTable
+  NlrApiSecretArn:
+    Description: Externally managed NLR Developer Network API key secret used by Curator
+    Value:
+      Ref: NlrApiSecretArn
