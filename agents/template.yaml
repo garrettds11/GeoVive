@@ -288,6 +288,29 @@ Resources:
         - { Key: component, Value: agents }
         - { Key: env, Value: !Ref Env }
 
+  # ------------------------------------------------------------------ review samples (spot-check design, 2026-09-30)
+  # A deliberate random sample Curator picks at build time (see src/review-samples.mjs's header
+  # for the full rationale), so Reviewer and Governor judge the same honest small sample instead
+  # of each separately full-scanning the live features table until their own token/time budget
+  # runs out. No row here at all for a dataset sourced from an "official" managed source (Curator
+  # sets reviewStatus=passed itself and skips sampling), or for a small unstructured-websearch
+  # dataset -- getReviewSample() returning null is exactly the signal Reviewer/Governor use to
+  # fall back to their original full-scan behavior.
+
+  ReviewSamplesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub geovive-${Env}-agents-review-samples
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: datasetId, AttributeType: S }
+      KeySchema:
+        - { AttributeName: datasetId, KeyType: HASH }
+      Tags:
+        - { Key: project, Value: geovive }
+        - { Key: component, Value: agents }
+        - { Key: env, Value: !Ref Env }
+
   # ------------------------------------------------------------------ scheduled runs (Curator daily, reviewers 4-hourly)
   # Both functions are stubs right now (build-order item 9 not started) -- see src/curator-run.mjs
   # and src/reviewer-run.mjs for why that's deliberate.
@@ -332,6 +355,7 @@ Resources:
           GEOVIVE_API_BASE: !Ref GeoViveApiBase
           MANAGED_SOURCES_TABLE: !Ref ManagedSourcesTable
           SCOPE_CARDS_TABLE: !Ref ScopeCardsTable
+          REVIEW_SAMPLES_TABLE: !Ref ReviewSamplesTable
           OTEL_SERVICE_NAME: geovive-agents-curator
           GRAFANA_OTEL_SECRET_ARN: !Ref GrafanaOtelCredentials
       Policies:
@@ -366,6 +390,9 @@ Resources:
               Action: [dynamodb:GetItem, dynamodb:PutItem]
               Resource: !GetAtt ScopeCardsTable.Arn
             - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource: !GetAtt ReviewSamplesTable.Arn
+            - Effect: Allow
               # Wildcard region: cross-region inference profiles (bedrock.mjs's MODELS.haiku) route
               # a single invoke across several regions under one profile id -- a region-pinned ARN
               # would reject those. Model id is still pinned to Haiku only.
@@ -395,6 +422,8 @@ Resources:
           USER_POOL_CLIENT_ID: !Ref UserPoolClientId
           GEOVIVE_API_BASE: !Ref GeoViveApiBase
           MANAGED_SOURCES_TABLE: !Ref ManagedSourcesTable
+          SCOPE_CARDS_TABLE: !Ref ScopeCardsTable
+          REVIEW_SAMPLES_TABLE: !Ref ReviewSamplesTable
           OTEL_SERVICE_NAME: geovive-agents-reviewer
           GRAFANA_OTEL_SECRET_ARN: !Ref GrafanaOtelCredentials
       Policies:
@@ -423,6 +452,9 @@ Resources:
               Action: dynamodb:GetItem
               Resource: !GetAtt ScopeCardsTable.Arn
             - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt ReviewSamplesTable.Arn
+            - Effect: Allow
               Action: bedrock:InvokeModel
               Resource: !Sub arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
 
@@ -440,6 +472,7 @@ Resources:
           GEO_LIBRARY_CREDENTIALS_SECRET_ARN: !Ref GeoLibraryCredentials
           USER_POOL_CLIENT_ID: !Ref UserPoolClientId
           GEOVIVE_API_BASE: !Ref GeoViveApiBase
+          REVIEW_SAMPLES_TABLE: !Ref ReviewSamplesTable
           OTEL_SERVICE_NAME: geovive-agents-governor
           GRAFANA_OTEL_SECRET_ARN: !Ref GrafanaOtelCredentials
       Policies:
@@ -465,6 +498,9 @@ Resources:
             - Effect: Allow
               Action: [cognito-idp:InitiateAuth, cognito-idp:RespondToAuthChallenge]
               Resource: !Sub arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt ReviewSamplesTable.Arn
             - Effect: Allow
               Action: bedrock:InvokeModel
               Resource: !Sub arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0

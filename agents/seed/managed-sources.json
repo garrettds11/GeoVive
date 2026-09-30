@@ -23,11 +23,15 @@
     },
     "license": "NLR Developer Network Terms and Conditions - data may be used for any purpose; no DOE/NLR/Alliance endorsement; provided as-is; indemnification and liability terms apply",
     "termsUrl": "https://developer.nlr.gov/terms/",
-    "topicTags": ["ev-charging", "alternative-fuel"],
+    "topicTags": [
+      "ev-charging",
+      "alternative-fuel"
+    ],
     "geography": "US + territories",
     "addedBy": "seed",
     "verifiedAt": "2026-09-30",
-    "notes": "Filter fuel_type=ELEC for EV-only. Structured GeoJSON source; Curator should ingest deterministically rather than use LLM extraction."
+    "notes": "Filter fuel_type=ELEC for EV-only. Structured GeoJSON source; Curator should ingest deterministically rather than use LLM extraction.",
+    "official": true
   },
   {
     "sourceId": "eia-petroleum-refineries",
@@ -35,11 +39,16 @@
     "baseUrl": "https://atlas.eia.gov/datasets/eia::petroleum-refineries-1/explore (Esri Feature Service; static shapefile also at https://www.eia.gov/maps/map_data/Petroleum_Refineries_US_EIA.zip)",
     "format": "Esri Feature Service (REST, queryable as GeoJSON) or Shapefile snapshot",
     "license": "US federal government work (public domain) - EIA",
-    "topicTags": ["energy", "refineries", "fossil-fuel"],
+    "topicTags": [
+      "energy",
+      "refineries",
+      "fossil-fuel"
+    ],
     "geography": "US",
     "addedBy": "seed",
     "verifiedAt": "2026-09-27",
-    "notes": "Periodic EIA snapshot, not real-time. Prefer the Feature Service endpoint over the shapefile for fetch_structured. Covers the fossil fuel refineries seed topic (2.2)."
+    "notes": "Periodic EIA snapshot, not real-time. Prefer the Feature Service endpoint over the shapefile for fetch_structured. Covers the fossil fuel refineries seed topic (2.2).",
+    "official": true
   },
   {
     "sourceId": "vip-polling-locations",
@@ -47,11 +56,16 @@
     "baseUrl": "https://www.votinginfoproject.org/ (VIP spec: https://vip-specification.readthedocs.io/) - alt: Google Civic Information API (https://developers.google.com/civic-information)",
     "format": "VIP XML/CSV feeds aggregated per state by Democracy Works; no single federal bulk API",
     "license": "Varies by contributing state election office; generally public data",
-    "topicTags": ["voting", "elections", "polling-place"],
+    "topicTags": [
+      "voting",
+      "elections",
+      "polling-place"
+    ],
     "geography": "US, coverage varies by state and is strongest close to election dates",
     "addedBy": "seed",
     "verifiedAt": "2026-09-27",
-    "notes": "Not a single reliable bulk endpoint - aggregates per-state feeds that activate mainly around elections. Treat coverage gaps as expected; if a state has no active feed, skip it rather than falling back to unstructured search for polling addresses (sensitive/volatile data). Covers the voting/polling locations seed topic (2.2)."
+    "notes": "Not a single reliable bulk endpoint - aggregates per-state feeds that activate mainly around elections. Treat coverage gaps as expected; if a state has no active feed, skip it rather than falling back to unstructured search for polling addresses (sensitive/volatile data). Covers the voting/polling locations seed topic (2.2).",
+    "official": false
   },
   {
     "sourceId": "overture-places",
@@ -59,11 +73,16 @@
     "baseUrl": "https://docs.overturemaps.org/getting-data/ (GeoParquet via AWS S3 open data or the overturemaps CLI)",
     "format": "GeoParquet",
     "license": "CDLA Permissive 2.0 (Overture Maps Foundation)",
-    "topicTags": ["theme-park", "poi", "general"],
+    "topicTags": [
+      "theme-park",
+      "poi",
+      "general"
+    ],
     "geography": "Global",
     "addedBy": "seed",
     "verifiedAt": "2026-09-27",
-    "notes": "Already the decided source for the second 10 maps (2.7). Filter category=theme_park for the theme-parks seed topic (2.2) - covers multi-state chains (Six Flags, Cedar Fair, etc.) as individual POIs; Curator groups by operator name."
+    "notes": "Already the decided source for the second 10 maps (2.7). Filter category=theme_park for the theme-parks seed topic (2.2) - covers multi-state chains (Six Flags, Cedar Fair, etc.) as individual POIs; Curator groups by operator name.",
+    "official": false
   },
   {
     "sourceId": "uspa-dropzone-locator",
@@ -71,11 +90,15 @@
     "baseUrl": "https://www.uspa.org/dzlocator (per-DZ detail pages at /dzdetails?accountnumber=...)",
     "format": "HTML directory/listing - no public bulk API, but each entry is a structured, consistent record (name, address, contact)",
     "license": "USPA site content - no explicit open license found; attribute to USPA and verify terms before publishing",
-    "topicTags": ["skydiving", "dropzone"],
+    "topicTags": [
+      "skydiving",
+      "dropzone"
+    ],
     "geography": "US (USPA-affiliated dropzones only)",
     "addedBy": "seed",
     "verifiedAt": "2026-09-27",
-    "notes": "Borderline case: authoritative membership directory, but scraped rather than a real API. Curator should only mark records sourceClass=managed if the extracted fields stay structured/consistent per listing; if it degrades into narrative extraction, mark unmanaged instead. Covers the skydiving-dropzone half of the motocross/skydiving seed topic (2.2)."
+    "notes": "Borderline case: authoritative membership directory, but scraped rather than a real API. Curator should only mark records sourceClass=managed if the extracted fields stay structured/consistent per listing; if it degrades into narrative extraction, mark unmanaged instead. Covers the skydiving-dropzone half of the motocross/skydiving seed topic (2.2).",
+    "official": false
   },
   {
     "sourceId": "data-gov-ckan",
@@ -83,11 +106,15 @@
     "baseUrl": "https://catalog.data.gov/api/3",
     "format": "CKAN REST API (JSON); individual datasets link out to CSV/GeoJSON/Shapefile",
     "license": "Varies per dataset - mostly public domain or CC0, check per result",
-    "topicTags": ["general", "catalog"],
+    "topicTags": [
+      "general",
+      "catalog"
+    ],
     "geography": "US federal, some state/local",
     "addedBy": "seed",
     "verifiedAt": "2026-09-27",
-    "notes": "A search index across many agencies, not a data source itself - each result still needs its own license check before use. General-purpose fallback for the 5 'existing open-data map files' topics (2.2), Curator's choice."
+    "notes": "A search index across many agencies, not a data source itself - each result still needs its own license check before use. General-purpose fallback for the 5 'existing open-data map files' topics (2.2), Curator's choice.",
+    "official": false
   },
   {
     "sourceId": "arcgis-hub",
@@ -95,10 +122,15 @@
     "baseUrl": "https://hub.arcgis.com (federated search across per-org Esri Feature Services, e.g. opendata.arcgis.com)",
     "format": "Esri Feature Service (REST, queryable as GeoJSON)",
     "license": "Varies per publishing organization - check per dataset",
-    "topicTags": ["general", "catalog", "state-local"],
+    "topicTags": [
+      "general",
+      "catalog",
+      "state-local"
+    ],
     "geography": "US, many state/local government agencies",
     "addedBy": "seed",
     "verifiedAt": "2026-09-27",
-    "notes": "Best fit for state/local-government-published topics (some counties publish their own polling-place or facility layers here directly). General-purpose fallback for the 5 'existing open-data map files' topics (2.2), Curator's choice."
+    "notes": "Best fit for state/local-government-published topics (some counties publish their own polling-place or facility layers here directly). General-purpose fallback for the 5 'existing open-data map files' topics (2.2), Curator's choice.",
+    "official": false
   }
 ]

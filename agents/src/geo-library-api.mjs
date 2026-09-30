@@ -99,7 +99,13 @@ export const updateDataset = (datasetId, fields) => call("PATCH", `/datasets/${d
 
 // ------------------------------------------------------------------ feature operations
 
-export const listFeatures = (datasetId) => call("GET", `/datasets/${datasetId}/features`);
+export function listFeatures(datasetId, { limit, nextToken } = {}) {
+  const qs = new URLSearchParams();
+  if (limit) qs.set("limit", String(limit));
+  if (nextToken) qs.set("nextToken", nextToken);
+  const q = qs.toString();
+  return call("GET", `/datasets/${datasetId}/features${q ? `?${q}` : ""}`);
+}
 export const createFeature = (datasetId, feature) => call("POST", `/datasets/${datasetId}/features`, feature);
 export const updateFeature = (datasetId, featureId, feature) => call("PUT", `/datasets/${datasetId}/features/${featureId}`, feature);
 export const deleteFeature = (datasetId, featureId) => call("DELETE", `/datasets/${datasetId}/features/${featureId}`);
