@@ -387,6 +387,7 @@ Resources:
         Fn::Sub: geovive-${Env}-agents-curator-run
       CodeUri: CuratorRunFunction
       Handler: curator-run.handler
+      Timeout: 300
       PermissionsBoundary:
         Ref: AgentPermissionsBoundary
       Environment:
@@ -491,6 +492,7 @@ Resources:
         Fn::Sub: geovive-${Env}-agents-reviewer-run
       CodeUri: ReviewerRunFunction
       Handler: reviewer-run.handler
+      Timeout: 300
       PermissionsBoundary:
         Ref: AgentPermissionsBoundary
       Environment:
@@ -575,6 +577,7 @@ Resources:
         Fn::Sub: geovive-${Env}-agents-governor-run
       CodeUri: GovernorRunFunction
       Handler: governor-run.handler
+      Timeout: 300
       PermissionsBoundary:
         Ref: AgentPermissionsBoundary
       Environment:
