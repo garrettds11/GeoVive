@@ -99,11 +99,56 @@ export const updateDataset = (datasetId, fields) => call("PATCH", `/datasets/${d
 
 // ------------------------------------------------------------------ feature operations
 
-export const listFeatures = (datasetId) => call("GET", `/datasets/${datasetId}/features`);
+export function listFeatures(datasetId, { limit, nextToken } = {}) {
+  const qs = new URLSearchParams();
+  if (limit) qs.set("limit", String(limit));
+  if (nextToken) qs.set("nextToken", nextToken);
+  const q = qs.toString();
+  return call("GET", `/datasets/${datasetId}/features${q ? `?${q}` : ""}`);
+}
 export const createFeature = (datasetId, feature) => call("POST", `/datasets/${datasetId}/features`, feature);
 export const updateFeature = (datasetId, featureId, feature) => call("PUT", `/datasets/${datasetId}/features/${featureId}`, feature);
 export const deleteFeature = (datasetId, featureId) => call("DELETE", `/datasets/${datasetId}/features/${featureId}`);
-export const batchFeatures = (datasetId, features) => call("POST", `/datasets/${datasetId}/features/batch`, { features });
+// NOTE: /features/batch is delete/move/copy only (openapi.yaml) -- it does NOT bulk-create.
+// Bulk creation goes through the async import API below (getImportUploadUrl -> PUT -> startImport -> poll).
+
+// ------------------------------------------------------------------ bulk import (async)
+
+export const getImportUploadUrl = (datasetId) => call("POST", `/datasets/${datasetId}/imports/upload-url`);
+
+// Raw PUT to the presigned URL -- not through call(): no bearer auth (the URL itself is the
+// authorization) and the content-type must exactly match what upload-url returned.
+async function uploadToPresignedUrl(uploadUrl, contentType, bodyText) {
+  const res = await fetch(uploadUrl, { method: "PUT", headers: { "content-type": contentType }, body: bodyText });
+  if (!res.ok) throw new Error(`Presigned upload PUT failed: ${res.status} ${res.statusText}`);
+}
+
+export const startImport = (datasetId, importRequest) => call("POST", `/datasets/${datasetId}/imports`, importRequest);
+export const getImport = (datasetId, importId) => call("GET", `/datasets/${datasetId}/imports/${importId}`);
+
+// Orchestrates the full bulk-create path for a FeatureCollection Curator has already built and
+// mapped deterministically: get a presigned upload slot, PUT the GeoJSON, start the import, and
+// poll until it leaves queued/running (bounded by maxWaitMs so a slow import can't blow through
+// Curator's own MAX_RUN_MS budget -- on timeout the import keeps running server-side and the
+// caller gets back a "still running" status rather than a false failure).
+export async function importFeatureCollection(datasetId, featureCollection, { mode = "append", nameField, categoryField, maxWaitMs = 120_000, pollMs = 3000 } = {}) {
+  const { key, uploadUrl, contentType } = await getImportUploadUrl(datasetId);
+  await uploadToPresignedUrl(uploadUrl, contentType || "application/geo+json", JSON.stringify(featureCollection));
+
+  let imp = await startImport(datasetId, {
+    source: { type: "upload", key, fileName: "curator-structured-import.geojson" },
+    mode,
+    ...(nameField ? { nameField } : {}),
+    ...(categoryField ? { categoryField } : {})
+  });
+
+  const deadline = Date.now() + maxWaitMs;
+  while ((imp.status === "queued" || imp.status === "running") && Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, pollMs));
+    imp = await getImport(datasetId, imp.importId);
+  }
+  return imp; // status: succeeded | failed | (still queued/running if maxWaitMs was hit)
+}
 
 // ------------------------------------------------------------------ read paths used for topic dedup (Curator)
 

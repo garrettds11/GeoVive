@@ -16,6 +16,7 @@ import { startSpan, endSpan } from "./otel.mjs";
 import { auditEvent } from "./audit.mjs";
 import { notify } from "./notify.mjs";
 import { converse, extractJson, MODELS } from "./bedrock.mjs";
+import { getReviewSample } from "./review-samples.mjs";
 import { listAllDatasets, listFeatures, updateDataset } from "./geo-library-api.mjs";
 
 const MAX_RUN_MS = 15 * 60 * 1000;
@@ -49,7 +50,14 @@ async function escalate(feature) {
 // Returns { authStatus, flagged: [...], incidents: [...] }. Never deletes; never sets authorized
 // without finishing the full dataset (an abort mid-loop always lands on escalation_aborted).
 async function reviewDataset(ds, budget) {
-  const { features } = await listFeatures(ds.datasetId).catch(() => ({ features: [] }));
+  // Same spot-check design as Reviewer (review-samples.mjs): judge Curator's honest random
+  // sample when one exists, instead of a live full-scan truncated by this run's own budget.
+  // Governor never deletes, so a sample item with no resolved featureId is still safe to triage
+  // -- it just can't be tied back to a live record in an incident report.
+  const sample = await getReviewSample(ds.datasetId).catch(() => null);
+  const features = sample
+    ? sample.items.map(i => ({ id: i.featureId, properties: i.properties }))
+    : (await listFeatures(ds.datasetId).catch(() => ({ features: [] }))).features || [];
   const flagged = [];
   const incidents = [];
   let escalations = 0;

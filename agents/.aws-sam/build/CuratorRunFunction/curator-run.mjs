@@ -13,7 +13,8 @@ import { notify } from "./notify.mjs";
 import { converse, extractJson, MODELS } from "./bedrock.mjs";
 import { findManagedSource } from "./managed-sources.mjs";
 import { writeScopeCard } from "./scope-cards.mjs";
-import { createDataset, createFeature, batchFeatures, listAllDatasets } from "./geo-library-api.mjs";
+import { writeReviewSample, pickRandomSample } from "./review-samples.mjs";
+import { createDataset, createFeature, importFeatureCollection, updateDataset, listFeatures, listAllDatasets } from "./geo-library-api.mjs";
 import { geocode } from "./geocode.mjs";
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 
@@ -22,6 +23,14 @@ const secrets = new SecretsManagerClient({});
 // Stop conditions (Section 5): whichever hits first ends the run.
 const MAX_RUN_MS = 15 * 60 * 1000;
 const MAX_RECORDS = 5000;
+// Spot-check design (2026-09-30, see review-samples.mjs header): an "official" managed source
+// (a confirmed .gov/.edu-style authoritative API -- managed-sources.json's official: true, set
+// by hand per catalog entry, never auto-derived from the URL at review time) skips per-record
+// LLM review entirely, since Curator's structured path is a deterministic 1:1 mapping with no
+// LLM extraction involved -- nothing for a review pass to catch. Everything else (a managed
+// source that isn't flagged official, or the Haiku-extraction paths where hallucination risk is
+// real) gets a small honest random sample instead of a full/partial scan.
+const SAMPLE_SIZE = 10;
 const MAX_TOKENS = 80_000;
 
 // A small, rotating candidate list -- Curator picks the first one not already covered by an
@@ -198,6 +207,34 @@ function mapStructuredFeature(geoJsonFeature, managed) {
   };
 }
 
+// Resolves live featureIds for a sample of structured records picked BEFORE import (the async
+// bulk-import API returns only counts, never per-feature ids -- see geo-library-api.mjs's
+// importFeatureCollection). Pages through the dataset's features (bounded by maxPages) matching
+// on properties.externalId (falling back to name), stopping as soon as every sampled record is
+// found rather than scanning the whole dataset. A record that can't be matched (should be rare --
+// only if the import silently skipped it) is still included in the sample without a featureId, so
+// Reviewer/Governor can see its content but know not to try deleting a live record for it.
+async function resolveFeatureIds(datasetId, sampledRecords, { maxPages = 20 } = {}) {
+  const wanted = new Map(sampledRecords.map(r => [r.properties.externalId || r.properties.name, r]));
+  const resolved = [];
+  let nextToken, pages = 0;
+  while (wanted.size > 0 && pages < maxPages) {
+    const page = await listFeatures(datasetId, { limit: 1000, nextToken });
+    for (const f of page.features || []) {
+      const key = f.properties?.externalId || f.properties?.name;
+      if (wanted.has(key)) {
+        resolved.push({ featureId: f.id, properties: f.properties });
+        wanted.delete(key);
+      }
+    }
+    nextToken = page.nextToken;
+    pages++;
+    if (!nextToken) break;
+  }
+  for (const r of wanted.values()) resolved.push({ featureId: null, properties: r.properties });
+  return resolved;
+}
+
 async function toFeature(record) {
   let { lat, lon } = record;
   if (typeof lat !== "number" || typeof lon !== "number") {
@@ -297,23 +334,69 @@ export const handler = async () => {
 
     let written = 0;
     if (sourceUsed.ingestionMode === "structured") {
-      // Structured records are already mapped to GeoVive features -- batch-write them
-      const BATCH_SIZE = 25;
-      for (let i = 0; i < records.length && written < MAX_RECORDS && timeLeft() > 0; i += BATCH_SIZE) {
-        const batch = records.slice(i, i + BATCH_SIZE);
-        await batchFeatures(dataset.datasetId, batch);
-        written += batch.length;
-        await auditEvent({ action: "features.batch", agent: "curator", datasetId: dataset.datasetId, detail: { count: batch.length, total: written } });
+      // Structured records are already mapped to GeoVive features -- bulk-create them through
+      // the async import API (upload-url -> PUT -> startImport -> poll). /features/batch is
+      // delete/move/copy only (openapi.yaml), not bulk-create, so this is the real path.
+      const featureCollection = { type: "FeatureCollection", features: records };
+      const imp = await importFeatureCollection(dataset.datasetId, featureCollection, { mode: "append" });
+      written = imp.imported || 0;
+      await auditEvent({
+        action: "import.completed",
+        agent: "curator",
+        datasetId: dataset.datasetId,
+        detail: { importId: imp.importId, status: imp.status, imported: imp.imported, skipped: imp.skipped, errors: imp.errors }
+      });
+      if (imp.status !== "succeeded") {
+        throw new Error(`Import did not complete: status=${imp.status} imported=${imp.imported} skipped=${imp.skipped} errors=${JSON.stringify(imp.errors || [])}`);
+      }
+
+      if (managed.official) {
+        // Deterministic mapping, confirmed-authoritative source -- nothing for a review pass to
+        // catch. Curator sets reviewStatus itself so this dataset never enters Reviewer's
+        // reviewStatus=pending queue at all (Governor's own safety/sensitive-data pass still runs
+        // on it separately -- source trust doesn't change that check).
+        await updateDataset(dataset.datasetId, { reviewStatus: "passed" }).catch(err =>
+          console.warn("Could not set reviewStatus=passed for official source:", err.message));
+        await auditEvent({
+          action: "dataset.reviewed", agent: "curator", datasetId: dataset.datasetId,
+          detail: { reason: "official source -- per-record review skipped", sourceId: managed.sourceId }
+        });
+      } else {
+        const sampled = pickRandomSample(records, SAMPLE_SIZE);
+        const sampleItems = await resolveFeatureIds(dataset.datasetId, sampled);
+        await writeReviewSample(dataset.datasetId, {
+          sourceId: managed.sourceId, sourceClass: sourceUsed.sourceClass,
+          sampleSize: sampleItems.length, totalRecords: records.length, items: sampleItems
+        });
+        await auditEvent({
+          action: "review_sample.written", agent: "curator", datasetId: dataset.datasetId,
+          detail: { sampleSize: sampleItems.length, totalRecords: records.length }
+        });
       }
     } else {
-      // Haiku-extracted records need geocoding/conversion
+      // Haiku-extracted records (legacy-managed or unstructured-websearch) need
+      // geocoding/conversion -- createFeature returns the live feature (with its assigned id)
+      // directly, so the sample can be picked from what was actually created, no resolve step.
+      const created = [];
       for (const record of records) {
         if (written >= MAX_RECORDS || timeLeft() <= 0) break;
         const feature = await toFeature(record);
         if (!feature) continue;
-        await createFeature(dataset.datasetId, feature);
+        const createdFeature = await createFeature(dataset.datasetId, feature);
         written++;
+        created.push({ featureId: createdFeature.id, properties: createdFeature.properties });
         await auditEvent({ action: "feature.created", agent: "curator", datasetId: dataset.datasetId, detail: { name: feature.properties.name } });
+      }
+      if (created.length) {
+        const sampled = pickRandomSample(created, SAMPLE_SIZE);
+        await writeReviewSample(dataset.datasetId, {
+          sourceId: sourceUsed.sourceId || null, sourceClass: sourceUsed.sourceClass,
+          sampleSize: sampled.length, totalRecords: created.length, items: sampled
+        });
+        await auditEvent({
+          action: "review_sample.written", agent: "curator", datasetId: dataset.datasetId,
+          detail: { sampleSize: sampled.length, totalRecords: created.length }
+        });
       }
     }
 

@@ -14,6 +14,7 @@ import { auditEvent } from "./audit.mjs";
 import { notify } from "./notify.mjs";
 import { converse, extractJson, MODELS } from "./bedrock.mjs";
 import { getScopeCard } from "./scope-cards.mjs";
+import { getReviewSample } from "./review-samples.mjs";
 import { addManagedSource, getManagedSource } from "./managed-sources.mjs";
 import { listAllDatasets, listFeatures, deleteFeature, updateDataset } from "./geo-library-api.mjs";
 
@@ -41,7 +42,24 @@ async function judgeRecord({ feature, scopeCard }) {
 
 async function reviewDataset(ds, budget) {
   const scopeCard = await getScopeCard(ds.datasetId).catch(() => null);
-  const { features } = await listFeatures(ds.datasetId).catch(() => ({ features: [] }));
+
+  // Spot-check design (2026-09-30): Curator writes a small honest random sample at build time
+  // for any dataset that isn't from an "official" source (see review-samples.mjs's header) --
+  // when one exists, judge THAT instead of re-scanning the live features table, so the verdict
+  // is an intentional sample rather than whatever fraction of a full/partial scan happened to
+  // fit in this run's token budget. No sample (an official-skipped dataset never reaches this
+  // function at all since Curator sets reviewStatus=passed itself and it's not in the pending
+  // queue; a small unstructured-websearch dataset or any legacy dataset predating this table)
+  // falls back to the original full-scan behavior unchanged.
+  const sample = await getReviewSample(ds.datasetId).catch(() => null);
+  let features, sampleUnresolved = 0;
+  if (sample) {
+    features = sample.items.filter(i => i.featureId).map(i => ({ id: i.featureId, properties: i.properties }));
+    sampleUnresolved = sample.items.length - features.length;
+  } else {
+    ({ features = [] } = await listFeatures(ds.datasetId).catch(() => ({ features: [] })));
+  }
+
   let kept = 0, deleted = 0;
 
   for (const feature of features || []) {
@@ -60,6 +78,13 @@ async function reviewDataset(ds, budget) {
     // the signal that source is worth trusting -- nothing to do here beyond keeping it, since
     // it's already in the catalog. An unstructured-websearch source that held up on every record
     // in this dataset is the case worth promoting (below, after the loop).
+  }
+
+  if (sample) {
+    await auditEvent({
+      action: "dataset.spot_checked", agent: "reviewer", datasetId: ds.datasetId,
+      detail: { sampleSize: sample.items.length, totalRecords: sample.totalRecords, judged: features.length, unresolved: sampleUnresolved }
+    });
   }
 
   const reviewStatus = deleted > 0 && kept === 0 ? "failed" : "passed";

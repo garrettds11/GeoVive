@@ -331,6 +331,26 @@ Resources:
       - Key: env
         Value:
           Ref: Env
+  ReviewSamplesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName:
+        Fn::Sub: geovive-${Env}-agents-review-samples
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+      - AttributeName: datasetId
+        AttributeType: S
+      KeySchema:
+      - AttributeName: datasetId
+        KeyType: HASH
+      Tags:
+      - Key: project
+        Value: geovive
+      - Key: component
+        Value: agents
+      - Key: env
+        Value:
+          Ref: Env
   SchedulerInvokeRole:
     Type: AWS::IAM::Role
     Properties:
@@ -388,6 +408,8 @@ Resources:
             Ref: ManagedSourcesTable
           SCOPE_CARDS_TABLE:
             Ref: ScopeCardsTable
+          REVIEW_SAMPLES_TABLE:
+            Ref: ReviewSamplesTable
           OTEL_SERVICE_NAME: geovive-agents-curator
           GRAFANA_OTEL_SECRET_ARN:
             Ref: GrafanaOtelCredentials
@@ -447,6 +469,12 @@ Resources:
             - ScopeCardsTable
             - Arn
         - Effect: Allow
+          Action: dynamodb:PutItem
+          Resource:
+            Fn::GetAtt:
+            - ReviewSamplesTable
+            - Arn
+        - Effect: Allow
           Action: bedrock:InvokeModel
           Resource:
           - Fn::Sub: arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
@@ -478,6 +506,10 @@ Resources:
             Ref: GeoViveApiBase
           MANAGED_SOURCES_TABLE:
             Ref: ManagedSourcesTable
+          SCOPE_CARDS_TABLE:
+            Ref: ScopeCardsTable
+          REVIEW_SAMPLES_TABLE:
+            Ref: ReviewSamplesTable
           OTEL_SERVICE_NAME: geovive-agents-reviewer
           GRAFANA_OTEL_SECRET_ARN:
             Ref: GrafanaOtelCredentials
@@ -525,6 +557,12 @@ Resources:
             - ScopeCardsTable
             - Arn
         - Effect: Allow
+          Action: dynamodb:GetItem
+          Resource:
+            Fn::GetAtt:
+            - ReviewSamplesTable
+            - Arn
+        - Effect: Allow
           Action: bedrock:InvokeModel
           Resource:
             Fn::Sub: arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
@@ -550,6 +588,8 @@ Resources:
             Ref: UserPoolClientId
           GEOVIVE_API_BASE:
             Ref: GeoViveApiBase
+          REVIEW_SAMPLES_TABLE:
+            Ref: ReviewSamplesTable
           OTEL_SERVICE_NAME: geovive-agents-governor
           GRAFANA_OTEL_SECRET_ARN:
             Ref: GrafanaOtelCredentials
@@ -588,6 +628,12 @@ Resources:
           - cognito-idp:RespondToAuthChallenge
           Resource:
             Fn::Sub: arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}
+        - Effect: Allow
+          Action: dynamodb:GetItem
+          Resource:
+            Fn::GetAtt:
+            - ReviewSamplesTable
+            - Arn
         - Effect: Allow
           Action: bedrock:InvokeModel
           Resource:
