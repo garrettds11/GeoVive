@@ -402,6 +402,13 @@ Resources:
                 - !Sub arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
                 - !Sub arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0
             - Effect: Allow
+              # Bedrock delivers Anthropic models through AWS Marketplace; the first invoke by
+              # any given IAM identity needs these actions so Bedrock can auto-subscribe it --
+              # independent of whether the account already holds a Marketplace subscription
+              # (an account-level subscription doesn't cover a role that lacks this).
+              Action: [aws-marketplace:ViewSubscriptions, aws-marketplace:Subscribe, aws-marketplace:Unsubscribe]
+              Resource: "*"
+            - Effect: Allow
               # 2.10 -- geocoding fallback for extracted records that only have an address/place
               # name (geocode.mjs). geo-places grants have no resource-level ARN (see the
               # permissions-boundary comment above), so this mirrors the boundary's Resource: "*".
@@ -465,6 +472,13 @@ Resources:
               Resource:
                 - !Sub arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
                 - !Sub arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0
+            - Effect: Allow
+              # Bedrock delivers Anthropic models through AWS Marketplace; the first invoke by
+              # any given IAM identity needs these actions so Bedrock can auto-subscribe it --
+              # independent of whether the account already holds a Marketplace subscription
+              # (an account-level subscription doesn't cover a role that lacks this).
+              Action: [aws-marketplace:ViewSubscriptions, aws-marketplace:Subscribe, aws-marketplace:Unsubscribe]
+              Resource: "*"
 
   GovernorRunFunction:
     Type: AWS::Serverless::Function
@@ -525,6 +539,13 @@ Resources:
               Resource:
                 - !Sub arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-4-5-20251101-v1:0
                 - !Sub arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/us.anthropic.claude-opus-4-5-20251101-v1:0
+            - Effect: Allow
+              # Bedrock delivers Anthropic models through AWS Marketplace; the first invoke by
+              # any given IAM identity needs these actions so Bedrock can auto-subscribe it --
+              # independent of whether the account already holds a Marketplace subscription
+              # (an account-level subscription doesn't cover a role that lacks this).
+              Action: [aws-marketplace:ViewSubscriptions, aws-marketplace:Subscribe, aws-marketplace:Unsubscribe]
+              Resource: "*"
 
   CuratorSchedule:
     Type: AWS::Scheduler::Schedule

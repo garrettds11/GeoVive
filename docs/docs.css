@@ -96,3 +96,65 @@ nav.tabs a.tabs-map:hover { filter: brightness(1.08); background: var(--accent);
   nav.tabs .tabs-main a { padding: 0.42rem 0.62rem; font-size: 0.8rem; }
   nav.tabs a.tabs-map { order: 1; margin-left: auto; }
 }
+
+/* ===== Nav style experiments — top menu (Admin / My data / User guide) =====
+   Try one by changing data-navstyle="..." on the <nav class="tabs"> element
+   in each page's <header> to: underline | segmented | minimal | boxed
+   No build step needed — just edit the attribute and refresh. */
+
+/* --- underline: editorial, no chrome; a thin accent underline marks the active/hovered tab --- */
+nav.tabs[data-navstyle="underline"] { border-bottom: 1px solid var(--border); }
+nav.tabs[data-navstyle="underline"] a {
+  border-radius: 0; border: none; border-bottom: 2px solid transparent;
+  padding: 0.45rem 0.1rem; margin-right: 1.1rem;
+  font-size: 0.78rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted);
+}
+nav.tabs[data-navstyle="underline"] a:hover { color: var(--text); background: none; border-bottom-color: rgba(148,163,184,0.4); }
+nav.tabs[data-navstyle="underline"] a.active { color: var(--text); background: none; border-bottom-color: var(--accent); }
+nav.tabs[data-navstyle="underline"] a.tabs-map {
+  background: none; color: var(--accent); font-weight: 600; text-transform: none; letter-spacing: normal;
+  border-bottom-color: transparent;
+}
+nav.tabs[data-navstyle="underline"] a.tabs-map:hover { border-bottom-color: var(--accent); }
+
+/* --- segmented: one soft-edged track holding the tabs, active tab lifted on a card --- */
+nav.tabs[data-navstyle="segmented"] { border-bottom: none; }
+nav.tabs[data-navstyle="segmented"] .tabs-main {
+  background: rgba(148,163,184,0.08); border: 1px solid var(--border);
+  border-radius: 0.5rem; padding: 0.2rem; gap: 0.15rem;
+}
+nav.tabs[data-navstyle="segmented"] a {
+  border-radius: 0.4rem; border: 1px solid transparent; padding: 0.4rem 0.9rem;
+  font-size: 0.8rem; font-weight: 500; color: var(--muted);
+}
+nav.tabs[data-navstyle="segmented"] a:hover { color: var(--text); background: rgba(148,163,184,0.08); }
+nav.tabs[data-navstyle="segmented"] a.active {
+  color: var(--text); background: #0b1220; border-color: var(--border);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+nav.tabs[data-navstyle="segmented"] a.tabs-map { background: var(--accent); color: #02130a; font-weight: 700; border-radius: 0.4rem; }
+
+/* --- minimal: plain text, generous spacing, active marked only by color + a small leading dot --- */
+nav.tabs[data-navstyle="minimal"] { border-bottom: none; }
+nav.tabs[data-navstyle="minimal"] .tabs-main { gap: 1.4rem; }
+nav.tabs[data-navstyle="minimal"] a {
+  border-radius: 0; border: none; padding: 0.3rem 0; background: none;
+  font-size: 0.82rem; font-weight: 500; color: var(--muted); position: relative;
+}
+nav.tabs[data-navstyle="minimal"] a:hover { color: var(--text); background: none; }
+nav.tabs[data-navstyle="minimal"] a.active { color: var(--text); background: none; }
+nav.tabs[data-navstyle="minimal"] a.active::before {
+  content: ""; position: absolute; left: -0.7rem; top: 50%; translate: 0 -50%;
+  width: 4px; height: 4px; border-radius: 50%; background: var(--accent);
+}
+nav.tabs[data-navstyle="minimal"] a.tabs-map { color: var(--accent); font-weight: 600; background: none; }
+
+/* --- boxed: crisp rectangular buttons (not pills) with a hairline border, quiet and structured --- */
+nav.tabs[data-navstyle="boxed"] a {
+  border-radius: 0.3rem; border: 1px solid var(--border); padding: 0.4rem 0.8rem;
+  font-size: 0.78rem; font-weight: 600; letter-spacing: 0.02em; color: var(--muted);
+}
+nav.tabs[data-navstyle="boxed"] a:hover { color: var(--text); background: rgba(148,163,184,0.06); border-color: rgba(148,163,184,0.3); }
+nav.tabs[data-navstyle="boxed"] a.active { color: var(--text); background: rgba(34,197,94,0.08); border-color: rgba(34,197,94,0.45); }
+nav.tabs[data-navstyle="boxed"] a.tabs-map { border-radius: 0.3rem; background: var(--accent); color: #02130a; border-color: var(--accent); }
