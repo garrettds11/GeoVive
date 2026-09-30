@@ -13,7 +13,7 @@ import { notify } from "./notify.mjs";
 import { converse, extractJson, MODELS } from "./bedrock.mjs";
 import { findManagedSource } from "./managed-sources.mjs";
 import { writeScopeCard } from "./scope-cards.mjs";
-import { createDataset, createFeature, batchFeatures, listAllDatasets } from "./geo-library-api.mjs";
+import { createDataset, createFeature, importFeatureCollection, listAllDatasets } from "./geo-library-api.mjs";
 import { geocode } from "./geocode.mjs";
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 
@@ -297,13 +297,20 @@ export const handler = async () => {
 
     let written = 0;
     if (sourceUsed.ingestionMode === "structured") {
-      // Structured records are already mapped to GeoVive features -- batch-write them
-      const BATCH_SIZE = 25;
-      for (let i = 0; i < records.length && written < MAX_RECORDS && timeLeft() > 0; i += BATCH_SIZE) {
-        const batch = records.slice(i, i + BATCH_SIZE);
-        await batchFeatures(dataset.datasetId, batch);
-        written += batch.length;
-        await auditEvent({ action: "features.batch", agent: "curator", datasetId: dataset.datasetId, detail: { count: batch.length, total: written } });
+      // Structured records are already mapped to GeoVive features -- bulk-create them through
+      // the async import API (upload-url -> PUT -> startImport -> poll). /features/batch is
+      // delete/move/copy only (openapi.yaml), not bulk-create, so this is the real path.
+      const featureCollection = { type: "FeatureCollection", features: records };
+      const imp = await importFeatureCollection(dataset.datasetId, featureCollection, { mode: "append" });
+      written = imp.imported || 0;
+      await auditEvent({
+        action: "import.completed",
+        agent: "curator",
+        datasetId: dataset.datasetId,
+        detail: { importId: imp.importId, status: imp.status, imported: imp.imported, skipped: imp.skipped, errors: imp.errors }
+      });
+      if (imp.status !== "succeeded") {
+        throw new Error(`Import did not complete: status=${imp.status} imported=${imp.imported} skipped=${imp.skipped} errors=${JSON.stringify(imp.errors || [])}`);
       }
     } else {
       // Haiku-extracted records need geocoding/conversion
