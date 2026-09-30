@@ -195,12 +195,45 @@ function renderMaps() {
   el.innerHTML = hits.length ? table(hits.map(m => mapRow(m, false)).join("")) : `<p class="muted">No maps match.</p>`;
   wire(el);
 }
+// Human admin actions (map.visibility, map.deleted, agents.run, ...) and agent actions
+// (dataset.created, dataset.reviewed, dataset.authorized, feature.deleted, run.failed, ...)
+// land in this same table now (backend's GET /v1/admin/audit merges both sources), but their
+// `detail` shapes don't match -- this picks the summary apart per action rather than falling
+// straight to raw JSON, and only falls back to JSON for a shape it doesn't recognize.
+function auditDetails(a) {
+  const d = a.detail || {};
+  const short = (id) => (typeof id === "string" && id.length > 12) ? `${id.slice(0, 8)}…` : id;
+  switch (a.action) {
+    case "map.visibility": return [d.name, d.from && `${d.from} → ${d.to}`, d.reason].filter(Boolean).join(" · ");
+    case "map.deleted": return [d.name, d.pins != null && `${d.pins} pins`, d.reason].filter(Boolean).join(" · ");
+    case "agents.run": return d.run ? "turned on" : "turned off (kill switch)";
+    case "dataset.created": return [d.topic, d.sourceUsed?.sourceClass && `source: ${d.sourceUsed.sourceClass}${d.sourceUsed.sourceId ? ` (${d.sourceUsed.sourceId})` : ""}`,
+      d.sourceUsed?.rawFetched != null && `${d.sourceUsed.rawFetched} fetched`].filter(Boolean).join(" · ");
+    case "import.completed": return [d.status, `${d.imported ?? 0} imported`, d.skipped ? `${d.skipped} skipped` : null,
+      d.errors?.length ? `${d.errors.length} errors` : null].filter(Boolean).join(" · ");
+    case "dataset.reviewed": return [d.reviewStatus, d.sourceId && `source: ${d.sourceId}`, d.kept != null && `kept ${d.kept}`,
+      d.deleted != null && `deleted ${d.deleted}`, d.reason].filter(Boolean).join(" · ");
+    case "review_sample.written": return [d.sampleSize != null && `sampled ${d.sampleSize}`, d.totalRecords != null && `of ${d.totalRecords}`].filter(Boolean).join(" · ");
+    case "dataset.spot_checked": return [`judged ${d.judged ?? 0}/${d.sampleSize ?? "?"}`, d.unresolved ? `${d.unresolved} unresolved` : null].filter(Boolean).join(" · ");
+    case "dataset.authorized": return [d.authStatus, d.flaggedCount ? `${d.flaggedCount} flagged` : null].filter(Boolean).join(" · ");
+    case "feature.deleted": return d.reason || "";
+    case "feature.escalated": return [d.triageReason, d.opusVerdict?.confirmedSensitive != null && (d.opusVerdict.confirmedSensitive ? "confirmed sensitive" : "cleared on review")].filter(Boolean).join(" · ");
+    case "dataset.escalation_aborted": return d.reason || "";
+    case "run.blocked": return d.reason || "";
+    case "run.failed": return d.error || d.reason || "";
+    default: return JSON.stringify(d);
+  }
+}
 function renderAudit() {
   const el = document.getElementById("ad-audit");
-  el.innerHTML = S.audit.length ? `<div class="ad-console-wrap"><table class="ad-table ad-console-table"><thead><tr><th>When</th><th>Who</th><th>What</th><th>Details</th></tr></thead><tbody>
-    ${S.audit.map(a => { const details = [a.detail?.name, a.detail?.from && `${a.detail.from} → ${a.detail.to}`, a.detail?.reason].filter(Boolean).join(" · ");
-      return `<tr><td class="s">${esc(when(a.at))}</td><td class="s">${esc(a.actorEmail || a.actor)}</td><td>${esc(a.action)}</td>
-      <td class="s"><span class="ad-trunc" tabindex="0" title="${esc(details)}">${esc(details)}</span></td></tr>`; }).join("")}</tbody></table></div>`
+  el.innerHTML = S.audit.length ? `<div class="ad-console-wrap"><table class="ad-table ad-console-table"><thead><tr><th>When</th><th>Who</th><th>What</th><th>Dataset</th><th>Details</th></tr></thead><tbody>
+    ${S.audit.map(a => {
+      const details = auditDetails(a);
+      const who = a.isAgent ? `${esc(a.actor)} <span class="ad-agent-tag">agent</span>` : esc(a.actorEmail || a.actor || "—");
+      const dataset = a.isAgent && a.target ? `<span class="ad-trunc" tabindex="0" title="${esc(a.target)}">${esc(a.target.slice(0, 8))}…</span>` : "";
+      return `<tr><td class="s">${esc(when(a.at))}</td><td class="s">${who}</td><td>${esc(a.action)}</td><td class="s">${dataset}</td>
+      <td class="s"><span class="ad-trunc" tabindex="0" title="${esc(details)}">${esc(details)}</span></td></tr>`;
+    }).join("")}</tbody></table></div>`
     : `<p class="muted">No entries yet.</p>`;
 }
 

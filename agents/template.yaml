@@ -457,8 +457,14 @@ Resources:
               Action: dynamodb:GetItem
               Resource: !GetAtt ReviewSamplesTable.Arn
             - Effect: Allow
+              # Wildcard region: cross-region inference profiles (bedrock.mjs's MODELS.haiku) route
+              # a single invoke across several regions under one profile id -- mirrors
+              # CuratorRunFunction's already-correct grant below (issue #18's fix never made it to
+              # Reviewer's own policy, only the shared boundary and Curator's).
               Action: bedrock:InvokeModel
-              Resource: !Sub arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
+              Resource:
+                - !Sub arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
+                - !Sub arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0
 
   GovernorRunFunction:
     Type: AWS::Serverless::Function
@@ -505,13 +511,20 @@ Resources:
               Action: dynamodb:GetItem
               Resource: !GetAtt ReviewSamplesTable.Arn
             - Effect: Allow
+              # Same #18-class gap as Reviewer's grant above: foundation-model ARN alone doesn't
+              # cover the cross-region inference profile bedrock.mjs's MODELS.haiku actually calls.
               Action: bedrock:InvokeModel
-              Resource: !Sub arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
+              Resource:
+                - !Sub arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
+                - !Sub arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0
             - Effect: Allow
               # Escalation-only, real-verification model (readiness doc 4.2/9's "3 strikes" cap
               # caps how often this fires, not this grant -- the cap lives in governor-run.mjs).
+              # Same inference-profile gap as above, fixed the same way.
               Action: bedrock:InvokeModel
-              Resource: !Sub arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-4-5-20251101-v1:0
+              Resource:
+                - !Sub arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-4-5-20251101-v1:0
+                - !Sub arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/us.anthropic.claude-opus-4-5-20251101-v1:0
 
   CuratorSchedule:
     Type: AWS::Scheduler::Schedule

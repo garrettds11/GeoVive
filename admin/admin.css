@@ -6,8 +6,8 @@
 .ad-err { color: #f87171; min-height: 1.2em; font-size: 0.85rem; }
 .ad-bar { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 0.6rem; }
 .ad-bar input, .ad-bar select { font: inherit; font-size: 0.82rem; padding: 0.35rem 0.55rem; border-radius: 0.5rem; border: 1px solid var(--border); background: #020617; color: var(--text); }
-.ad-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
-.ad-table th, .ad-table td { text-align: left; padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+.ad-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.ad-table th, .ad-table td { text-align: left; padding: 0.6rem 0.85rem; border-bottom: 1px solid var(--border); vertical-align: top; }
 .ad-table th { color: var(--muted); font-weight: 600; font-size: 0.75rem; }
 .ad-table .n { font-weight: 600; color: var(--text); }
 .ad-table .s { font-size: 0.75rem; color: var(--muted); }
@@ -35,10 +35,12 @@ dialog.ad-dlg input { width: 100%; font: inherit; padding: 0.4rem 0.55rem; borde
    keeping GeoVive's own accent colors (no AWS blue/orange) so it doesn't
    read as AWS chrome. Reusable: any future admin table can opt in with the
    same two classes. */
-.ad-console-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 0.6rem; background: #f8fafc;
-  box-shadow: inset 0 1px 4px rgba(15,23,42,0.12); }
-.ad-console-table.ad-table { font-size: 0.8rem; color: #0f172a; }
-.ad-console-table.ad-table th, .ad-console-table.ad-table td { padding: 0.3rem 0.6rem; border-bottom: 1px solid #e2e8f0; }
+.ad-console-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 0.6rem; background: #f8fafc; padding: 0.15rem;
+  /* Two inset shadows (top-heavy + a lighter bottom edge) read as a visible recessed panel --
+     the earlier single 12%-alpha shadow was too faint against this light surface to notice. */
+  box-shadow: inset 0 2px 7px rgba(15,23,42,0.28), inset 0 -1px 3px rgba(15,23,42,0.14); }
+.ad-console-table.ad-table { font-size: 0.85rem; color: #0f172a; }
+.ad-console-table.ad-table th, .ad-console-table.ad-table td { padding: 0.55rem 1rem; border-bottom: 1px solid #e2e8f0; }
 .ad-console-table.ad-table th:not(:last-child), .ad-console-table.ad-table td:not(:last-child) { border-right: 1px solid #eef2f7; }
 .ad-console-table.ad-table thead th { background: #eef2f7; color: #334155; font-weight: 700; font-size: 0.72rem;
   text-transform: uppercase; letter-spacing: 0.03em; position: sticky; top: 0; }
@@ -50,6 +52,8 @@ dialog.ad-dlg input { width: 100%; font: inherit; padding: 0.4rem 0.55rem; borde
   white-space: nowrap; vertical-align: bottom; cursor: help; }
 .ad-console-table .ad-trunc:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; white-space: normal;
   max-width: none; background: #fff; border-radius: 0.2rem; }
+.ad-agent-tag { display: inline-block; margin-left: 0.3rem; font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+  color: #0369a1; background: rgba(3,105,161,0.1); border: 1px solid rgba(3,105,161,0.3); border-radius: 999px; padding: 0.05rem 0.4rem; }
 @media (max-width: 720px) {
   /* Override the page-wide .ad-table stacking rule: the console table stays
      tabular and scrolls horizontally in its .ad-console-wrap instead. */
@@ -58,3 +62,10 @@ dialog.ad-dlg input { width: 100%; font: inherit; padding: 0.4rem 0.55rem; borde
   .ad-console-table.ad-table td { display: table-cell; }
   .ad-console-wrap .ad-table { min-width: 560px; }
 }
+
+/* Dashboard-wide font bump. admin.css loads after docs.css/mydata.css (index.html), and
+   almost every size on this page -- nav, cards, buttons, both table styles above -- is in
+   rem, so raising the root size here scales the whole admin page uniformly from one place
+   instead of hand-editing every rule. Scoped to `html` so it doesn't also affect /docs or
+   /mydata, which share docs.css's base but weren't asked for here. */
+html { font-size: 17.5px; }

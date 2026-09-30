@@ -1004,6 +1004,33 @@ async function agentsStatus() {
   return { deployed: true, runEnabled: !!runParam, monthToDateUsd, monthlyLimitUsd: AGENT_MONTHLY_LIMIT_USD, recentRuns };
 }
 
+// The admin page's Agents panel has its own "Recent runs" table for the started/stopped/blocked
+// heartbeat (agentsStatus() above, filtered to action begins_with "run."). This feeds the
+// general Audit log panel instead -- the substance of what each agent actually DID to a
+// dataset (dataset.created, import.completed, dataset.reviewed, dataset.authorized,
+// feature.deleted, feature.escalated, dataset.escalation_aborted, ...) plus real failures
+// (run.failed), normalized into the same {at, actor, action, target, detail} shape
+// admin.listAudit() returns so the two sources can be merged and sorted together. Excludes
+// run.started/run.stopped specifically -- that heartbeat pair is already the Recent runs
+// table's whole job, and repeating it here (3 agents x 2 events x every schedule tick) would
+// bury the one-off events this panel exists to surface.
+async function agentAuditForLog() {
+  if (!AGENT_AUDIT_TABLE) return [];
+  try {
+    const r = await ddb.send(new ScanCommand({
+      TableName: AGENT_AUDIT_TABLE,
+      FilterExpression: "#a <> :started AND #a <> :stopped",
+      ExpressionAttributeNames: { "#a": "action" },
+      ExpressionAttributeValues: { ":started": "run.started", ":stopped": "run.stopped" },
+      Limit: 200
+    }));
+    return (r.Items || []).map(e => ({
+      at: e.at, actor: e.agent, actorEmail: null, isAgent: true,
+      action: e.action, target: e.datasetId || null, detail: e.detail || {}
+    }));
+  } catch (e) { console.warn("agent audit scan (log) failed", e.name); return []; }
+}
+
 async function allDatasets() {
   const items = []; let key;
   do { const r = await ddb.send(new ScanCommand({ TableName: DATASETS_TABLE, ExclusiveStartKey: key })); items.push(...(r.Items || [])); key = r.LastEvaluatedKey; } while (key);
@@ -1092,8 +1119,12 @@ async function adminRoute(event, routeKey, p) {
       return { deleted: ds.datasetId };
     }
     case "GET /v1/admin/audit": {
-      const users = await usersBySub();
-      return { entries: (await admin.listAudit(ddb, 200)).map(e => ({ ...e, actorEmail: users.bySub.get(e.actor)?.email })) };
+      const [users, human, agentEntries] = await Promise.all([usersBySub(), admin.listAudit(ddb, 200), agentAuditForLog()]);
+      const entries = human.map(e => ({ ...e, actorEmail: users.bySub.get(e.actor)?.email }))
+        .concat(agentEntries)
+        .sort((a, b) => (b.at || "").localeCompare(a.at || ""))
+        .slice(0, 200);
+      return { entries };
     }
   }
   throw new HttpError(404, `No route for ${routeKey}`);

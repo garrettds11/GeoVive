@@ -6,9 +6,12 @@
 // same WebClient as any human sign-up, using the newer USER_AUTH InitiateAuth flow with PASSWORD
 // as the first factor (infra/identity.yaml's SignInPolicy.AllowedFirstAuthFactors already allows
 // this) -- a non-interactive, non-OAuth-redirect sign-in that needs zero changes to the existing
-// auth stack. The resulting ID token is cached in-memory for the life of the Lambda execution
-// environment and refreshed a minute before it expires (IdTokenValidity is 1 day, so in practice
-// one sign-in covers many runs on a warm container, and a cold start just signs in again).
+// auth stack. We cache the ACCESS token (not the ID token): the backend's inline verifier on
+// routes with an optional Bearer token -- GET /datasets, GET .../features/{id}, etc. -- is
+// configured with tokenUse: "access" and rejects an ID token outright. The access token is
+// cached in-memory for the life of the Lambda execution environment and refreshed a minute
+// before it expires (AccessTokenValidity is 1 day, so in practice one sign-in covers many runs
+// on a warm container, and a cold start just signs in again).
 
 import { CognitoIdentityProviderClient, InitiateAuthCommand, RespondToAuthChallengeCommand } from "@aws-sdk/client-cognito-identity-provider";
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
@@ -20,7 +23,7 @@ const API_BASE = process.env.GEOVIVE_API_BASE || "https://api.geovive.link/v1";
 const USER_POOL_CLIENT_ID = process.env.USER_POOL_CLIENT_ID || "hfchi8fm98nberrcj43ge2ipu";
 const CREDENTIALS_SECRET_ARN = process.env.GEO_LIBRARY_CREDENTIALS_SECRET_ARN;
 
-let cachedToken = null;   // { idToken, expiresAt }
+let cachedToken = null;   // { accessToken, expiresAt }
 let cachedCreds = null;   // { email, password } -- one Secrets Manager read per cold start
 
 async function loadCredentials() {
@@ -60,15 +63,22 @@ async function signIn() {
     }));
     result = respond.AuthenticationResult;
   }
-  if (!result?.IdToken) throw new Error("geo-library sign-in did not return tokens");
+  // The backend's inline verifier (used on routes that accept an optional Bearer token
+  // rather than an API Gateway JWT authorizer -- GET /datasets, GET .../features/{id}, etc.)
+  // is configured with tokenUse: "access" and rejects an ID token outright (401). We were
+  // caching and sending the ID token here; every one of those calls failed auth, and every
+  // caller in this file wraps its list/get calls in a .catch() that quietly falls back to an
+  // empty result -- so Reviewer/Governor silently saw zero of their own review-visibility
+  // datasets (only public ones) instead of erroring loudly. Use the access token instead.
+  if (!result?.AccessToken) throw new Error("geo-library sign-in did not return tokens");
 
   const expiresAt = Date.now() + (Number(result.ExpiresIn || 3600) - 60) * 1000; // refresh 60s early
-  cachedToken = { idToken: result.IdToken, expiresAt };
-  return cachedToken.idToken;
+  cachedToken = { accessToken: result.AccessToken, expiresAt };
+  return cachedToken.accessToken;
 }
 
 async function getToken() {
-  if (cachedToken && Date.now() < cachedToken.expiresAt) return cachedToken.idToken;
+  if (cachedToken && Date.now() < cachedToken.expiresAt) return cachedToken.accessToken;
   return signIn();
 }
 

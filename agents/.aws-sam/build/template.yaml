@@ -567,7 +567,8 @@ Resources:
         - Effect: Allow
           Action: bedrock:InvokeModel
           Resource:
-            Fn::Sub: arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
+          - Fn::Sub: arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
+          - Fn::Sub: arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0
     Metadata:
       SamResourceId: ReviewerRunFunction
   GovernorRunFunction:
@@ -640,11 +641,13 @@ Resources:
         - Effect: Allow
           Action: bedrock:InvokeModel
           Resource:
-            Fn::Sub: arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
+          - Fn::Sub: arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
+          - Fn::Sub: arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0
         - Effect: Allow
           Action: bedrock:InvokeModel
           Resource:
-            Fn::Sub: arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-4-5-20251101-v1:0
+          - Fn::Sub: arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-4-5-20251101-v1:0
+          - Fn::Sub: arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/us.anthropic.claude-opus-4-5-20251101-v1:0
     Metadata:
       SamResourceId: GovernorRunFunction
   CuratorSchedule:
