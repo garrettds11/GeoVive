@@ -31,6 +31,10 @@ Parameters:
     Description: >
       The agents' service account. Not a mailbox anyone reads -- it exists so the account has a
       unique, obviously-a-service-account identity, same shape as any human sign-up.
+  NlrApiSecretArn:
+    Type: String
+    Default: arn:aws:secretsmanager:us-east-1:666993265047:secret:geovive/agents/nlr-api-key-Jn7RDO
+    Description: ARN of the externally managed NLR Developer Network API key secret.
 
 Globals:
   Function:
@@ -320,6 +324,7 @@ Resources:
       Environment:
         Variables:
           AGENT_AUDIT_TABLE: !Ref AgentAuditTable
+          NLR_API_SECRET_ARN: !Ref NlrApiSecretArn          
           MONTHLY_LIMIT_USD: "20"
           TAVILY_SECRET_ARN: !Ref TavilySearchKey
           GEO_LIBRARY_CREDENTIALS_SECRET_ARN: !Ref GeoLibraryCredentials
@@ -350,6 +355,7 @@ Resources:
                 - !Ref TavilySearchKey
                 - !Ref GeoLibraryCredentials
                 - !Ref GrafanaOtelCredentials
+                - !Ref NlrApiSecretArn
             - Effect: Allow
               Action: [cognito-idp:InitiateAuth, cognito-idp:RespondToAuthChallenge]
               Resource: !Sub arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}
@@ -550,3 +556,6 @@ Outputs:
     Value: !Ref ManagedSourcesTable
   ScopeCardsTableName:
     Value: !Ref ScopeCardsTable
+  NlrApiSecretArn:
+    Description: Externally managed NLR Developer Network API key secret used by Curator
+    Value: !Ref NlrApiSecretArn

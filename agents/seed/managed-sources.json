@@ -1,15 +1,33 @@
 [
   {
-    "sourceId": "nrel-afdc-alt-fuel-stations",
-    "name": "NREL Alternative Fuels Data Center - Alt Fuel Stations API",
-    "baseUrl": "https://developer.nrel.gov/api/alt-fuel-stations/v1.geojson",
-    "format": "GeoJSON REST API (requires a free NREL developer API key, separate from Tavily)",
-    "license": "US federal government work (public domain) - NREL/DOE",
+    "sourceId": "nlr-afdc-alt-fuel-stations",
+    "name": "NLR Alternative Fuels Data Center - Alt Fuel Stations API",
+    "baseUrl": "https://developer.nlr.gov/api/alt-fuel-stations/v1.geojson",
+    "sourceType": "geojson-api",
+    "ingestionMode": "structured",
+    "auth": {
+      "type": "api-key",
+      "provider": "nlr",
+      "parameter": "api_key"
+    },
+    "request": {
+      "query": {
+        "fuel_type": "ELEC"
+      },
+      "pagination": {
+        "type": "offset-limit",
+        "offsetParameter": "offset",
+        "limitParameter": "limit",
+        "pageSize": 100
+      }
+    },
+    "license": "NLR Developer Network Terms and Conditions - data may be used for any purpose; no DOE/NLR/Alliance endorsement; provided as-is; indemnification and liability terms apply",
+    "termsUrl": "https://developer.nlr.gov/terms/",
     "topicTags": ["ev-charging", "alternative-fuel"],
     "geography": "US + territories",
     "addedBy": "seed",
-    "verifiedAt": "2026-09-27",
-    "notes": "Filter fuel_type=ELEC for EV-only. Paginate via offset/limit. Covers the EV charging stations seed topic (2.2)."
+    "verifiedAt": "2026-09-30",
+    "notes": "Filter fuel_type=ELEC for EV-only. Structured GeoJSON source; Curator should ingest deterministically rather than use LLM extraction."
   },
   {
     "sourceId": "eia-petroleum-refineries",

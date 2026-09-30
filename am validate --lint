@@ -1,0 +1,92 @@
+warning: in the working copy of 'agents/seed/managed-sources.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'agents/template.yaml', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/agents/seed/managed-sources.json b/agents/seed/managed-sources.json[m
+[1mindex fa02f6b..9f11a28 100644[m
+[1m--- a/agents/seed/managed-sources.json[m
+[1m+++ b/agents/seed/managed-sources.json[m
+[36m@@ -1,15 +1,33 @@[m
+ [[m
+   {[m
+[31m-    "sourceId": "nrel-afdc-alt-fuel-stations",[m
+[31m-    "name": "NREL Alternative Fuels Data Center - Alt Fuel Stations API",[m
+[31m-    "baseUrl": "https://developer.nrel.gov/api/alt-fuel-stations/v1.geojson",[m
+[31m-    "format": "GeoJSON REST API (requires a free NREL developer API key, separate from Tavily)",[m
+[31m-    "license": "US federal government work (public domain) - NREL/DOE",[m
+[32m+[m[32m    "sourceId": "nlr-afdc-alt-fuel-stations",[m
+[32m+[m[32m    "name": "NLR Alternative Fuels Data Center - Alt Fuel Stations API",[m
+[32m+[m[32m    "baseUrl": "https://developer.nlr.gov/api/alt-fuel-stations/v1.geojson",[m
+[32m+[m[32m    "sourceType": "geojson-api",[m
+[32m+[m[32m    "ingestionMode": "structured",[m
+[32m+[m[32m    "auth": {[m
+[32m+[m[32m      "type": "api-key",[m
+[32m+[m[32m      "provider": "nlr",[m
+[32m+[m[32m      "parameter": "api_key"[m
+[32m+[m[32m    },[m
+[32m+[m[32m    "request": {[m
+[32m+[m[32m      "query": {[m
+[32m+[m[32m        "fuel_type": "ELEC"[m
+[32m+[m[32m      },[m
+[32m+[m[32m      "pagination": {[m
+[32m+[m[32m        "type": "offset-limit",[m
+[32m+[m[32m        "offsetParameter": "offset",[m
+[32m+[m[32m        "limitParameter": "limit",[m
+[32m+[m[32m        "pageSize": 100[m
+[32m+[m[32m      }[m
+[32m+[m[32m    },[m
+[32m+[m[32m    "license": "NLR Developer Network Terms and Conditions - data may be used for any purpose; no DOE/NLR/Alliance endorsement; provided as-is; indemnification and liability terms apply",[m
+[32m+[m[32m    "termsUrl": "https://developer.nlr.gov/terms/",[m
+     "topicTags": ["ev-charging", "alternative-fuel"],[m
+     "geography": "US + territories",[m
+     "addedBy": "seed",[m
+[31m-    "verifiedAt": "2026-09-27",[m
+[31m-    "notes": "Filter fuel_type=ELEC for EV-only. Paginate via offset/limit. Covers the EV charging stations seed topic (2.2)."[m
+[32m+[m[32m    "verifiedAt": "2026-09-30",[m
+[32m+[m[32m    "notes": "Filter fuel_type=ELEC for EV-only. Structured GeoJSON source; Curator should ingest deterministically rather than use LLM extraction."[m
+   },[m
+   {[m
+     "sourceId": "eia-petroleum-refineries",[m
+[1mdiff --git a/agents/template.yaml b/agents/template.yaml[m
+[1mindex 78cf674..03e5e84 100644[m
+[1m--- a/agents/template.yaml[m
+[1m+++ b/agents/template.yaml[m
+[36m@@ -31,6 +31,10 @@[m [mParameters:[m
+     Description: >[m
+       The agents' service account. Not a mailbox anyone reads -- it exists so the account has a[m
+       unique, obviously-a-service-account identity, same shape as any human sign-up.[m
+[32m+[m[32m    NlrApiSecretArn:[m
+[32m+[m[32m      Type: String[m
+[32m+[m[32m      Default: arn:aws:secretsmanager:us-east-1:666993265047:secret:geovive/agents/nlr-api-key-Jn7RDO[m
+[32m+[m[32m      Description: ARN of the externally managed NLR Developer Network API key secret.[m
+ [m
+ Globals:[m
+   Function:[m
+[36m@@ -114,6 +118,13 @@[m [mResources:[m
+             - Effect: Allow[m
+               Action: ssm:PutParameter[m
+               Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/geovive/agents/geo-library-sub[m
+[32m+[m[32m            - Effect: Allow[m
+[32m+[m[32m              Action: secretsmanager:GetSecretValue[m
+[32m+[m[32m              Resource:[m
+[32m+[m[32m                - !Ref TavilySearchKey[m
+[32m+[m[32m                - !Ref GeoLibraryCredentials[m
+[32m+[m[32m                - !Ref GrafanaOtelCredentials[m
+[32m+[m[32m                - !Ref NlrApiSecretArn[m
+ [m
+   GeoLibraryAccount:[m
+     Type: Custom::GeoLibraryAccount[m
+[36m@@ -320,6 +331,7 @@[m [mResources:[m
+       Environment:[m
+         Variables:[m
+           AGENT_AUDIT_TABLE: !Ref AgentAuditTable[m
+[32m+[m[32m          NLR_API_SECRET_ARN: !Ref NlrApiSecretArn[m[41m          [m
+           MONTHLY_LIMIT_USD: "20"[m
+           TAVILY_SECRET_ARN: !Ref TavilySearchKey[m
+           GEO_LIBRARY_CREDENTIALS_SECRET_ARN: !Ref GeoLibraryCredentials[m
+[36m@@ -550,3 +562,6 @@[m [mOutputs:[m
+     Value: !Ref ManagedSourcesTable[m
+   ScopeCardsTableName:[m
+     Value: !Ref ScopeCardsTable[m
+[32m+[m[32m  NlrApiSecretArn:[m
+[32m+[m[32m    Description: Externally managed NLR Developer Network API key secret used by Curator[m
+[32m+[m[32m    Value: !Ref NlrApiSecretArn[m
+\ No newline at end of file[m
