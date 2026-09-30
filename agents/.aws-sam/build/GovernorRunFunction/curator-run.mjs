@@ -96,8 +96,22 @@ async function getApiKey(provider) {
   const arn = SECRET_ARN_MAP[provider];
   if (!arn) throw new Error(`No secret ARN configured for auth provider "${provider}"`);
   const { SecretString } = await secrets.send(new GetSecretValueCommand({ SecretId: arn }));
-  // Support both plain-string secrets and JSON { apiKey: "..." } secrets
-  try { return JSON.parse(SecretString).apiKey || SecretString; } catch { return SecretString; }
+  // Support a plain-string secret, or a JSON secret under any of a few common field-name
+  // conventions ("apiKey", "api_key", "<provider>-api-key", e.g. Secrets Manager's own
+  // "nlr-api-key" naming). If it parses as JSON but none of those fields are present, fail
+  // loudly rather than silently sending the whole JSON blob as the key (which just gets a
+  // 403 from the upstream API with no useful error message).
+  let parsed;
+  try { parsed = JSON.parse(SecretString); } catch { return SecretString.trim(); }
+  if (typeof parsed !== "object" || parsed === null) return SecretString.trim();
+  const key = parsed.apiKey || parsed.api_key || parsed[`${provider}-api-key`] || parsed[`${provider}_api_key`];
+  if (!key) {
+    throw new Error(
+      `Secret for provider "${provider}" is JSON but has none of the expected key fields ` +
+      `(apiKey, api_key, ${provider}-api-key, ${provider}_api_key). Found keys: ${Object.keys(parsed).join(", ")}`
+    );
+  }
+  return String(key).trim();
 }
 
 async function fetchStructuredGeoJSON(managed, { maxRecords, timeLeft }) {

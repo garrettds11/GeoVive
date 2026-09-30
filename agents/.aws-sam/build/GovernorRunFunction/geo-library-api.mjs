@@ -34,14 +34,23 @@ async function loadCredentials() {
 async function signIn() {
   const { email, password } = await loadCredentials();
 
-  // USER_AUTH with PASSWORD as the first (and only) factor -- see file header.
+  // USER_AUTH, PASSWORD as the first factor -- see file header. Unlike an out-of-band factor
+  // (EMAIL_OTP, SMS_OTP, WEB_AUTHN), Cognito's USER_AUTH flow expects PASSWORD supplied
+  // directly in AuthParameters on this same initial call when you already have it -- there is
+  // no separate PASSWORD challenge round-trip to respond to. Passing only USERNAME +
+  // PREFERRED_CHALLENGE: "PASSWORD" (the original approach here) gets rejected server-side
+  // with InvalidParameterException: "Missing required parameter PASSWORD", confirmed against
+  // the live pool (us-east-1_cLqbEZJhi) and client (GeoVive, ALLOW_USER_AUTH) -- both are
+  // correctly configured, so this was purely a request-shape bug, not an infra one.
   const initiate = await cognito.send(new InitiateAuthCommand({
     AuthFlow: "USER_AUTH",
     ClientId: USER_POOL_CLIENT_ID,
-    AuthParameters: { USERNAME: email, PREFERRED_CHALLENGE: "PASSWORD" }
+    AuthParameters: { USERNAME: email, PASSWORD: password, PREFERRED_CHALLENGE: "PASSWORD" }
   }));
 
   let result = initiate.AuthenticationResult;
+  // Defensive fallback: if some future config change reintroduces a real PASSWORD challenge,
+  // still answer it rather than failing outright.
   if (!result && initiate.ChallengeName === "PASSWORD") {
     const respond = await cognito.send(new RespondToAuthChallengeCommand({
       ClientId: USER_POOL_CLIENT_ID,
