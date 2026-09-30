@@ -27,3 +27,34 @@ dialog.ad-dlg input { width: 100%; font: inherit; padding: 0.4rem 0.55rem; borde
   .ad-actions { justify-content: flex-start; }
   .ad-preview ul { columns: 1; }
 }
+
+/* Issue #19: AWS Console-style treatment for Recent Runs / Audit Log tables.
+   Deliberately breaks from the page's dark theme for these two data-dense
+   tables only -- a clean light surface, compact rows, strong header, subtle
+   column separators, matching AWS Console's own table convention -- while
+   keeping GeoVive's own accent colors (no AWS blue/orange) so it doesn't
+   read as AWS chrome. Reusable: any future admin table can opt in with the
+   same two classes. */
+.ad-console-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 0.6rem; background: #f8fafc;
+  box-shadow: inset 0 1px 4px rgba(15,23,42,0.12); }
+.ad-console-table.ad-table { font-size: 0.8rem; color: #0f172a; }
+.ad-console-table.ad-table th, .ad-console-table.ad-table td { padding: 0.3rem 0.6rem; border-bottom: 1px solid #e2e8f0; }
+.ad-console-table.ad-table th:not(:last-child), .ad-console-table.ad-table td:not(:last-child) { border-right: 1px solid #eef2f7; }
+.ad-console-table.ad-table thead th { background: #eef2f7; color: #334155; font-weight: 700; font-size: 0.72rem;
+  text-transform: uppercase; letter-spacing: 0.03em; position: sticky; top: 0; }
+.ad-console-table.ad-table tbody tr:hover { background: #f1f5f9; }
+.ad-console-table.ad-table tbody tr:nth-child(even) { background: #fbfcfe; }
+.ad-console-table.ad-table tbody tr:nth-child(even):hover { background: #f1f5f9; }
+.ad-console-table.ad-table .s { color: #64748b; }
+.ad-console-table .ad-trunc { display: inline-block; max-width: 32ch; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; vertical-align: bottom; cursor: help; }
+.ad-console-table .ad-trunc:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; white-space: normal;
+  max-width: none; background: #fff; border-radius: 0.2rem; }
+@media (max-width: 720px) {
+  /* Override the page-wide .ad-table stacking rule: the console table stays
+     tabular and scrolls horizontally in its .ad-console-wrap instead. */
+  .ad-console-table.ad-table thead { display: table-header-group; }
+  .ad-console-table.ad-table tr { display: table-row; border: 0; padding: 0; }
+  .ad-console-table.ad-table td { display: table-cell; }
+  .ad-console-wrap .ad-table { min-width: 560px; }
+}

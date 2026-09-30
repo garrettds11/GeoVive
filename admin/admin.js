@@ -169,9 +169,10 @@ function renderAgents() {
     </div>
     <p><button class="btn2 ${a.runEnabled ? "danger" : "primary"}" id="ad-agents-toggle">${a.runEnabled ? "Turn off (kill switch)" : "Turn on"}</button></p>
     <h3 class="s">Recent runs</h3>
-    ${runs.length ? `<table class="ad-table"><thead><tr><th>When</th><th>Agent</th><th>Action</th><th>Detail</th></tr></thead><tbody>
-      ${runs.map(r => `<tr><td class="s">${esc(when(r.at))}</td><td>${esc(r.agent || "")}</td><td>${esc(r.action || "")}</td><td class="s">${esc(JSON.stringify(r.detail || {}))}</td></tr>`).join("")}
-      </tbody></table>` : `<p class="muted">No runs yet.</p>`}`;
+    ${runs.length ? `<div class="ad-console-wrap"><table class="ad-table ad-console-table"><thead><tr><th>When</th><th>Agent</th><th>Action</th><th>Detail</th></tr></thead><tbody>
+      ${runs.map(r => { const detail = JSON.stringify(r.detail || {}); return `<tr><td class="s">${esc(when(r.at))}</td><td>${esc(r.agent || "")}</td><td>${esc(r.action || "")}</td>
+        <td class="s"><span class="ad-trunc" tabindex="0" title="${esc(detail)}">${esc(detail)}</span></td></tr>`; }).join("")}
+      </tbody></table></div>` : `<p class="muted">No runs yet.</p>`}`;
   document.getElementById("ad-agents-toggle").onclick = () => toggleAgentsRun(!a.runEnabled);
 }
 async function toggleAgentsRun(run) {
@@ -196,9 +197,10 @@ function renderMaps() {
 }
 function renderAudit() {
   const el = document.getElementById("ad-audit");
-  el.innerHTML = S.audit.length ? `<table class="ad-table"><thead><tr><th>When</th><th>Who</th><th>What</th><th>Details</th></tr></thead><tbody>
-    ${S.audit.map(a => `<tr><td class="s">${esc(when(a.at))}</td><td class="s">${esc(a.actorEmail || a.actor)}</td><td>${esc(a.action)}</td>
-      <td class="s">${esc([a.detail?.name, a.detail?.from && `${a.detail.from} → ${a.detail.to}`, a.detail?.reason].filter(Boolean).join(" · "))}</td></tr>`).join("")}</tbody></table>`
+  el.innerHTML = S.audit.length ? `<div class="ad-console-wrap"><table class="ad-table ad-console-table"><thead><tr><th>When</th><th>Who</th><th>What</th><th>Details</th></tr></thead><tbody>
+    ${S.audit.map(a => { const details = [a.detail?.name, a.detail?.from && `${a.detail.from} → ${a.detail.to}`, a.detail?.reason].filter(Boolean).join(" · ");
+      return `<tr><td class="s">${esc(when(a.at))}</td><td class="s">${esc(a.actorEmail || a.actor)}</td><td>${esc(a.action)}</td>
+      <td class="s"><span class="ad-trunc" tabindex="0" title="${esc(details)}">${esc(details)}</span></td></tr>`; }).join("")}</tbody></table></div>`
     : `<p class="muted">No entries yet.</p>`;
 }
 

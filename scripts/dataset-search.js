@@ -83,13 +83,63 @@ box.addEventListener("click", e => {
 });
 document.addEventListener("click", e => { if (!e.target.closest("#ds-search")) box.hidden = true; });
 
-// Links like /?dataset=<id>&lng=..&lat=.. (from My data or elsewhere) open that map
+// Links like /?dataset=<id>&lng=..&lat=.. (from My data or elsewhere) open that map.
+// /?dataset=<id>&feature=<featureId> (issue #57: shareable pin links) additionally
+// resolves and opens one specific feature by its stable id -- not just coordinates --
+// so the link survives the pin being edited/moved, and keeps working on reload since
+// (unlike the lng/lat-only case below) we don't strip it from the address bar.
+function pinNotice(message) {
+  let el = document.getElementById("open-banner");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "open-banner";
+    el.className = "open-banner";
+    el.setAttribute("role", "status");
+    document.body.appendChild(el);
+  }
+  el.innerHTML = `<span class="open-banner-text">${esc(message)}</span>
+    <button type="button" class="btn" data-action="dismiss">Dismiss</button>`;
+  el.hidden = false;
+  el.querySelector("[data-action=dismiss]").addEventListener("click", () => { el.hidden = true; });
+}
+
 (async () => {
   const q = new URLSearchParams(location.search);
   const id = q.get("dataset");
+  const featureId = q.get("feature");
   if (!id || q.get("app")) return;
   await window.GeoVive.ready;
   await new Promise(r => setTimeout(r, 300));   // let the default dataset finish first
+
+  if (featureId) {
+    try {
+      const res = await fetch(`${window.GeoVive.apiBase}/v1/datasets/${encodeURIComponent(id)}/features/${encodeURIComponent(featureId)}`,
+        { headers: await window.GeoVive.authHeaders() });
+      if (!res.ok) {
+        // 404 covers both "never existed" and "you can't see this" (the API doesn't
+        // distinguish, on purpose, so a shared link can't be used to probe for a
+        // private feature's existence) -- either way, say the same graceful thing.
+        pinNotice(res.status === 404
+          ? "This pin isn't available anymore. It may have been removed or made private."
+          : "This shared pin couldn't be loaded right now.");
+        return;
+      }
+      const feature = await res.json();
+      await window.GeoVive.openDataset(id, { fit: false });
+      if (feature.geometry?.type === "Point") {
+        const [lng, lat] = feature.geometry.coordinates;
+        window.GeoVive.map.flyTo({ center: [lng, lat], zoom: Math.max(window.GeoVive.map.getZoom(), 15) });
+        window.GeoVivePin.show(window.GeoVive.map, [lng, lat], feature.properties, feature);
+      }
+      // Deliberately NOT stripping ?dataset=&feature= from the URL: the whole point of
+      // a share link is that copying the address bar, or reloading, keeps working.
+    } catch (e) {
+      console.warn("Couldn't open that pin", e);
+      pinNotice("This shared pin couldn't be loaded right now.");
+    }
+    return;
+  }
+
   const lng = Number(q.get("lng")), lat = Number(q.get("lat"));
   const at = Number.isFinite(lng) && Number.isFinite(lat) && q.get("lng") !== null;
   try {

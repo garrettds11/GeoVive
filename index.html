@@ -655,6 +655,16 @@
       border: 1px solid rgba(148,163,184,0.35); background: transparent; color: inherit; cursor: pointer; padding: 0; }
     .pin-act:hover { border-color: var(--accent1); color: var(--accent1); }
     .pin-act svg { width: 17px; height: 17px; }
+    .pin-share-wrap { position: relative; }
+    .pin-share-menu {
+      position: absolute; bottom: calc(100% + 0.3rem); left: 0; z-index: 5; min-width: 160px;
+      display: grid; border: 1px solid rgba(148,163,184,0.35); border-radius: 8px; overflow: hidden;
+      background: rgba(15,23,42,0.98); box-shadow: 0 10px 26px rgba(0,0,0,0.5);
+    }
+    .pin-share-menu[hidden] { display: none; }
+    .pin-share-menu button { font: inherit; font-size: 0.78rem; text-align: left; padding: 0.45rem 0.6rem;
+      border: 0; background: transparent; color: var(--text); cursor: pointer; }
+    .pin-share-menu button:hover, .pin-share-menu button:focus-visible { background: rgba(34,197,94,0.14); outline: none; }
     .pin-form .field-row { display: flex; gap: 0.3rem; align-items: stretch; }
     .pin-form .field-row > input, .pin-form .field-row > textarea { flex: 1; min-width: 0; }
     .emoji-btn { flex: none; width: 32px; border-radius: 6px; border: 1px solid rgba(148,163,184,0.35); background: transparent; cursor: pointer; font-size: 16px; padding: 0; }
