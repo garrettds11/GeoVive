@@ -13,7 +13,7 @@ import { notify } from "./notify.mjs";
 import { converse, extractJson, MODELS } from "./bedrock.mjs";
 import { findManagedSource } from "./managed-sources.mjs";
 import { writeScopeCard } from "./scope-cards.mjs";
-import { createDataset, createFeature, listAllDatasets } from "./geo-library-api.mjs";
+import { createDataset, createFeature, batchFeatures, listAllDatasets } from "./geo-library-api.mjs";
 import { geocode } from "./geocode.mjs";
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 
@@ -79,6 +79,111 @@ async function extractFromRaw({ rawText, scopeCard, tokenBudget }) {
   return { records: Array.isArray(records) ? records : [], tokensUsed: inputTokens + outputTokens };
 }
 
+
+// --- Structured-source adapter -----------------------------------------------------------
+// For managed sources with ingestionMode: "structured", skip Haiku entirely. Authenticate
+// with the source's own API key, paginate through its native GeoJSON endpoint, and map
+// each feature deterministically into GeoVive's FeatureProperties schema. Per the design
+// rule: a capped/test run must NEVER perform removal reconciliation -- Curator only creates
+// and updates, never deletes, and only the future Managed Record Index (not yet built) will
+// handle removals after full-catalog runs.
+
+const SECRET_ARN_MAP = {
+  nlr: process.env.NLR_API_SECRET_ARN
+};
+
+async function getApiKey(provider) {
+  const arn = SECRET_ARN_MAP[provider];
+  if (!arn) throw new Error(`No secret ARN configured for auth provider "${provider}"`);
+  const { SecretString } = await secrets.send(new GetSecretValueCommand({ SecretId: arn }));
+  // Support both plain-string secrets and JSON { apiKey: "..." } secrets
+  try { return JSON.parse(SecretString).apiKey || SecretString; } catch { return SecretString; }
+}
+
+async function fetchStructuredGeoJSON(managed, { maxRecords, timeLeft }) {
+  const { baseUrl, auth, request: req } = managed;
+  const features = [];
+
+  // Build the base query params from catalog config
+  const baseParams = { ...(req?.query || {}) };
+
+  // Inject the API key
+  if (auth?.type === "api-key") {
+    const key = await getApiKey(auth.provider);
+    baseParams[auth.parameter || "api_key"] = key;
+  }
+
+  const pagination = req?.pagination;
+  if (pagination?.type === "offset-limit") {
+    const pageSize = Number(pagination.pageSize) || 100;
+    let offset = 0;
+    while (features.length < maxRecords && timeLeft() > 0) {
+      const params = new URLSearchParams({
+        ...baseParams,
+        [pagination.offsetParameter || "offset"]: String(offset),
+        [pagination.limitParameter || "limit"]: String(pageSize)
+      });
+      const url = `${baseUrl}?${params}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Structured fetch failed: ${res.status} ${res.statusText} from ${baseUrl}`);
+      const geojson = await res.json();
+      const page = geojson?.features || [];
+      if (!page.length) break; // no more data
+      features.push(...page);
+      offset += page.length;
+      if (page.length < pageSize) break; // last page
+    }
+  } else {
+    // No pagination config -- single fetch (e.g. a small static GeoJSON file)
+    const params = new URLSearchParams(baseParams);
+    const url = Object.keys(baseParams).length ? `${baseUrl}?${params}` : baseUrl;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Structured fetch failed: ${res.status} ${res.statusText} from ${baseUrl}`);
+    const geojson = await res.json();
+    features.push(...(geojson?.features || []));
+  }
+
+  return features.slice(0, maxRecords);
+}
+
+// Deterministic mapper: GeoJSON feature → GeoVive FeatureProperties. All upstream-specific
+// fields that don't map to a named GeoVive property go into the `description` markdown field,
+// per datamodel.yaml's additionalProperties: false rule.
+function mapStructuredFeature(geoJsonFeature, managed) {
+  const props = geoJsonFeature.properties || {};
+  const geom = geoJsonFeature.geometry;
+  if (!geom || geom.type !== "Point") return null; // only Point geometry for now
+
+  // Build a human-readable name from common fields
+  const name = String(
+    props.station_name || props.name || props.title || props.NAME || "Unnamed"
+  ).slice(0, 200);
+
+  // Build a markdown description from all non-null properties
+  const skipKeys = new Set(["station_name", "name", "title", "NAME", "id", "latitude", "longitude"]);
+  const lines = [];
+  for (const [k, v] of Object.entries(props)) {
+    if (skipKeys.has(k) || v == null || v === "") continue;
+    lines.push(`**${k}**: ${String(v).slice(0, 500)}`);
+  }
+  const description = lines.join("\n").slice(0, 5000);
+
+  const externalId = String(props.id || props.station_id || props.ID || "").slice(0, 200) || undefined;
+
+  return {
+    geometry: geom,
+    properties: {
+      name,
+      description,
+      category: "location",
+      source: managed.sourceId,
+      externalId,
+      sourceClass: "managed",
+      status: "active"
+    }
+  };
+}
+
 async function toFeature(record) {
   let { lat, lon } = record;
   if (typeof lat !== "number" || typeof lon !== "number") {
@@ -133,7 +238,15 @@ export const handler = async () => {
   try {
     let records = [];
     const managed = await findManagedSource(pick.topic, pick.geography);
-    if (managed) {
+    if (managed?.ingestionMode === "structured") {
+      // Deterministic structured path: no LLM, no token spend. Authenticate, paginate,
+      // and map features directly from the source's native GeoJSON schema.
+      const maxRecords = Math.min(MAX_RECORDS, Number(managed.request?.pagination?.pageSize) || 100);
+      const rawFeatures = await fetchStructuredGeoJSON(managed, { maxRecords, timeLeft });
+      records = rawFeatures.map(f => mapStructuredFeature(f, managed)).filter(Boolean);
+      sourceUsed = { sourceClass: "managed", sourceId: managed.sourceId, ingestionMode: "structured", rawFetched: rawFeatures.length };
+    } else if (managed) {
+      // Legacy managed path: fetch raw text, extract via Haiku
       const raw = await fetch(managed.baseUrl).then(r => r.text());
       const extracted = await extractFromRaw({ rawText: raw, scopeCard, tokenBudget: MAX_TOKENS - tokensUsed });
       tokensUsed += extracted.tokensUsed;
@@ -169,13 +282,25 @@ export const handler = async () => {
     await auditEvent({ action: "dataset.created", agent: "curator", datasetId: dataset.datasetId, detail: { topic: pick.topic, sourceUsed } });
 
     let written = 0;
-    for (const record of records) {
-      if (written >= MAX_RECORDS || timeLeft() <= 0) break;
-      const feature = await toFeature(record);
-      if (!feature) continue;
-      await createFeature(dataset.datasetId, feature);
-      written++;
-      await auditEvent({ action: "feature.created", agent: "curator", datasetId: dataset.datasetId, detail: { name: feature.properties.name } });
+    if (sourceUsed.ingestionMode === "structured") {
+      // Structured records are already mapped to GeoVive features -- batch-write them
+      const BATCH_SIZE = 25;
+      for (let i = 0; i < records.length && written < MAX_RECORDS && timeLeft() > 0; i += BATCH_SIZE) {
+        const batch = records.slice(i, i + BATCH_SIZE);
+        await batchFeatures(dataset.datasetId, batch);
+        written += batch.length;
+        await auditEvent({ action: "features.batch", agent: "curator", datasetId: dataset.datasetId, detail: { count: batch.length, total: written } });
+      }
+    } else {
+      // Haiku-extracted records need geocoding/conversion
+      for (const record of records) {
+        if (written >= MAX_RECORDS || timeLeft() <= 0) break;
+        const feature = await toFeature(record);
+        if (!feature) continue;
+        await createFeature(dataset.datasetId, feature);
+        written++;
+        await auditEvent({ action: "feature.created", agent: "curator", datasetId: dataset.datasetId, detail: { name: feature.properties.name } });
+      }
     }
 
     await notify({
