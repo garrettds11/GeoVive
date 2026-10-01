@@ -198,6 +198,18 @@ Resources:
             Resource:
               - arn:aws:bedrock:*::foundation-model/*
               - !Sub arn:aws:bedrock:*:${AWS::AccountId}:*
+          - Sid: BedrockMarketplaceSubscribe
+            Effect: Allow
+            # Same boundary-vs-role-policy gap as BedrockInvoke above, for a second permission
+            # class entirely: the per-function role policies already grant
+            # aws-marketplace:ViewSubscriptions/Subscribe/Unsubscribe (needed for Bedrock to
+            # auto-subscribe an identity to Anthropic's Marketplace-delivered models on its first
+            # invoke), but this shared boundary caps every function's effective permissions and
+            # had no Marketplace actions at all -- so it silently denied the auto-subscribe
+            # handshake even after the role policy was already correct. Confirmed live: Governor
+            # kept failing with the same AccessDeniedException after the role-only fix deployed.
+            Action: [aws-marketplace:ViewSubscriptions, aws-marketplace:Subscribe, aws-marketplace:Unsubscribe]
+            Resource: "*"
           - Sid: CostExplorerRead
             Effect: Allow
             Action: ce:GetCostAndUsage
