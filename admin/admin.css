@@ -69,3 +69,12 @@ dialog.ad-dlg input { width: 100%; font: inherit; padding: 0.4rem 0.55rem; borde
    instead of hand-editing every rule. Scoped to `html` so it doesn't also affect /docs or
    /mydata, which share docs.css's base but weren't asked for here. */
 html { font-size: 17.5px; }
+
+/* Audit log: adjustable row count (admin.js's #ad-audit-rows picker) + a fixed-height,
+   independently scrollable panel so a long log doesn't push the rest of the page down.
+   Only .ad-scroll opts in -- Recent Runs keeps growing with the page unless it gets this too. */
+.ad-section-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.ad-rows-picker { font-size: 0.8rem; color: var(--muted); display: flex; align-items: center; gap: 0.4rem; }
+.ad-rows-picker select { font-size: 0.8rem; padding: 0.2rem 0.4rem; border-radius: 0.35rem; border: 1px solid var(--border);
+  background: #0b1220; color: var(--text); }
+.ad-console-wrap.ad-scroll { max-height: 22rem; overflow-y: auto; }

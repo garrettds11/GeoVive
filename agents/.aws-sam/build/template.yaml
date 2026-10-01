@@ -481,6 +481,12 @@ Resources:
           - Fn::Sub: arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
           - Fn::Sub: arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0
         - Effect: Allow
+          Action:
+          - aws-marketplace:ViewSubscriptions
+          - aws-marketplace:Subscribe
+          - aws-marketplace:Unsubscribe
+          Resource: '*'
+        - Effect: Allow
           Action: geo-places:Geocode
           Resource: '*'
     Metadata:
@@ -569,6 +575,12 @@ Resources:
           Resource:
           - Fn::Sub: arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
           - Fn::Sub: arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0
+        - Effect: Allow
+          Action:
+          - aws-marketplace:ViewSubscriptions
+          - aws-marketplace:Subscribe
+          - aws-marketplace:Unsubscribe
+          Resource: '*'
     Metadata:
       SamResourceId: ReviewerRunFunction
   GovernorRunFunction:
@@ -648,6 +660,12 @@ Resources:
           Resource:
           - Fn::Sub: arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-4-5-20251101-v1:0
           - Fn::Sub: arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/us.anthropic.claude-opus-4-5-20251101-v1:0
+        - Effect: Allow
+          Action:
+          - aws-marketplace:ViewSubscriptions
+          - aws-marketplace:Subscribe
+          - aws-marketplace:Unsubscribe
+          Resource: '*'
     Metadata:
       SamResourceId: GovernorRunFunction
   CuratorSchedule:

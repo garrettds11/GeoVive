@@ -14,7 +14,12 @@ const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const when = iso => iso ? new Date(iso).toLocaleString() : "";
 const usd = n => `$${Number(n || 0).toFixed(2)}`;
 const SESSION_KEY = "geovive:admin-session";   // sessionStorage: gone when the tab closes
-const S = { maps: [], f: { q: "", vis: "", owner: "" }, open: null };
+const AUDIT_ROWS_KEY = "geovive:admin-audit-rows";
+const RUNS_ROWS_KEY = "geovive:admin-runs-rows";
+let savedAuditRows = 50, savedRunsRows = 10;
+try { savedAuditRows = Number(localStorage.getItem(AUDIT_ROWS_KEY)) || 50; } catch {}
+try { savedRunsRows = Number(localStorage.getItem(RUNS_ROWS_KEY)) || 10; } catch {}
+const S = { maps: [], f: { q: "", vis: "", owner: "" }, open: null, auditRows: savedAuditRows, runsRows: savedRunsRows };
 
 let session = null;
 try { session = sessionStorage.getItem(SESSION_KEY); } catch {}
@@ -127,7 +132,17 @@ async function console_() {
       </div>
     </section>
 
-    <section class="md-section"><h2>Audit log</h2><div id="ad-audit"></div></section>
+    <section class="md-section">
+      <div class="ad-section-head"><h2>Audit log</h2>
+        <label class="ad-rows-picker">Show
+          <select id="ad-audit-rows">
+            ${[25, 50, 100, 200, 500].map(n => `<option value="${n}" ${n === S.auditRows ? "selected" : ""}>${n}</option>`).join("")}
+          </select>
+          rows
+        </label>
+      </div>
+      <div id="ad-audit"></div>
+    </section>
 
     <dialog class="ad-dlg" id="ad-dlg"><form method="dialog" id="ad-dlg-form"></form></dialog>`;
   document.getElementById("ad-vis").value = S.f.vis;
@@ -135,6 +150,11 @@ async function console_() {
   document.getElementById("ad-q").oninput = e => { S.f.q = e.target.value; renderMaps(); };
   document.getElementById("ad-vis").onchange = e => { S.f.vis = e.target.value; renderMaps(); };
   document.getElementById("ad-owner").onchange = e => { S.f.owner = e.target.value; renderMaps(); };
+  document.getElementById("ad-audit-rows").onchange = e => {
+    S.auditRows = Number(e.target.value) || 50;
+    try { localStorage.setItem(AUDIT_ROWS_KEY, String(S.auditRows)); } catch {}
+    renderAudit();
+  };
   renderReview(); renderMaps(); renderAudit(); renderAgents();
 }
 
@@ -161,19 +181,34 @@ function renderAgents() {
   if (!a.deployed) { el.innerHTML = `<h2>Agents</h2><p class="muted">The map agents aren't deployed yet.</p>`; return; }
   const spend = a.monthToDateUsd == null ? "—" : usd(a.monthToDateUsd);
   const over = a.monthToDateUsd != null && a.monthToDateUsd >= a.monthlyLimitUsd;
-  const runs = (a.recentRuns || []).slice(0, 10);
+  const allRuns = a.recentRuns || [];
+  const runs = allRuns.slice(0, S.runsRows);
   el.innerHTML = `<h2>Agents</h2>
     <div class="md-cards">
       <div class="md-card"><b>${a.runEnabled ? "On" : "Off"}</b><span>run switch</span></div>
       <div class="md-card ${over ? "warn" : ""}"><b>${spend}</b><span>agents spend this month · $${a.monthlyLimitUsd} limit</span></div>
     </div>
     <p><button class="btn2 ${a.runEnabled ? "danger" : "primary"}" id="ad-agents-toggle">${a.runEnabled ? "Turn off (kill switch)" : "Turn on"}</button></p>
-    <h3 class="s">Recent runs</h3>
-    ${runs.length ? `<div class="ad-console-wrap"><table class="ad-table ad-console-table"><thead><tr><th>When</th><th>Agent</th><th>Action</th><th>Detail</th></tr></thead><tbody>
+    <div class="ad-section-head"><h3 class="s">Recent runs</h3>
+      <label class="ad-rows-picker">Show
+        <select id="ad-runs-rows">
+          ${[10, 25, 50, 100, 200].map(n => `<option value="${n}" ${n === S.runsRows ? "selected" : ""}>${n}</option>`).join("")}
+        </select>
+        rows
+      </label>
+    </div>
+    ${runs.length ? `<div class="ad-console-wrap ad-scroll"><table class="ad-table ad-console-table"><thead><tr><th>When</th><th>Agent</th><th>Action</th><th>Detail</th></tr></thead><tbody>
       ${runs.map(r => { const detail = JSON.stringify(r.detail || {}); return `<tr><td class="s">${esc(when(r.at))}</td><td>${esc(r.agent || "")}</td><td>${esc(r.action || "")}</td>
         <td class="s"><span class="ad-trunc" tabindex="0" title="${esc(detail)}">${esc(detail)}</span></td></tr>`; }).join("")}
-      </tbody></table></div>` : `<p class="muted">No runs yet.</p>`}`;
+      </tbody></table></div>
+      <p class="s muted">Showing ${runs.length} of ${allRuns.length}.</p>` : `<p class="muted">No runs yet.</p>`}`;
   document.getElementById("ad-agents-toggle").onclick = () => toggleAgentsRun(!a.runEnabled);
+  const runsSel = document.getElementById("ad-runs-rows");
+  if (runsSel) runsSel.onchange = e => {
+    S.runsRows = Number(e.target.value) || 10;
+    try { localStorage.setItem(RUNS_ROWS_KEY, String(S.runsRows)); } catch {}
+    renderAgents();
+  };
 }
 async function toggleAgentsRun(run) {
   if (run && !confirm("Turn agents on? They'll start running on their normal schedule until you flip this off again.")) return;
@@ -226,14 +261,16 @@ function auditDetails(a) {
 }
 function renderAudit() {
   const el = document.getElementById("ad-audit");
-  el.innerHTML = S.audit.length ? `<div class="ad-console-wrap"><table class="ad-table ad-console-table"><thead><tr><th>When</th><th>Who</th><th>What</th><th>Dataset</th><th>Details</th></tr></thead><tbody>
-    ${S.audit.map(a => {
+  const rows = S.audit.slice(0, S.auditRows);
+  el.innerHTML = rows.length ? `<div class="ad-console-wrap ad-scroll"><table class="ad-table ad-console-table"><thead><tr><th>When</th><th>Who</th><th>What</th><th>Dataset</th><th>Details</th></tr></thead><tbody>
+    ${rows.map(a => {
       const details = auditDetails(a);
       const who = a.isAgent ? `${esc(a.actor)} <span class="ad-agent-tag">agent</span>` : esc(a.actorEmail || a.actor || "—");
       const dataset = a.isAgent && a.target ? `<span class="ad-trunc" tabindex="0" title="${esc(a.target)}">${esc(a.target.slice(0, 8))}…</span>` : "";
       return `<tr><td class="s">${esc(when(a.at))}</td><td class="s">${who}</td><td>${esc(a.action)}</td><td class="s">${dataset}</td>
       <td class="s"><span class="ad-trunc" tabindex="0" title="${esc(details)}">${esc(details)}</span></td></tr>`;
-    }).join("")}</tbody></table></div>`
+    }).join("")}</tbody></table></div>
+    <p class="s muted">Showing ${rows.length} of ${S.audit.length}.</p>`
     : `<p class="muted">No entries yet.</p>`;
 }
 

@@ -996,9 +996,12 @@ async function agentsStatus() {
   let recentRuns = [];
   if (AGENT_AUDIT_TABLE) {
     try {
+      // Limit here is a pre-filter cap on items *scanned*, not matched -- raised alongside the
+      // slice below so the admin page's "Show N rows" picker (up to 200) actually has 200
+      // run.* events to draw from instead of silently topping out at the old 20-row cap.
       const r = await ddb.send(new ScanCommand({ TableName: AGENT_AUDIT_TABLE, FilterExpression: "begins_with(#a, :p)",
-        ExpressionAttributeNames: { "#a": "action" }, ExpressionAttributeValues: { ":p": "run." }, Limit: 200 }));
-      recentRuns = (r.Items || []).sort((a, b) => (b.at || "").localeCompare(a.at || "")).slice(0, 20);
+        ExpressionAttributeNames: { "#a": "action" }, ExpressionAttributeValues: { ":p": "run." }, Limit: 1000 }));
+      recentRuns = (r.Items || []).sort((a, b) => (b.at || "").localeCompare(a.at || "")).slice(0, 200);
     } catch (e) { console.warn("agent audit scan failed", e.name); }
   }
   return { deployed: true, runEnabled: !!runParam, monthToDateUsd, monthlyLimitUsd: AGENT_MONTHLY_LIMIT_USD, recentRuns };
